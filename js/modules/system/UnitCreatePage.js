@@ -1,4 +1,4 @@
-// 1. 修改 import: 改成大寫開頭的 UnitService
+// 【修正重點】改成大寫 UnitService
 import { UnitService } from "../../services/firebase/UnitService.js";
 
 export class UnitCreatePage {
@@ -35,7 +35,7 @@ export class UnitCreatePage {
             const description = document.getElementById('description').value;
 
             try {
-                // 2. 修改呼叫方式: 改成 UnitService.createUnit (大寫開頭)
+                // 【修正重點】改成 UnitService.createUnit (大寫)
                 const result = await UnitService.createUnit({
                     unitCode,
                     unitName,
