@@ -2,9 +2,10 @@ import {
     collection, 
     doc, 
     setDoc, 
+    getDoc,
+    updateDoc,
     getDocs, 
     query, 
-    where, 
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { firebaseService } from "./FirebaseService.js";
@@ -21,18 +22,20 @@ class UnitService {
     async createUnit(unitData) {
         try {
             const db = firebaseService.getDb();
-            // 使用 unitCode 當作文件 ID (例如: 9B) 方便辨識，或是自動生成
-            // 這裡我們採用自動生成 ID，但確保 code 唯一
             const newUnitRef = doc(collection(db, this.collectionName));
             
             const dataToSave = {
                 ...unitData,
-                unitId: newUnitRef.id, // 儲存 ID 到欄位中
+                unitId: newUnitRef.id,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 status: 'active',
-                managers: [],   // 初始管理者清單
-                schedulers: []  // 初始排班者清單
+                managers: [],
+                schedulers: [],
+                settings: {
+                    shifts: [], // 初始化空的班別列表
+                    rules: {}
+                }
             };
 
             await setDoc(newUnitRef, dataToSave);
@@ -60,6 +63,50 @@ class UnitService {
         } catch (error) {
             console.error("讀取單位列表失敗:", error);
             return [];
+        }
+    }
+
+    /**
+     * 取得單一單位資料
+     * @param {string} unitId 
+     */
+    async getUnitById(unitId) {
+        try {
+            const db = firebaseService.getDb();
+            const docRef = doc(db, this.collectionName, unitId);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                return docSnap.data();
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error("讀取單位失敗:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * 更新單位的班別設定
+     * @param {string} unitId 
+     * @param {Array} shifts 班別陣列
+     */
+    async updateUnitShifts(unitId, shifts) {
+        try {
+            const db = firebaseService.getDb();
+            const unitRef = doc(db, this.collectionName, unitId);
+            
+            // 更新 settings.shifts 欄位
+            await updateDoc(unitRef, {
+                "settings.shifts": shifts,
+                updatedAt: serverTimestamp()
+            });
+            
+            return { success: true };
+        } catch (error) {
+            console.error("更新班別失敗:", error);
+            return { success: false, error: error.message };
         }
     }
 }
