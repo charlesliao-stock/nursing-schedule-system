@@ -1,235 +1,145 @@
-import { unitService } from "../../services/firebase/UnitService.js";
-import { router } from "../../core/Router.js";
+// 【修正】引入 UnitService (大寫)
+import { UnitService } from "../../services/firebase/UnitService.js";
 
 export class ShiftSettingsPage {
     constructor() {
-        this.currentUnitId = '';
-        this.currentShifts = [];
-        this.editingShiftId = null; // 追蹤正在編輯的 ID
+        this.currentUnitId = ''; 
     }
 
     async render() {
-        const units = await unitService.getAllUnits();
-        const unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+        // 載入單位列表供選擇
+        const units = await UnitService.getAllUnits();
+        const unitOptions = units.map(u => 
+            `<option value="${u.unitId}">${u.unitName}</option>`
+        ).join('');
 
         return `
-            <div class="main-content">
-                <div class="page-header">
-                    <h1><i class="fas fa-clock"></i> 班別設定</h1>
-                    <button id="back-btn" class="btn-secondary">返回儀表板</button>
+            <div class="container">
+                <h2>班別設定 (Shift Settings)</h2>
+                
+                <div class="toolbar">
+                    <label>選擇單位：</label>
+                    <select id="shift-settings-unit">
+                        <option value="">請選擇...</option>
+                        ${unitOptions}
+                    </select>
                 </div>
 
-                <div class="card-container" style="background: white; padding: 2rem; border-radius: 8px; margin-top: 1rem;">
-                    <div class="form-group">
-                        <label>選擇單位：</label>
-                        <select id="unit-select" style="padding: 0.5rem; width: 100%; max-width: 300px;">
-                            <option value="">-- 請選擇單位 --</option>
-                            ${unitOptions}
-                        </select>
-                    </div>
-
-                    <hr style="margin: 2rem 0; border: 0; border-top: 1px solid #eee;">
-
-                    <div id="settings-area" style="display: none;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                            <h3>班別列表</h3>
-                            <button id="add-shift-btn" class="btn-primary"><i class="fas fa-plus"></i> 新增班別</button>
+                <div id="shifts-container" style="display:none; margin-top: 20px;">
+                    <h3>現有班別列表</h3>
+                    <table class="shift-table">
+                        <thead>
+                            <tr>
+                                <th>代號</th>
+                                <th>名稱</th>
+                                <th>時間</th>
+                                <th>顏色</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shifts-tbody"></tbody>
+                    </table>
+                    
+                    <h3 style="margin-top:20px;">新增/編輯班別</h3>
+                    <form id="shift-form" style="background:#f9f9f9; padding:15px; border-radius:5px;">
+                        <input type="hidden" id="shift-index" value="-1"> <div class="form-row">
+                            <input type="text" id="shift-code" placeholder="代號 (如 D)" required style="width:80px">
+                            <input type="text" id="shift-name" placeholder="名稱 (如 白班)" required>
+                            <input type="text" id="shift-time" placeholder="時間 (如 08-16)">
+                            <input type="color" id="shift-color" value="#ffffff">
+                            <button type="submit" class="btn-primary">儲存班別</button>
                         </div>
-
-                        <div style="overflow-x: auto;">
-                            <table class="data-table" style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr style="background: #f8fafc; text-align: left;">
-                                        <th style="padding:10px;">代號</th>
-                                        <th style="padding:10px;">名稱</th>
-                                        <th style="padding:10px;">時間</th>
-                                        <th style="padding:10px;">工時</th>
-                                        <th style="padding:10px;">顏色</th>
-                                        <th style="padding:10px;">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="shifts-tbody"></tbody>
-                            </table>
-                        </div>
-
-                        <div id="shift-form-card" style="margin-top: 2rem; background: #f9f9f9; padding: 1.5rem; border-radius: 8px; border: 1px solid #e5e7eb; display: none;">
-                            <h4 id="form-title" style="margin-top: 0;">新增班別</h4>
-                            <form id="shift-form">
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
-                                    <div class="form-group">
-                                        <label>代號</label>
-                                        <input type="text" id="shift-code" placeholder="如: D" required style="width:100%; padding:8px;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>名稱</label>
-                                        <input type="text" id="shift-name" placeholder="如: 白班" required style="width:100%; padding:8px;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>開始時間</label>
-                                        <input type="time" id="shift-start" style="width:100%; padding:8px;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>結束時間</label>
-                                        <input type="time" id="shift-end" style="width:100%; padding:8px;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>工時</label>
-                                        <input type="number" id="shift-hours" step="0.5" style="width:100%; padding:8px;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>顏色</label>
-                                        <input type="color" id="shift-color" value="#3b82f6" style="width:100%; height:40px;">
-                                    </div>
-                                </div>
-                                <div style="margin-top: 1rem; text-align: right;">
-                                    <button type="button" id="cancel-shift-btn" class="btn-secondary">取消</button>
-                                    <button type="submit" id="save-shift-btn" class="btn-primary">儲存</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
+                    </form>
                 </div>
             </div>
         `;
     }
 
-    afterRender() {
-        const elements = {
-            unitSelect: document.getElementById('unit-select'),
-            settingsArea: document.getElementById('settings-area'),
-            shiftFormCard: document.getElementById('shift-form-card'),
-            shiftForm: document.getElementById('shift-form'),
-            formTitle: document.getElementById('form-title'),
-            saveBtn: document.getElementById('save-shift-btn'),
-            inputs: {
-                code: document.getElementById('shift-code'),
-                name: document.getElementById('shift-name'),
-                start: document.getElementById('shift-start'),
-                end: document.getElementById('shift-end'),
-                hours: document.getElementById('shift-hours'),
-                color: document.getElementById('shift-color')
+    async afterRender() {
+        const unitSelect = document.getElementById('shift-settings-unit');
+        const container = document.getElementById('shifts-container');
+        const tbody = document.getElementById('shifts-tbody');
+        const form = document.getElementById('shift-form');
+        
+        let currentShifts = [];
+
+        // 監聽單位選擇變更
+        unitSelect.addEventListener('change', async (e) => {
+            this.currentUnitId = e.target.value;
+            if (!this.currentUnitId) {
+                container.style.display = 'none';
+                return;
+            }
+            
+            // 【修正】呼叫 UnitService.getUnitById
+            const unit = await UnitService.getUnitById(this.currentUnitId);
+            if (unit) {
+                currentShifts = unit.settings?.shifts || [];
+                renderShifts();
+                container.style.display = 'block';
+            }
+        });
+
+        // 渲染班別列表函數
+        const renderShifts = () => {
+            tbody.innerHTML = currentShifts.map((s, index) => `
+                <tr>
+                    <td>${s.code}</td>
+                    <td>${s.name}</td>
+                    <td>${s.time}</td>
+                    <td><span style="display:inline-block;width:20px;height:20px;background:${s.color};border:1px solid #ccc;"></span></td>
+                    <td>
+                        <button type="button" onclick="window.editShift(${index})">編輯</button>
+                        <button type="button" onclick="window.deleteShift(${index})">刪除</button>
+                    </td>
+                </tr>
+            `).join('');
+        };
+
+        // 處理表單提交 (新增/修改)
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const index = parseInt(document.getElementById('shift-index').value);
+            const newShift = {
+                code: document.getElementById('shift-code').value,
+                name: document.getElementById('shift-name').value,
+                time: document.getElementById('shift-time').value,
+                color: document.getElementById('shift-color').value
+            };
+
+            if (index === -1) {
+                currentShifts.push(newShift);
+            } else {
+                currentShifts[index] = newShift;
+            }
+
+            // 【修正】呼叫 UnitService.updateUnitShifts
+            const result = await UnitService.updateUnitShifts(this.currentUnitId, currentShifts);
+            if (result.success) {
+                renderShifts();
+                form.reset();
+                document.getElementById('shift-index').value = "-1";
+            } else {
+                alert("儲存失敗: " + result.error);
+            }
+        });
+
+        // 將 helper function 綁定到 window 以便 onclick 呼叫 (SPA 常見暫時解法)
+        window.deleteShift = async (index) => {
+            if (confirm("確定刪除此班別？")) {
+                currentShifts.splice(index, 1);
+                await UnitService.updateUnitShifts(this.currentUnitId, currentShifts);
+                renderShifts();
             }
         };
 
-        // 事件綁定
-        document.getElementById('back-btn').addEventListener('click', () => router.navigate('/dashboard'));
-
-        elements.unitSelect.addEventListener('change', async (e) => {
-            if (e.target.value) {
-                this.currentUnitId = e.target.value;
-                await this.loadUnitShifts(this.currentUnitId);
-                elements.settingsArea.style.display = 'block';
-            } else {
-                elements.settingsArea.style.display = 'none';
-            }
-        });
-
-        document.getElementById('add-shift-btn').addEventListener('click', () => {
-            this.openForm(elements, null); // 開啟新增模式
-        });
-
-        document.getElementById('cancel-shift-btn').addEventListener('click', () => {
-            elements.shiftFormCard.style.display = 'none';
-        });
-
-        // 提交表單 (新增或更新)
-        elements.shiftForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = {
-                id: this.editingShiftId || Date.now().toString(),
-                code: elements.inputs.code.value.toUpperCase(),
-                name: elements.inputs.name.value,
-                startTime: elements.inputs.start.value,
-                endTime: elements.inputs.end.value,
-                hours: parseFloat(elements.inputs.hours.value) || 0,
-                color: elements.inputs.color.value
-            };
-
-            if (this.editingShiftId) {
-                // 更新模式
-                const index = this.currentShifts.findIndex(s => s.id === this.editingShiftId);
-                if (index !== -1) this.currentShifts[index] = formData;
-            } else {
-                // 新增模式
-                this.currentShifts.push(formData);
-            }
-
-            const result = await unitService.updateUnitShifts(this.currentUnitId, this.currentShifts);
-            if (result.success) {
-                alert('儲存成功！');
-                this.renderShiftsTable();
-                elements.shiftFormCard.style.display = 'none';
-            } else {
-                alert('儲存失敗：' + result.error);
-            }
-        });
-
-        // 表格內的按鈕事件 (編輯/刪除)
-        document.getElementById('shifts-tbody').addEventListener('click', async (e) => {
-            const btn = e.target.closest('button');
-            if (!btn) return;
-            const id = btn.dataset.id;
-
-            if (btn.classList.contains('delete-btn')) {
-                if (confirm('確定刪除？')) {
-                    this.currentShifts = this.currentShifts.filter(s => s.id !== id);
-                    await unitService.updateUnitShifts(this.currentUnitId, this.currentShifts);
-                    this.renderShiftsTable();
-                }
-            } else if (btn.classList.contains('edit-btn')) {
-                const shift = this.currentShifts.find(s => s.id === id);
-                if (shift) this.openForm(elements, shift);
-            }
-        });
-    }
-
-    openForm(elements, shift) {
-        elements.shiftFormCard.style.display = 'block';
-        if (shift) {
-            // 編輯模式
-            this.editingShiftId = shift.id;
-            elements.formTitle.textContent = "編輯班別";
-            elements.saveBtn.textContent = "更新班別";
-            elements.inputs.code.value = shift.code;
-            elements.inputs.name.value = shift.name;
-            elements.inputs.start.value = shift.startTime;
-            elements.inputs.end.value = shift.endTime;
-            elements.inputs.hours.value = shift.hours;
-            elements.inputs.color.value = shift.color;
-        } else {
-            // 新增模式
-            this.editingShiftId = null;
-            elements.formTitle.textContent = "新增班別";
-            elements.saveBtn.textContent = "儲存班別";
-            elements.shiftForm.reset();
-            elements.inputs.color.value = '#3b82f6';
-        }
-    }
-
-    async loadUnitShifts(unitId) {
-        const unit = await unitService.getUnitById(unitId);
-        this.currentShifts = unit?.settings?.shifts || [];
-        this.renderShiftsTable();
-    }
-
-    renderShiftsTable() {
-        const tbody = document.getElementById('shifts-tbody');
-        tbody.innerHTML = this.currentShifts.map(s => `
-            <tr>
-                <td style="padding:10px; border-bottom:1px solid #eee;">
-                    <span style="background:${s.color}; color:white; padding:2px 6px; border-radius:4px;">${s.code}</span>
-                </td>
-                <td style="padding:10px; border-bottom:1px solid #eee;">${s.name}</td>
-                <td style="padding:10px; border-bottom:1px solid #eee;">${s.startTime}~${s.endTime}</td>
-                <td style="padding:10px; border-bottom:1px solid #eee;">${s.hours}</td>
-                <td style="padding:10px; border-bottom:1px solid #eee;">
-                    <div style="width:20px; height:20px; background:${s.color}; border-radius:50%;"></div>
-                </td>
-                <td style="padding:10px; border-bottom:1px solid #eee;">
-                    <button class="edit-btn" data-id="${s.id}" style="color:blue; margin-right:8px; border:none; background:none; cursor:pointer;"><i class="fas fa-edit"></i> 編輯</button>
-                    <button class="delete-btn" data-id="${s.id}" style="color:red; border:none; background:none; cursor:pointer;"><i class="fas fa-trash"></i> 刪除</button>
-                </td>
-            </tr>
-        `).join('');
+        window.editShift = (index) => {
+            const s = currentShifts[index];
+            document.getElementById('shift-index').value = index;
+            document.getElementById('shift-code').value = s.code;
+            document.getElementById('shift-name').value = s.name;
+            document.getElementById('shift-time').value = s.time;
+            document.getElementById('shift-color').value = s.color;
+        };
     }
 }
