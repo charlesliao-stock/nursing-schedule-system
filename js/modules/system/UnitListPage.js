@@ -1,9 +1,9 @@
-// 1. 修改 import
+// 【修正重點】改成大寫 UnitService
 import { UnitService } from "../../services/firebase/UnitService.js";
 
 export class UnitListPage {
     async render() {
-        // 2. 修改呼叫方式: UnitService.getAllUnits()
+        // 【修正重點】改成 UnitService.getAllUnits()
         const units = await UnitService.getAllUnits();
         
         let rows = units.map(unit => `
@@ -40,16 +40,14 @@ export class UnitListPage {
     }
 
     afterRender() {
-        // 綁定刪除按鈕事件
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const id = e.target.dataset.id;
                 if (confirm('確定要刪除此單位嗎？')) {
-                    // 2. 修改呼叫方式
+                    // 【修正重點】改成 UnitService.deleteUnit(id)
                     const result = await UnitService.deleteUnit(id);
                     if (result.success) {
                         alert('刪除成功');
-                        // 重新整理頁面
                         window.location.reload();
                     } else {
                         alert('刪除失敗: ' + result.error);
