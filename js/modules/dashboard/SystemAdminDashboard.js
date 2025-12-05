@@ -4,9 +4,7 @@ import { userService } from "../../services/firebase/UserService.js";
 import { router } from "../../core/Router.js";
 
 export class SystemAdminDashboard {
-    constructor(user) {
-        this.user = user;
-    }
+    constructor(user) { this.user = user; }
 
     render() {
         return `
@@ -26,8 +24,8 @@ export class SystemAdminDashboard {
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px;">
                         <h1>儀表板概覽</h1>
                         <div class="action-buttons">
-                            <button id="btn-create-unit" class="btn-primary" style="width:auto; margin-right: 10px;">
-                                <i class="fas fa-plus"></i> 建立新單位
+                            <button id="btn-manage-units" class="btn-primary" style="width:auto; margin-right: 10px;">
+                                <i class="fas fa-building"></i> 單位管理
                             </button>
                             <button id="btn-manage-staff" class="btn-primary" style="width:auto; background-color: #10b981; margin-right: 10px;">
                                 <i class="fas fa-users-cog"></i> 人員管理
@@ -60,25 +58,17 @@ export class SystemAdminDashboard {
     }
 
     async afterRender() {
-        // 1. 綁定登出
-        const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', async () => {
-                if (confirm('確定要登出嗎？')) {
-                    await authService.logout();
-                    window.location.reload();
-                }
-            });
-        }
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            if (confirm('確定要登出嗎？')) { await authService.logout(); window.location.reload(); }
+        });
 
-        // 2. 綁定導航
         const bindNav = (id, path) => {
             const btn = document.getElementById(id);
             if (btn) btn.addEventListener('click', () => router.navigate(path));
         };
 
-        bindNav('btn-create-unit', '/system/units/create');
-        bindNav('btn-manage-staff', '/unit/staff/list'); // 改為列表頁
+        bindNav('btn-manage-units', '/system/units/list'); // 改為列表
+        bindNav('btn-manage-staff', '/unit/staff/list');
         bindNav('btn-shift-settings', '/unit/settings/shifts');
 
         this.updateStats();
@@ -87,14 +77,9 @@ export class SystemAdminDashboard {
     async updateStats() {
         try {
             const units = await unitService.getAllUnits();
-            const unitCountDisplay = document.getElementById('unit-count-display');
-            if (unitCountDisplay) unitCountDisplay.textContent = units.length;
-
+            document.getElementById('unit-count-display').textContent = units.length;
             const staffCount = await userService.getAllStaffCount();
-            const staffCountDisplay = document.getElementById('staff-count-display');
-            if (staffCountDisplay) staffCountDisplay.textContent = staffCount;
-        } catch (error) {
-            console.error("更新統計數據失敗:", error);
-        }
+            document.getElementById('staff-count-display').textContent = staffCount;
+        } catch (e) {}
     }
 }
