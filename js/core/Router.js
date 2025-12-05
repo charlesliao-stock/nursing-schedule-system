@@ -1,6 +1,7 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
+import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js"; // 新增引用
 
 class Router {
     constructor() {
@@ -10,7 +11,8 @@ class Router {
             '/login': loginPage,
             '/dashboard': null, // 動態載入
             '/system/units/create': new UnitCreatePage(),
-            '/unit/staff/create': new StaffCreatePage()
+            '/unit/staff/create': new StaffCreatePage(),
+            '/unit/settings/shifts': new ShiftSettingsPage() // 新增路由
         };
         this.appElement = document.getElementById('app');
     }
@@ -25,9 +27,9 @@ class Router {
         const page = this.routes[path];
 
         if (page) {
-            // 支援非同步 render (例如需要先讀取資料的頁面)
             try {
                 let content;
+                // 支援非同步 render
                 if (page.render.constructor.name === 'AsyncFunction') {
                     content = await page.render();
                 } else {
@@ -36,12 +38,11 @@ class Router {
 
                 this.appElement.innerHTML = content;
                 
-                // 執行渲染後邏輯 (事件綁定)
+                // 執行渲染後邏輯
                 if (page.afterRender) {
                     page.afterRender();
                 }
                 
-                // 更新網址列
                 window.history.pushState({}, path, window.location.origin + path);
 
             } catch (error) {
