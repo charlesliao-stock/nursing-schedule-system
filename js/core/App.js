@@ -6,7 +6,7 @@ import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.
 
 class App {
     constructor() {
-        this.version = "1.0.0";
+        this.version = "1.0.1"; // 版本號更新
         this.currentUserData = null;
     }
 
@@ -23,15 +23,25 @@ class App {
 
             if (firebaseUser) {
                 console.log("使用者已登入:", firebaseUser.email);
-                const userData = await userService.getUserData(firebaseUser.uid);
                 
-                if (userData) {
-                    this.currentUserData = userData;
-                    userService.updateLastLogin(firebaseUser.uid);
-                    this.handleRouting(userData);
-                } else {
-                    console.warn("⚠️ 帳號未初始化 (請執行 Console Script)");
-                    router.appElement.innerHTML = `<div style="padding:2rem;text-align:center"><h1>帳號未啟用</h1><p>請管理員執行初始化腳本</p></div>`;
+                try {
+                    const userData = await userService.getUserData(firebaseUser.uid);
+                    
+                    if (userData) {
+                        this.currentUserData = userData;
+                        // 更新最後登入時間
+                        userService.updateLastLogin(firebaseUser.uid);
+                        
+                        console.log("👤 讀取到使用者資料, 角色為:", userData.role); // 【新增 Log】
+                        
+                        this.handleRouting(userData);
+                    } else {
+                        console.warn("⚠️ 帳號未初始化 (Firestore 無資料)");
+                        router.appElement.innerHTML = `<h1>帳號資料未建立</h1><p>請執行初始化腳本。</p>`;
+                    }
+                } catch (error) {
+                    console.error("❌ 讀取使用者資料失敗:", error);
+                    alert("讀取資料失敗，請查看 Console");
                 }
             } else {
                 console.log("使用者未登入");
@@ -41,12 +51,20 @@ class App {
     }
 
     handleRouting(user) {
+        // 為了避免路由是 null，我們先建立一個預設的 Dashboard (或根據角色建立)
+        // 這裡強制註冊 /dashboard，確保 Router 不會報錯
+        
         if (user.role === 'system_admin') {
+            console.log("✅ 載入系統管理員儀表板");
             router.routes['/dashboard'] = new SystemAdminDashboard(user);
-            router.navigate('/dashboard');
         } else {
-            router.navigate('/dashboard'); // 其他角色暫時也導向 dashboard
+            console.log("⚠️ 使用者權限非 system_admin，載入一般視圖");
+            // 暫時也用同一個 Dashboard，但在內部顯示權限不足，或是建立一個 UserDashboard
+            router.routes['/dashboard'] = new SystemAdminDashboard(user); 
         }
+
+        // 註冊完畢後，再跳轉
+        router.navigate('/dashboard');
     }
 }
 
