@@ -21,7 +21,9 @@ class LoginPage {
                             <input type="password" id="password" required placeholder="請輸入密碼">
                         </div>
                         <div id="login-error" class="error-message"></div>
-                        <button type="submit" id="login-btn" class="btn-primary">登入系統</button>
+                        <button type="submit" id="login-btn" class="btn-primary">
+                            登入系統
+                        </button>
                     </form>
                 </div>
             </div>
@@ -35,18 +37,32 @@ class LoginPage {
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
+            // 1. UI 鎖定
             btn.disabled = true;
             btn.textContent = "驗證中...";
             errorDiv.style.display = 'none';
 
+            console.log("正在嘗試登入:", email);
+
+            // 2. 呼叫登入服務
             const result = await authService.login(email, password);
 
             if (result.success) {
-                // 成功後 Router 會自動監聽並跳轉
+                console.log("登入成功 (LoginPage):", result.user.email);
+                
+                // 【修正點】: 強制手動跳轉，確保不會卡在按鈕 loading
+                // 稍微延遲 500ms 讓使用者看到反應
+                setTimeout(() => {
+                    router.navigate('/dashboard');
+                }, 500);
+
             } else {
+                // 3. 處理錯誤
+                console.error("登入失敗:", result.error);
                 errorDiv.textContent = result.error;
                 errorDiv.style.display = 'block';
                 btn.disabled = false;
