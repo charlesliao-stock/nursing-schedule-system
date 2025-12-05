@@ -1,65 +1,74 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
-import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js"; // 新增引用
+import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
+// 引入新建立的人員列表頁 (稍後會提供)
+import { StaffListPage } from "../modules/unit/StaffListPage.js";
 
 class Router {
     constructor() {
-        // 定義路由表
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
-            '/dashboard': null, // 動態載入
+            '/dashboard': null,
             '/system/units/create': new UnitCreatePage(),
             '/unit/staff/create': new StaffCreatePage(),
-            '/unit/settings/shifts': new ShiftSettingsPage() // 新增路由
+            '/unit/staff/list': new StaffListPage(), // 新增人員列表路由
+            '/unit/settings/shifts': new ShiftSettingsPage()
         };
         this.appElement = document.getElementById('app');
+
+        // 監聽網址 Hash 變化 (處理瀏覽器上一頁/下一頁)
+        window.addEventListener('hashchange', () => {
+            this.handleRoute();
+        });
+
+        // 頁面初次載入時執行
+        window.addEventListener('load', () => {
+            this.handleRoute();
+        });
     }
 
-    /**
-     * 導航到指定路徑
-     * @param {string} path 
-     */
-    async navigate(path) {
-        console.log(`導航至: ${path}`);
+    // 核心路由處理邏輯
+    async handleRoute() {
+        // 取得 hash，去除開頭的 #，如果沒有 hash 則預設為 /
+        let path = window.location.hash.slice(1) || '/';
         
+        // 處理根路徑 redirect
+        if (path === '') path = '/';
+
+        console.log(`[HashRouter] 偵測到路徑: ${path}`);
         const page = this.routes[path];
 
         if (page) {
             try {
                 let content;
-                // 支援非同步 render
                 if (page.render.constructor.name === 'AsyncFunction') {
                     content = await page.render();
                 } else {
                     content = page.render();
                 }
-
                 this.appElement.innerHTML = content;
-                
-                // 執行渲染後邏輯
-                if (page.afterRender) {
-                    page.afterRender();
-                }
-                
-                window.history.pushState({}, path, window.location.origin + path);
-
+                if (page.afterRender) page.afterRender();
             } catch (error) {
                 console.error("頁面渲染錯誤:", error);
-                this.appElement.innerHTML = `<div style="padding:2rem; text-align:center; color:red;"><h3>頁面載入失敗</h3><p>${error.message}</p></div>`;
+                this.appElement.innerHTML = `<div style="color:red">載入失敗: ${error.message}</div>`;
             }
         } else {
-            console.error(`❌ Router 錯誤: 找不到路徑 ${path} 的頁面組件`);
-            this.appElement.innerHTML = `
-                <div style="padding: 2rem; text-align: center;">
-                    <h1>404 找不到頁面</h1>
-                    <p>路徑: ${path}</p>
-                    <button onclick="window.history.back()" style="padding:10px; cursor:pointer;">返回上一頁</button>
-                    <button onclick="window.location.href='/dashboard'" style="padding:10px; cursor:pointer;">回儀表板</button>
-                </div>
-            `;
+            // 404 處理
+            console.error(`❌ 找不到路徑: ${path}`);
+            // 如果是 dashboard 但尚未初始化，可能還沒登入，導回 login
+            if (path === '/dashboard' && !page) {
+                this.navigate('/login');
+                return;
+            }
+            this.appElement.innerHTML = `<h1>404 Not Found</h1><p>路徑: ${path}</p>`;
         }
+    }
+
+    // 用於程式碼主動切換頁面
+    navigate(path) {
+        window.location.hash = path;
     }
 }
 
