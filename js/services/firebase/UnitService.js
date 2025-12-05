@@ -1,12 +1,6 @@
 import { 
-    collection, 
-    doc, 
-    setDoc, 
-    getDoc,
-    updateDoc,
-    getDocs, 
-    query, 
-    serverTimestamp 
+    collection, doc, setDoc, getDoc, updateDoc, deleteDoc, 
+    getDocs, query, where, serverTimestamp, writeBatch 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { firebaseService } from "./FirebaseService.js";
 
@@ -15,98 +9,126 @@ class UnitService {
         this.collectionName = 'units';
     }
 
-    /**
-     * 建立新單位
-     * @param {Object} unitData 
-     */
-    async createUnit(unitData) {
+    async createUnit(unitData) { /* ...保持原樣... */
         try {
             const db = firebaseService.getDb();
             const newUnitRef = doc(collection(db, this.collectionName));
-            
+            // 確保 unitCode 唯一 (簡單檢查)
+            const existing = await this.getUnitByCode(unitData.unitCode);
+            if (existing) return { success: false, error: `單位代號 ${unitData.unitCode} 已存在` };
+
             const dataToSave = {
                 ...unitData,
                 unitId: newUnitRef.id,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 status: 'active',
-                managers: [],
+                managers: unitData.managers || [],
                 schedulers: [],
-                settings: {
-                    shifts: [], // 初始化空的班別列表
-                    rules: {}
-                }
+                settings: { shifts: [], rules: {} }
             };
-
             await setDoc(newUnitRef, dataToSave);
             return { success: true, unitId: newUnitRef.id };
-        } catch (error) {
-            console.error("建立單位失敗:", error);
-            return { success: false, error: error.message };
-        }
+        } catch (error) { return { success: false, error: error.message }; }
     }
 
-    /**
-     * 取得所有單位列表
-     */
-    async getAllUnits() {
+    // 【新增】更新單位
+    async updateUnit(unitId, updateData) {
+        try {
+            const db = firebaseService.getDb();
+            const unitRef = doc(db, this.collectionName, unitId);
+            await updateDoc(unitRef, { ...updateData, updatedAt: serverTimestamp() });
+            return { success: true };
+        } catch (error) { return { success: false, error: error.message }; }
+    }
+
+    // 【新增】刪除單位
+    async deleteUnit(unitId) {
+        try {
+            const db = firebaseService.getDb();
+            await deleteDoc(doc(db, this.collectionName, unitId));
+            return { success: true };
+        } catch (error) { return { success: false, error: error.message }; }
+    }
+
+    async getAllUnits() { /* ...保持原樣... */
         try {
             const db = firebaseService.getDb();
             const q = query(collection(db, this.collectionName));
             const querySnapshot = await getDocs(q);
-            
             const units = [];
-            querySnapshot.forEach((doc) => {
-                units.push(doc.data());
-            });
+            querySnapshot.forEach((doc) => units.push(doc.data()));
             return units;
-        } catch (error) {
-            console.error("讀取單位列表失敗:", error);
-            return [];
-        }
+        } catch (error) { return []; }
     }
 
-    /**
-     * 取得單一單位資料
-     * @param {string} unitId 
-     */
-    async getUnitById(unitId) {
+    async getUnitById(unitId) { /* ...保持原樣... */
         try {
             const db = firebaseService.getDb();
-            const docRef = doc(db, this.collectionName, unitId);
-            const docSnap = await getDoc(docRef);
-
-            if (docSnap.exists()) {
-                return docSnap.data();
-            } else {
-                return null;
-            }
-        } catch (error) {
-            console.error("讀取單位失敗:", error);
-            throw error;
-        }
+            const docSnap = await getDoc(doc(db, this.collectionName, unitId));
+            return docSnap.exists() ? docSnap.data() : null;
+        } catch (error) { return null; }
     }
 
-    /**
-     * 更新單位的班別設定
-     * @param {string} unitId 
-     * @param {Array} shifts 班別陣列
-     */
-    async updateUnitShifts(unitId, shifts) {
+    async updateUnitShifts(unitId, shifts) { /* ...保持原樣... */
         try {
             const db = firebaseService.getDb();
-            const unitRef = doc(db, this.collectionName, unitId);
-            
-            // 更新 settings.shifts 欄位
-            await updateDoc(unitRef, {
-                "settings.shifts": shifts,
-                updatedAt: serverTimestamp()
-            });
-            
+            await updateDoc(doc(db, this.collectionName, unitId), { "settings.shifts": shifts, updatedAt: serverTimestamp() });
             return { success: true };
+        } catch (error) { return { success: false, error: error.message }; }
+    }
+
+    // 【新增】透過代號找單位 (匯入用)
+    async getUnitByCode(code) {
+        const db = firebaseService.getDb();
+        const q = query(collection(db, this.collectionName), where("unitCode", "==", code));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) return { unitId: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+        return null;
+    }
+
+    // 【新增】批次匯入單位
+    async importUnits(unitsData) {
+        const db = firebaseService.getDb();
+        const batch = writeBatch(db);
+        const results = { success: 0, failed: 0, errors: [] };
+
+        for (const unit of unitsData) {
+            // 檢查必填
+            if (!unit.unitCode || !unit.unitName) {
+                results.failed++;
+                results.errors.push(`資料不完整: ${JSON.stringify(unit)}`);
+                continue;
+            }
+            // 檢查重複
+            const existing = await this.getUnitByCode(unit.unitCode);
+            if (existing) {
+                results.failed++;
+                results.errors.push(`單位代號重複: ${unit.unitCode}`);
+                continue;
+            }
+
+            const newUnitRef = doc(collection(db, this.collectionName));
+            batch.set(newUnitRef, {
+                unitId: newUnitRef.id,
+                unitCode: unit.unitCode,
+                unitName: unit.unitName,
+                description: unit.description || '',
+                status: 'active',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                managers: [], // 匯入初期先不綁定管理者，避免 ID 對不上的問題
+                settings: { shifts: [], rules: {} }
+            });
+            results.success++;
+        }
+
+        try {
+            await batch.commit();
+            return results;
         } catch (error) {
-            console.error("更新班別失敗:", error);
-            return { success: false, error: error.message };
+            console.error("批次匯入失敗:", error);
+            return { success: 0, failed: unitsData.length, errors: [error.message] };
         }
     }
 }
