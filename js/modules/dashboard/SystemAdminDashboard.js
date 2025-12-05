@@ -29,8 +29,11 @@ export class SystemAdminDashboard {
                             <button id="btn-create-unit" class="btn-primary" style="width:auto; margin-right: 10px;">
                                 <i class="fas fa-plus"></i> 建立新單位
                             </button>
-                            <button id="btn-create-staff" class="btn-primary" style="width:auto; background-color: #10b981;">
+                            <button id="btn-create-staff" class="btn-primary" style="width:auto; background-color: #10b981; margin-right: 10px;">
                                 <i class="fas fa-user-plus"></i> 新增人員
+                            </button>
+                            <button id="btn-shift-settings" class="btn-primary" style="width:auto; background-color: #8b5cf6;">
+                                <i class="fas fa-clock"></i> 班別設定
                             </button>
                         </div>
                     </div>
@@ -61,7 +64,7 @@ export class SystemAdminDashboard {
                     
                     <div style="margin-top: 2rem; padding: 1.5rem; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <h3><i class="fas fa-info-circle"></i> 系統公告</h3>
-                        <p>歡迎使用護理站排班系統。目前已開放「單位管理」與「人員資料建立」功能。</p>
+                        <p>目前功能：單位管理、人員資料建立、以及<strong>班別設定</strong>。</p>
                     </div>
                 </main>
             </div>
@@ -69,7 +72,6 @@ export class SystemAdminDashboard {
     }
 
     async afterRender() {
-        // 1. 綁定登出
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', async () => {
@@ -80,40 +82,28 @@ export class SystemAdminDashboard {
             });
         }
 
-        // 2. 綁定按鈕導航
-        const createUnitBtn = document.getElementById('btn-create-unit');
-        if (createUnitBtn) {
-            createUnitBtn.addEventListener('click', () => {
-                router.navigate('/system/units/create');
-            });
-        }
+        // 綁定按鈕導航
+        const bindNav = (id, path) => {
+            const btn = document.getElementById(id);
+            if (btn) btn.addEventListener('click', () => router.navigate(path));
+        };
 
-        const createStaffBtn = document.getElementById('btn-create-staff');
-        if (createStaffBtn) {
-            createStaffBtn.addEventListener('click', () => {
-                router.navigate('/unit/staff/create');
-            });
-        }
+        bindNav('btn-create-unit', '/system/units/create');
+        bindNav('btn-create-staff', '/unit/staff/create');
+        bindNav('btn-shift-settings', '/unit/settings/shifts'); // 新增導航
 
-        // 3. 讀取並更新統計數據
         this.updateStats();
     }
 
     async updateStats() {
         try {
-            // 讀取單位列表
             const units = await unitService.getAllUnits();
             const unitCountDisplay = document.getElementById('unit-count-display');
-            if (unitCountDisplay) {
-                unitCountDisplay.textContent = units.length;
-            }
+            if (unitCountDisplay) unitCountDisplay.textContent = units.length;
 
-            // 讀取人員數量 (使用我們剛在 UserService 新增的方法)
             const staffCount = await userService.getAllStaffCount();
             const staffCountDisplay = document.getElementById('staff-count-display');
-            if (staffCountDisplay) {
-                staffCountDisplay.textContent = staffCount;
-            }
+            if (staffCountDisplay) staffCountDisplay.textContent = staffCount;
         } catch (error) {
             console.error("更新統計數據失敗:", error);
         }
