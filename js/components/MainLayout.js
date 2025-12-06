@@ -4,16 +4,11 @@ import { userService } from "../services/firebase/UserService.js";
 
 export class MainLayout {
     constructor(user) {
-        // ✨ 優化：優先從 AuthService 快取中拿資料
-        // 如果 App.js 流程正確，這裡一定拿得到完整的 Profile (含 role)
-        // 傳入的 user 參數作為備案
+        // 優先使用 AuthService 的快取資料
         this.user = authService.getProfile() || user || { name: '載入中...', role: 'guest' };
         this.autoHideTimer = null;
     }
 
-    /**
-     * 定義各角色的選單結構
-     */
     getMenus(role) {
         const commonMenus = [
             { path: '/dashboard', icon: 'fas fa-tachometer-alt', label: '儀表板' }
@@ -46,9 +41,12 @@ export class MainLayout {
     }
 
     render() {
-        // 因為 constructor 已經拿到正確的 role，這裡直接渲染正確選單
         const menus = this.getMenus(this.user.role);
         const menuHtml = this.buildMenuHtml(menus);
+        
+        // 防呆：如果名字還沒載入，使用 role 名稱或 '使用者'
+        const displayName = this.user.name || this.user.displayName || '使用者';
+        const displayRole = this.getRoleName(this.user.role);
 
         return `
             <div class="app-layout">
@@ -72,10 +70,10 @@ export class MainLayout {
                     </div>
                     <div class="user-info">
                         <span id="user-role-badge" class="badge bg-secondary me-2">
-                            ${this.getRoleName(this.user.role)}
+                            ${displayRole}
                         </span>
                         <span style="margin-right:10px; color:#666;">
-                            <i class="fas fa-user-circle"></i> <span id="header-user-name">${this.user.name || '使用者'}</span>
+                            <i class="fas fa-user-circle"></i> <span id="header-user-name">${displayName}</span>
                         </span>
                         <button id="layout-logout-btn" class="btn-logout" title="登出">
                             <i class="fas fa-sign-out-alt"></i>
@@ -99,6 +97,8 @@ export class MainLayout {
     }
 
     getRoleName(role) {
+        if (!role) return ''; // 修正：如果 role 是 undefined，回傳空字串，不要回傳 undefined
+        
         const map = {
             'system_admin': '系統管理員',
             'unit_manager': '護理長',
@@ -106,16 +106,11 @@ export class MainLayout {
             'user': '護理師',
             'guest': '訪客'
         };
-        return map[role] || role;
+        return map[role] || role; // 如果找不到對應，就顯示原始代碼
     }
 
     async afterRender() {
         this.bindEvents();
-        
-        // ✨ 優化：移除 refreshUserRole()，不再需要重複查詢資料庫
-        // 因為資料已經在 constructor 中從 AuthService 快取拿到了
-
-        // 更新 Active Menu
         const currentPath = window.location.hash.slice(1) || '/dashboard';
         this.updateActiveMenu(currentPath);
         
