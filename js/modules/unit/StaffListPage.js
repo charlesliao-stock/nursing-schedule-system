@@ -1,5 +1,6 @@
 import { userService } from "../../services/firebase/UserService.js";
-import { unitService } from "../../services/firebase/UnitService.js";
+// 【修正 1】改為匯入 UnitService (大寫 Class)
+import { UnitService } from "../../services/firebase/UnitService.js";
 import { router } from "../../core/Router.js";
 
 export class StaffListPage {
@@ -9,7 +10,9 @@ export class StaffListPage {
     }
 
     async render() {
-        const units = await unitService.getAllUnits();
+        // 【修正 2】改為呼叫靜態方法 UnitService.getAllUnits()
+        const units = await UnitService.getAllUnits();
+        
         const unitMap = {};
         units.forEach(u => unitMap[u.unitId] = u.unitName);
         this.unitMap = unitMap;
@@ -143,7 +146,7 @@ export class StaffListPage {
         const loadStaff = async (unitId) => {
             tbody.innerHTML = '<tr><td colspan="8">載入中...</td></tr>';
             let staff = [];
-            // 【修正】確保選擇全部時能載入
+            // 確保選擇全部時能載入
             if (unitId) {
                 staff = await userService.getUnitStaff(unitId);
             } else {
@@ -235,7 +238,7 @@ export class StaffListPage {
 
         document.getElementById('close-modal').addEventListener('click', () => modal.style.display = 'none');
         
-        // 匯入相關邏輯保持不變...
+        // 匯入相關邏輯
         document.getElementById('import-btn').addEventListener('click', () => importModal.style.display = 'block');
         document.getElementById('close-staff-import').addEventListener('click', () => importModal.style.display = 'none');
         document.getElementById('dl-staff-template').addEventListener('click', () => {
@@ -247,7 +250,6 @@ export class StaffListPage {
             link.click();
         });
         document.getElementById('start-staff-import').addEventListener('click', async () => {
-             // ...與前版相同...
              const fileInput = document.getElementById('staff-csv-file');
              const resultDiv = document.getElementById('staff-import-result');
              if (!fileInput.files.length) { alert('請選擇檔案'); return; }
