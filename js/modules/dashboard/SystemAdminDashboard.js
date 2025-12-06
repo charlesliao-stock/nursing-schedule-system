@@ -1,6 +1,7 @@
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
-import { ScheduleService } from "../../services/firebase/ScheduleService.js"; // 【新增】
+import { ScheduleService } from "../../services/firebase/ScheduleService.js";
+import { authService } from "../../services/firebase/AuthService.js"; // 【新增】
 import { router } from "../../core/Router.js";
 
 export class SystemAdminDashboard {
@@ -29,7 +30,7 @@ export class SystemAdminDashboard {
                         <div class="stat-icon" style="background:#fff7ed; color:#f59e0b;"><i class="fas fa-calendar-check"></i></div>
                         <div class="stat-info">
                             <h3>本月排班狀態</h3>
-                            <p id="schedule-status-display" class="stat-value" style="font-size:1.2rem;">檢查中...</p>
+                            <p id="schedule-status-display" class="stat-value" style="font-size:1.2rem;">...</p>
                         </div>
                     </div>
                 </div>
@@ -58,44 +59,57 @@ export class SystemAdminDashboard {
             const elStaff = document.getElementById('staff-count-display');
             if(elStaff) elStaff.textContent = staffCount;
 
-            // 3. 【新增】更新排班狀態 (以第一個單位為範例，或使用者的單位)
-            this.updateScheduleStatus(units);
+            // 3. 更新排班狀態 (依據角色)
+            await this.updateScheduleStatus();
 
         } catch (e) {
             console.error("更新儀表板數據失敗:", e);
         }
     }
 
-    async updateScheduleStatus(units) {
+    async updateScheduleStatus() {
         const statusEl = document.getElementById('schedule-status-display');
         if (!statusEl) return;
 
-        if (units.length === 0) {
-            statusEl.textContent = "無單位";
-            return;
-        }
-
-        // 策略：預設檢查列表中的第一個單位 (系統管理員視角)
-        // 若是單位管理者，應檢查 user.unitId
-        const targetUnit = units[0]; 
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-
         try {
-            const schedule = await ScheduleService.getSchedule(targetUnit.unitId, year, month);
-            
-            if (!schedule) {
-                statusEl.textContent = "未建立";
-                statusEl.style.color = "#9ca3af"; // 灰色
-            } else if (schedule.status === 'published') {
-                statusEl.textContent = "✅ 已發布";
-                statusEl.style.color = "#166534"; // 綠色
+            // 取得當前使用者的完整資料 (包含 role)
+            const firebaseUser = authService.getCurrentUser();
+            if (!firebaseUser) return;
+            const user = await userService.getUserData(firebaseUser.uid);
+
+            // 【邏輯修正】如果是系統管理員，不顯示個別單位狀態
+            if (user.role === 'system_admin') {
+                statusEl.textContent = "系統管理模式";
+                statusEl.style.color = "#3b82f6"; // 藍色
+                statusEl.style.fontSize = "1rem";
+                return;
+            }
+
+            // 如果是一般使用者/單位管理者，且有綁定單位
+            if (user.unitId) {
+                const now = new Date();
+                const schedule = await ScheduleService.getSchedule(
+                    user.unitId, 
+                    now.getFullYear(), 
+                    now.getMonth() + 1
+                );
+                
+                if (!schedule) {
+                    statusEl.textContent = "未建立";
+                    statusEl.style.color = "#9ca3af";
+                } else if (schedule.status === 'published') {
+                    statusEl.textContent = "✅ 已發布";
+                    statusEl.style.color = "#166534";
+                } else {
+                    statusEl.textContent = "✏️ 草稿中";
+                    statusEl.style.color = "#d97706";
+                }
             } else {
-                statusEl.textContent = "✏️ 草稿中";
-                statusEl.style.color = "#d97706"; // 橘色
+                statusEl.textContent = "無所屬單位";
+                statusEl.style.fontSize = "1rem";
             }
         } catch (error) {
+            console.error(error);
             statusEl.textContent = "讀取錯誤";
         }
     }
