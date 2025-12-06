@@ -176,3 +176,91 @@ body {
 
 .stat-info h3 { margin: 0; font-size: 0.875rem; color: #6b7280; }
 .stat-value { margin: 5px 0 0 0; font-size: 1.5rem; font-weight: bold; }
+
+/* --- 排班表專用樣式 (Phase 3 Added) --- */
+
+.schedule-container {
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    height: calc(100vh - 100px); /* 扣掉導航列高度 */
+    display: flex;
+    flex-direction: column;
+}
+
+.schedule-toolbar {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    align-items: center;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.schedule-grid-wrapper {
+    flex: 1;
+    overflow: auto; /* 讓表格可以捲動 */
+    position: relative;
+    border: 1px solid #e5e7eb;
+}
+
+/* 表格本體 */
+.schedule-table {
+    border-collapse: separate; /* 為了 sticky 效果 */
+    border-spacing: 0;
+    width: max-content; /* 讓表格寬度依內容延伸 */
+    font-size: 0.9rem;
+}
+
+.schedule-table th, .schedule-table td {
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 8px;
+    text-align: center;
+    min-width: 40px;
+    height: 40px;
+    box-sizing: border-box;
+}
+
+/* 固定表頭 (日期列) */
+.schedule-table thead th {
+    position: sticky;
+    top: 0;
+    background-color: #f8fafc;
+    z-index: 10;
+    font-weight: bold;
+}
+
+/* 固定左側首欄 (人員姓名) */
+.schedule-table .sticky-col {
+    position: sticky;
+    left: 0;
+    background-color: #fff;
+    z-index: 11;
+    min-width: 100px;
+    border-right: 2px solid #e5e7eb; /* 加深分隔線 */
+}
+
+/* 左上角交叉點 (固定再固定) */
+.schedule-table thead th.sticky-col {
+    z-index: 12;
+    background-color: #f8fafc;
+}
+
+/* 班別格子互動 */
+.shift-cell {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.shift-cell:hover {
+    background-color: #eff6ff; /* hover 淺藍色 */
+    outline: 2px solid var(--primary-color);
+}
+
+/* 週末樣式 */
+.is-weekend {
+    background-color: #fdf2f2; /* 淺紅底色 */
+    color: #c53030;
+}
