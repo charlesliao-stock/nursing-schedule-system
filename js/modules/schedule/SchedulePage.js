@@ -106,7 +106,12 @@ export class SchedulePage {
 
         publishBtn.addEventListener('click', async () => {
             // 發布前檢查是否有違規 (Optional)
-            const validationReport = RuleEngine.validateAll(this.state.scheduleData, this.state.daysInMonth, this.state.staffList);
+            const validationReport = RuleEngine.validateAll(
+    this.state.scheduleData, 
+    this.state.daysInMonth, 
+    this.state.staffList, 
+    this.state.unitSettings // 多傳這個
+);
             const errorCount = Object.keys(validationReport).length;
             
             let confirmMsg = "確定要發布此班表嗎？\n發布後將鎖定編輯。";
@@ -308,7 +313,11 @@ export class SchedulePage {
             const stats = this.calculateStats(assignments || {});
 
             // 【Phase 3.6 新增】執行驗證
-            const validation = RuleEngine.validateStaff(assignments, daysInMonth);
+            // 取得班別定義
+const shiftDefs = unitSettings?.settings?.shifts || [];
+// 傳入 shiftDefs
+const validation = RuleEngine.validateStaff(assignments, daysInMonth, shiftDefs);
+
             const errors = validation.errors || {};
 
             bodyHtml += `<tr>`;
