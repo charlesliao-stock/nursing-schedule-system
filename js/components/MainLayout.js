@@ -1,9 +1,10 @@
 import { router } from "../core/Router.js";
 import { authService } from "../services/firebase/AuthService.js";
+import { userService } from "../services/firebase/UserService.js"; // 【新增】
 
 export class MainLayout {
     constructor(user) {
-        this.user = user;
+        this.user = user || { name: '使用者' };
     }
 
     render() {
@@ -38,7 +39,7 @@ export class MainLayout {
                     </div>
                     <div class="user-info">
                         <span style="margin-right:10px; color:#666;">
-                            <i class="fas fa-user-circle"></i> ${this.user.name}
+                            <i class="fas fa-user-circle"></i> <span id="header-user-name">${this.user.name}</span>
                         </span>
                         <button id="layout-logout-btn" class="btn-logout">登出</button>
                     </div>
@@ -50,13 +51,11 @@ export class MainLayout {
         `;
     }
 
-    afterRender() {
-        // 1. 綁定 Logo 點擊回首頁
+    async afterRender() {
         document.getElementById('header-logo').addEventListener('click', () => {
             router.navigate('/dashboard');
         });
 
-        // 2. 綁定側邊欄選單點擊
         document.querySelectorAll('.menu-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 const path = e.currentTarget.dataset.path;
@@ -65,13 +64,32 @@ export class MainLayout {
             });
         });
 
-        // 3. 綁定登出
         document.getElementById('layout-logout-btn').addEventListener('click', async () => {
             if (confirm('確定登出？')) {
                 await authService.logout();
                 window.location.reload();
             }
         });
+
+        // 【新增】主動更新使用者名稱
+        this.refreshUserName();
+    }
+
+    async refreshUserName() {
+        try {
+            const currentUser = authService.getCurrentUser();
+            if (currentUser) {
+                // 讀取詳細資料 (包含 name)
+                const userData = await userService.getUserData(currentUser.uid);
+                const nameEl = document.getElementById('header-user-name');
+                if (userData && nameEl) {
+                    nameEl.textContent = userData.name;
+                    this.user = userData; // 更新本地暫存
+                }
+            }
+        } catch (error) {
+            console.error("更新使用者名稱失敗", error);
+        }
     }
 
     updateActiveMenu(path) {
@@ -82,7 +100,6 @@ export class MainLayout {
             }
         });
         
-        // 更新上方標題
         const titleMap = {
             '/dashboard': '儀表板',
             '/system/units/list': '單位管理',
@@ -90,8 +107,8 @@ export class MainLayout {
             '/unit/settings/shifts': '班別設定',
             '/schedule/manual': '排班管理'
         };
-        // 簡單模糊比對
         const key = Object.keys(titleMap).find(k => path.includes(k));
-        document.getElementById('page-title').textContent = key ? titleMap[key] : '系統作業';
+        const titleEl = document.getElementById('page-title');
+        if(titleEl) titleEl.textContent = key ? titleMap[key] : '系統作業';
     }
 }
