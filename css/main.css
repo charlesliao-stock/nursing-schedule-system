@@ -430,3 +430,45 @@ body {
     .layout-header { left: 0; }
     .layout-content { margin-left: 0; }
 }
+
+/* --- Phase 3.4 新增樣式 --- */
+
+/* 狀態標籤 */
+.status-badge {
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.status-draft {
+    background-color: #f3f4f6;
+    color: #4b5563;
+    border: 1px solid #d1d5db;
+}
+
+.status-published {
+    background-color: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+/* 鎖定狀態的表格 */
+.schedule-table.locked .shift-cell {
+    cursor: default; /* 移除手指游標 */
+}
+
+.schedule-table.locked .shift-cell:hover {
+    outline: none; /* 移除 hover 框線 */
+    background-color: inherit; /* 移除 hover 背景色 */
+}
+
+/* 鎖定圖示 */
+.lock-icon {
+    font-size: 0.8rem;
+    color: #9ca3af;
+    margin-left: 5px;
+}
