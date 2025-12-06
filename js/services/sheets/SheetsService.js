@@ -5,52 +5,38 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwFgjSHAwzPgJh0UMhK
 
 export class SheetsService {
     
-    /**
-     * 儲存排班規則
-     * @param {Object} rulesObj - 前端產生的規則物件
-     */
-    static async saveRules(rulesObj) {
-        if (GAS_API_URL.includes("您的ID")) {
-            alert("請先設定 SheetsService.js 中的 GAS_API_URL！");
-            return { success: false, error: "API URL 未設定" };
-        }
+    static async saveRules(rulesObj, unitId) {
+        if (!unitId) return { success: false, error: "未指定 Unit ID" };
+        
+        // 將 unitId 塞入 payload
+        const payload = { ...rulesObj, unitId: unitId };
 
         try {
-            // 使用 text/plain 避免 CORS 預檢請求 (Preflight)
             const response = await fetch(GAS_API_URL, {
                 method: "POST",
                 headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify(rulesObj)
+                body: JSON.stringify(payload)
             });
-
-            const result = await response.json();
-            if (result.status === 'success') {
-                return { success: true, message: result.message };
-            } else {
-                throw new Error(result.message);
-            }
+            return await response.json();
         } catch (error) {
-            console.error("儲存規則失敗:", error);
+            console.error("儲存失敗:", error);
             return { success: false, error: error.message };
         }
     }
 
-    /**
-     * 讀取最新的排班規則
-     */
-    static async getLatestRules() {
-        if (GAS_API_URL.includes("您的ID")) return null;
-
+    static async getLatestRules(unitId) {
+        if (!unitId) return null;
         try {
-            const response = await fetch(GAS_API_URL);
+            // 透過 GET 參數傳遞 unitId
+            const response = await fetch(`${GAS_API_URL}?unitId=${unitId}`);
             const result = await response.json();
             
             if (result.status === 'success' && result.data) {
                 return result.data;
             }
-            return null; // 無資料或讀取失敗
+            return null;
         } catch (error) {
-            console.error("讀取規則失敗:", error);
+            console.error("讀取失敗:", error);
             return null;
         }
     }
