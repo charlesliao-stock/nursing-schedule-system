@@ -1,10 +1,10 @@
-// js/components/MainLayout.js
 import { router } from "../core/Router.js";
 import { authService } from "../services/firebase/AuthService.js";
 import { userService } from "../services/firebase/UserService.js";
 
 export class MainLayout {
     constructor(user) {
+        // 預設給予 user 角色，避免 undefined 錯誤
         this.user = user || { name: '載入中...', role: 'user' };
         this.autoHideTimer = null;
     }
@@ -70,7 +70,7 @@ export class MainLayout {
     }
 
     render() {
-        // 動態生成選單
+        // 初次 Render 時，this.user.role 可能是預設值 'user'
         const menuHtml = this.getMenuByRole(this.user.role);
 
         return `
@@ -82,12 +82,12 @@ export class MainLayout {
 
                     <div class="sidebar-header" style="cursor:pointer;" onclick="window.location.hash='/dashboard'">
                         <i class="fas fa-hospital-alt" style="margin-right:10px;"></i> 護理排班系統
-                        <span style="font-size:0.7em; margin-left:5px; background:#475569; padding:2px 5px; border-radius:4px;">
+                        <span id="header-role-badge" style="font-size:0.7em; margin-left:5px; background:#475569; padding:2px 5px; border-radius:4px;">
                             ${this.getRoleName(this.user.role)}
                         </span>
                     </div>
                     
-                    <nav class="sidebar-menu">
+                    <nav class="sidebar-menu" id="sidebar-menu-container">
                         ${menuHtml}
                     </nav>
                 </aside>
@@ -121,7 +121,7 @@ export class MainLayout {
     }
 
     async afterRender() {
-        // --- 綁定事件 ---
+        // --- 基本事件綁定 ---
         const logo = document.getElementById('header-logo');
         if (logo) logo.addEventListener('click', () => router.navigate('/dashboard'));
         
@@ -134,30 +134,62 @@ export class MainLayout {
             }
         });
 
-        // 綁定動態生成的選單點擊
+        // 綁定選單事件 (初次)
+        this.bindMenuEvents();
+
+        // 讀取並更新使用者資料 (包含角色權限)
+        await this.refreshUserData();
+        
+        // 設定側邊欄收折邏輯
+        this.setupSidebarToggle();
+    }
+
+    // 【新增】將選單點擊事件抽離，方便重繪後再次綁定
+    bindMenuEvents() {
         document.querySelectorAll('.menu-item').forEach(item => {
-            item.addEventListener('click', (e) => {
+            // 移除舊事件避免重複 (雖然 innerHTML 替換會自動清除，但保持習慣)
+            const newClone = item.cloneNode(true);
+            item.parentNode.replaceChild(newClone, item);
+            
+            newClone.addEventListener('click', (e) => {
                 const path = e.currentTarget.dataset.path;
                 router.navigate(path);
             });
         });
-
-        this.refreshUserData();
-        this.setupSidebarToggle();
     }
 
+    // 【修正】更新使用者資料後，強制重繪選單
     async refreshUserData() {
         try {
             const currentUser = authService.getCurrentUser();
             if (currentUser) {
+                // 從 Firestore 讀取完整資料 (含 role)
                 const userData = await userService.getUserData(currentUser.uid);
+                
                 if (userData) {
+                    // 1. 更新記憶體中的 user
                     this.user = userData;
-                    document.getElementById('header-user-name').textContent = userData.name;
-                    // 如果權限變更，可能需要重新渲染選單 (這裡簡化，下次重整生效)
+                    
+                    // 2. 更新頂部使用者名稱
+                    const nameEl = document.getElementById('header-user-name');
+                    if (nameEl) nameEl.textContent = userData.name;
+
+                    // 3. 更新左上角角色標籤
+                    const roleBadge = document.getElementById('header-role-badge');
+                    if (roleBadge) roleBadge.textContent = this.getRoleName(userData.role);
+
+                    // 4. 【關鍵】根據新角色，重新產生選單 HTML
+                    const menuContainer = document.getElementById('sidebar-menu-container');
+                    if (menuContainer) {
+                        menuContainer.innerHTML = this.getMenuByRole(userData.role);
+                        // 5. 【關鍵】HTML 重寫後，必須重新綁定 click 事件
+                        this.bindMenuEvents();
+                    }
                 }
             }
-        } catch (error) { console.error(error); }
+        } catch (error) { 
+            console.error("更新使用者資料失敗", error); 
+        }
     }
 
     setupSidebarToggle() {
@@ -197,7 +229,15 @@ export class MainLayout {
             item.classList.remove('active');
             if (path.startsWith(item.dataset.path)) item.classList.add('active');
         });
+        
+        // 簡易標題對應 (可依需求擴充)
         const titleEl = document.getElementById('page-title');
-        if(titleEl) titleEl.textContent = "系統作業"; // 簡單顯示
+        if(titleEl) {
+            if (path.includes('dashboard')) titleEl.textContent = '儀表板';
+            else if (path.includes('system')) titleEl.textContent = '系統管理';
+            else if (path.includes('unit')) titleEl.textContent = '單位管理';
+            else if (path.includes('schedule')) titleEl.textContent = '排班作業';
+            else titleEl.textContent = '系統作業';
+        }
     }
 }
