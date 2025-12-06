@@ -2,6 +2,7 @@ import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { BasicAlgorithm } from "../ai/BasicAlgorithm.js";
+import { RuleEngine } from "../ai/RuleEngine.js"; // 【Phase 3.6 新增】
 
 export class SchedulePage {
     constructor() {
@@ -86,7 +87,6 @@ export class SchedulePage {
         const publishBtn = document.getElementById('btn-publish');
         const unlockBtn = document.getElementById('btn-unlock');
 
-        // 載入按鈕
         loadBtn.addEventListener('click', async () => {
             const unitId = unitSelect.value;
             const dateVal = monthPicker.value;
@@ -98,24 +98,29 @@ export class SchedulePage {
             await this.loadData();
         });
 
-        // AI 填充按鈕
         autoFillBtn.addEventListener('click', async () => {
             if (confirm("AI 助手：確定要將所有「空白格子」自動填入 OFF 嗎？")) {
                 await this.runAutoFillOff();
             }
         });
 
-        // 發布按鈕
         publishBtn.addEventListener('click', async () => {
-            // 這裡可以加入檢查邏輯 (例如：是否還有空白格)
-            if (confirm("確定要發布此班表嗎？\n發布後將鎖定編輯，並開放給員工查閱。")) {
+            // 發布前檢查是否有違規 (Optional)
+            const validationReport = RuleEngine.validateAll(this.state.scheduleData, this.state.daysInMonth, this.state.staffList);
+            const errorCount = Object.keys(validationReport).length;
+            
+            let confirmMsg = "確定要發布此班表嗎？\n發布後將鎖定編輯。";
+            if (errorCount > 0) {
+                confirmMsg = `⚠️ 警告：目前還有 ${errorCount} 位人員的排班有違規情形！\n\n` + confirmMsg;
+            }
+
+            if (confirm(confirmMsg)) {
                 await this.changeStatus('published');
             }
         });
 
-        // 解鎖按鈕
         unlockBtn.addEventListener('click', async () => {
-            if (confirm("確定要撤回發布並解鎖編輯嗎？\n班表將變回「草稿」狀態。")) {
+            if (confirm("確定要撤回發布並解鎖編輯嗎？")) {
                 await this.changeStatus('draft');
             }
         });
@@ -141,7 +146,6 @@ export class SchedulePage {
         const container = document.getElementById('schedule-grid-container');
         container.innerHTML = '<div style="text-align:center; padding:20px;">資料載入中...</div>';
         
-        // 重置按鈕狀態
         document.getElementById('btn-auto-fill').style.display = 'none';
         document.getElementById('btn-publish').style.display = 'none';
         document.getElementById('btn-unlock').style.display = 'none';
@@ -165,7 +169,7 @@ export class SchedulePage {
             this.state.scheduleData = schedule;
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
             
-            this.updateUIByStatus(); // 根據狀態更新 UI (按鈕、標籤)
+            this.updateUIByStatus();
             this.renderGrid();
 
         } catch (error) {
@@ -174,9 +178,6 @@ export class SchedulePage {
         }
     }
 
-    /**
-     * 【Phase 3.4 新增】根據狀態切換按鈕與鎖定
-     */
     updateUIByStatus() {
         const status = this.state.scheduleData.status || 'draft';
         const badgeEl = document.getElementById('schedule-status-badge');
@@ -185,15 +186,13 @@ export class SchedulePage {
         const unlockBtn = document.getElementById('btn-unlock');
 
         if (status === 'published') {
-            // 已發布狀態
             badgeEl.className = 'status-badge status-published';
             badgeEl.innerHTML = '<i class="fas fa-check-circle"></i> 已發布';
             
-            autoFillBtn.style.display = 'none'; // 鎖定時不可用 AI
+            autoFillBtn.style.display = 'none'; 
             publishBtn.style.display = 'none';
-            unlockBtn.style.display = 'inline-block'; // 顯示解鎖
+            unlockBtn.style.display = 'inline-block'; 
         } else {
-            // 草稿狀態
             badgeEl.className = 'status-badge status-draft';
             badgeEl.innerHTML = '<i class="fas fa-pencil-alt"></i> 草稿';
             
@@ -203,9 +202,6 @@ export class SchedulePage {
         }
     }
 
-    /**
-     * 【Phase 3.4 新增】切換狀態
-     */
     async changeStatus(newStatus) {
         const indicator = document.getElementById('loading-indicator');
         indicator.style.display = 'block';
@@ -216,12 +212,9 @@ export class SchedulePage {
                 this.state.month,
                 newStatus
             );
-            // 更新本地狀態
             this.state.scheduleData.status = newStatus;
             this.updateUIByStatus();
-            this.renderGrid(); // 重新渲染以套用/解除鎖定樣式
-            
-            // alert(`班表狀態已更新為：${newStatus === 'published' ? '已發布' : '草稿'}`);
+            this.renderGrid();
         } catch (error) {
             alert("狀態更新失敗: " + error.message);
         } finally {
@@ -284,8 +277,6 @@ export class SchedulePage {
     renderGrid() {
         const container = document.getElementById('schedule-grid-container');
         const { year, month, daysInMonth, staffList, scheduleData, unitSettings } = this.state;
-        
-        // 檢查是否鎖定
         const isLocked = scheduleData.status === 'published';
 
         const shiftMap = {};
@@ -316,6 +307,10 @@ export class SchedulePage {
             const assignments = scheduleData.assignments ? scheduleData.assignments[staff.id] : {};
             const stats = this.calculateStats(assignments || {});
 
+            // 【Phase 3.6 新增】執行驗證
+            const validation = RuleEngine.validateStaff(assignments, daysInMonth);
+            const errors = validation.errors || {};
+
             bodyHtml += `<tr>`;
             bodyHtml += `<td class="sticky-col" style="text-align:left; padding-left:10px;">
                             <strong>${staff.name}</strong><br>
@@ -328,14 +323,23 @@ export class SchedulePage {
                     ? `background-color:${shiftMap[shiftCode].color}40; border-bottom: 3px solid ${shiftMap[shiftCode].color}` 
                     : ''; 
 
+                // 【Phase 3.6 新增】檢查是否有錯誤
+                const errorMsg = errors[d];
+                const violationClass = errorMsg ? 'violation' : '';
+                const errorData = errorMsg ? `data-error="${errorMsg}"` : '';
+                const errorIcon = errorMsg ? '<i class="fas fa-exclamation-circle violation-icon"></i>' : '';
+                const lockIcon = isLocked ? '<i class="fas fa-lock lock-icon" style="display:none;"></i>' : '';
+
                 bodyHtml += `
-                    <td class="shift-cell" 
+                    <td class="shift-cell ${violationClass}" 
                         data-staff-id="${staff.id}" 
                         data-day="${d}" 
                         data-current="${shiftCode}"
+                        ${errorData}
                         style="${style}">
                         ${shiftCode}
-                        ${isLocked ? '<i class="fas fa-lock lock-icon" style="display:none;"></i>' : ''}
+                        ${errorIcon}
+                        ${lockIcon}
                     </td>`;
             }
 
@@ -349,11 +353,9 @@ export class SchedulePage {
         });
         bodyHtml += '</tbody>';
 
-        // 加入 locked class 以便 CSS 控制游標
         const tableClass = isLocked ? 'schedule-table locked' : 'schedule-table';
         container.innerHTML = `<table class="${tableClass}">${headerHtml}${bodyHtml}</table>`;
 
-        // 只有在非鎖定狀態下，才綁定點擊事件
         if (!isLocked) {
             this.bindEvents(availableShifts, shiftMap);
         }
@@ -371,7 +373,6 @@ export class SchedulePage {
 
     openShiftMenu(targetCell, availableShifts, shiftMap) {
         this.closeMenu(); 
-
         const menu = document.createElement('div');
         menu.className = 'shift-menu';
 
@@ -429,6 +430,8 @@ export class SchedulePage {
             this.state.scheduleData.assignments[staffId] = {};
         }
         this.state.scheduleData.assignments[staffId][day] = shiftCode;
+        
+        // 重新渲染 (觸發即時驗證)
         this.renderGrid(); 
 
         const indicator = document.getElementById('loading-indicator');
