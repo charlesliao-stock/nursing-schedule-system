@@ -264,3 +264,58 @@ body {
     background-color: #fdf2f2; /* 淺紅底色 */
     color: #c53030;
 }
+
+/* --- Phase 3.1 新增樣式 --- */
+
+/* 班別選擇選單 */
+.shift-menu {
+    position: absolute;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    z-index: 100;
+    min-width: 120px;
+    overflow: hidden;
+    animation: fadeIn 0.1s ease-out;
+}
+
+.shift-menu-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    color: #374151;
+    transition: background 0.1s;
+}
+
+.shift-menu-item:hover {
+    background-color: #f3f4f6;
+}
+
+.shift-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* 統計欄位樣式 */
+.stats-col {
+    background-color: #f8fafc;
+    font-size: 0.85rem;
+    color: #4b5563;
+    border-left: 2px solid #e5e7eb !important; /* 加粗分隔線 */
+}
+
+.stats-header {
+    background-color: #f1f5f9 !important;
+    z-index: 12; /* 確保層級夠高 */
+}
