@@ -1,31 +1,29 @@
-// js/core/Router.js
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { UnitListPage } from "../modules/system/UnitListPage.js";
+import { UnitEditPage } from "../modules/system/UnitEditPage.js"; // 【新增】引入編輯頁面
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
 import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
-// 【新增】引入規則設定模組
 import { RuleSettings } from "../modules/settings/RuleSettings.js"; 
-
 import { MainLayout } from "../components/MainLayout.js";
 import { authService } from "../services/firebase/AuthService.js";
 
 class Router {
     constructor() {
+        // 靜態路由表
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
-            // 功能頁面
             '/dashboard': new SystemAdminDashboard(),
             '/system/units/list': new UnitListPage(),
             '/system/units/create': new UnitCreatePage(),
+            // '/system/units/edit' 是動態路由，不在此定義，由 handleRoute 處理
             '/unit/staff/list': new StaffListPage(),
             '/unit/staff/create': new StaffCreatePage(),
             '/unit/settings/shifts': new ShiftSettingsPage(),
-            // 【新增】註冊路由
             '/unit/settings/rules': new RuleSettings(), 
             '/schedule/manual': new SchedulePage()
         };
@@ -49,10 +47,8 @@ class Router {
             return;
         }
 
-        // 2. 處理需要登入的頁面
+        // 2. 處理需要登入的頁面 (Layout 渲染)
         const user = authService.getCurrentUser();
-        
-        // 3. 確保 Layout 存在
         if (!this.currentLayout) {
             const currentUser = user || { name: '載入中...' }; 
             this.currentLayout = new MainLayout(currentUser);
@@ -60,8 +56,21 @@ class Router {
             this.currentLayout.afterRender();
         }
 
-        // 4. 渲染子頁面
-        const page = this.routes[path];
+        // 3. 決定要渲染的 Page
+        let page = this.routes[path];
+
+        // 【新增】動態路由處理邏輯
+        if (!page) {
+            // 檢查是否為單位編輯頁面 (例如 /system/units/edit/xxxxx)
+            if (path.startsWith('/system/units/edit/')) {
+                const parts = path.split('/');
+                const unitId = parts[parts.length - 1]; // 取得最後一段 ID
+                if (unitId) {
+                    page = new UnitEditPage(unitId);
+                }
+            }
+        }
+
         const viewContainer = document.getElementById('main-view');
 
         if (page && viewContainer) {
@@ -80,10 +89,19 @@ class Router {
 
             } catch (error) {
                 console.error(error);
-                viewContainer.innerHTML = `<div style="color:red">Error: ${error.message}</div>`;
+                viewContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4><i class="fas fa-exclamation-triangle"></i> 頁面載入錯誤</h4>
+                        <p>${error.message}</p>
+                    </div>`;
             }
         } else {
-             if(viewContainer) viewContainer.innerHTML = `<h1>404</h1><p>${path}</p>`;
+             // 404
+             if(viewContainer) viewContainer.innerHTML = `
+                <div style="text-align:center; padding:50px; color:#666;">
+                    <h1>404</h1>
+                    <p>找不到頁面：${path}</p>
+                </div>`;
         }
     }
 
