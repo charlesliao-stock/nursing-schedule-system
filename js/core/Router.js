@@ -4,30 +4,30 @@ import { UnitListPage } from "../modules/system/UnitListPage.js";
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
-// Phase 3 新增：排班頁面
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
+import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
+// 引入新版型
+import { MainLayout } from "../components/MainLayout.js";
+import { authService } from "../services/firebase/AuthService.js";
 
 class Router {
     constructor() {
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
-            '/dashboard': null, // Dashboard 邏輯通常在 Login 後處理，或另外獨立
-            
-            // Phase 1 & 2: 系統與單位設定
+            // 功能頁面
+            '/dashboard': new SystemAdminDashboard(), // 注意：Dashboard 現在只負責內容
             '/system/units/list': new UnitListPage(),
             '/system/units/create': new UnitCreatePage(),
             '/unit/staff/list': new StaffListPage(),
             '/unit/staff/create': new StaffCreatePage(),
             '/unit/settings/shifts': new ShiftSettingsPage(),
-
-            // Phase 3: 排班管理
             '/schedule/manual': new SchedulePage()
         };
 
         this.appElement = document.getElementById('app');
-        
-        // 綁定路由變化事件
+        this.currentLayout = null; // 用來追蹤現在是否已經載入 Layout
+
         window.addEventListener('hashchange', () => this.handleRoute());
         window.addEventListener('load', () => this.handleRoute());
     }
@@ -35,37 +35,55 @@ class Router {
     async handleRoute() {
         let path = window.location.hash.slice(1) || '/';
         if (path === '') path = '/';
-        console.log(`[HashRouter] 路徑: ${path}`);
         
+        // 1. 處理 Login 頁面 (不需要 Layout)
+        if (path === '/' || path === '/login') {
+            this.currentLayout = null; // 重置
+            this.appElement.innerHTML = await loginPage.render();
+            if (loginPage.afterRender) loginPage.afterRender();
+            return;
+        }
+
+        // 2. 處理需要登入的頁面
+        const user = authService.getCurrentUser(); // 注意：重新整理可能會是 null，需配合 AuthService 狀態監聽
+        // 這裡做簡單防呆，實際由 App.js 的 AuthListener 處理跳轉
+        
+        // 3. 確保 Layout 存在
+        if (!this.currentLayout) {
+            // 如果還沒有 Layout，先渲染 Layout
+            // 這裡暫時傳入假 user 或從 authService 拿
+            const currentUser = user || { name: '載入中...' }; 
+            this.currentLayout = new MainLayout(currentUser);
+            this.appElement.innerHTML = this.currentLayout.render();
+            this.currentLayout.afterRender();
+        }
+
+        // 4. 渲染子頁面內容到 #main-view
         const page = this.routes[path];
-        
-        if (page) {
+        const viewContainer = document.getElementById('main-view');
+
+        if (page && viewContainer) {
+            // 更新 Sidebar 狀態
+            this.currentLayout.updateActiveMenu(path);
+
             try {
                 let content;
-                // 判斷 render 是否為非同步函數 (Async Function)
                 if (page.render.constructor.name === 'AsyncFunction') {
                     content = await page.render();
                 } else {
                     content = page.render();
                 }
                 
-                this.appElement.innerHTML = content;
-                
-                // 執行渲染後的邏輯 (如綁定事件)
+                viewContainer.innerHTML = content;
                 if (page.afterRender) page.afterRender();
-                
+
             } catch (error) {
                 console.error(error);
-                this.appElement.innerHTML = `<div style="color:red">Error: ${error.message}</div>`;
+                viewContainer.innerHTML = `<div style="color:red">Error: ${error.message}</div>`;
             }
         } else {
-            // 簡易的權限或重導向判斷
-            if (path === '/dashboard' && !page) { 
-                // 這裡可以加入檢查是否已登入的邏輯，目前先導回 login
-                this.navigate('/login'); 
-                return; 
-            }
-            this.appElement.innerHTML = `<h1>404</h1><p>Page not found: ${path}</p>`;
+             // 404
+             if(viewContainer) viewContainer.innerHTML = `<h1>404</h1><p>${path}</p>`;
         }
     }
 
