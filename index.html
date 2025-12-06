@@ -4,16 +4,212 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>護理站 AI 排班系統</title>
-    <link rel="stylesheet" href="./css/main.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    
+    <style>
+        /* 自訂樣式：讓表格標頭固定，方便長名單閱讀 */
+        .table-responsive {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        thead th {
+            position: sticky;
+            top: 0;
+            background-color: #f8f9fa;
+            z-index: 1;
+        }
+        /* 週末顏色區隔 */
+        .weekend {
+            background-color: #fff3cd;
+        }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <div id="loading-screen" class="loading-container">
-            <div class="spinner"></div>
-            <p>系統載入中...</p>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#"><i class="bi bi-hospital"></i> 護理站 AI 排班系統</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">主控台</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">人員管理</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Google Sheet 連結</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row align-items-center mb-4">
+            <div class="col-md-3">
+                <label for="scheduleMonth" class="form-label fw-bold">排班月份</label>
+                <input type="month" class="form-control" id="scheduleMonth" value="2025-12">
+            </div>
+            
+            <div class="col-md-9 d-flex justify-content-end align-items-end gap-2">
+                <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                    <i class="bi bi-gear-fill"></i> 排班規則設定
+                </button>
+                
+                <button class="btn btn-outline-success">
+                    <i class="bi bi-cloud-arrow-down"></i> 讀取人員/預假
+                </button>
+                
+                <button class="btn btn-primary">
+                    <i class="bi bi-magic"></i> 開始 AI 排班
+                </button>
+                
+                <button class="btn btn-warning text-dark">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> 匯出至 Excel
+                </button>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <i class="bi bi-calendar3"></i> 班表預覽
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover text-center mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 100px;">姓名 / 日期</th>
+                                <th>1<br>一</th>
+                                <th>2<br>二</th>
+                                <th>3<br>三</th>
+                                <th>4<br>四</th>
+                                <th>5<br>五</th>
+                                <th class="weekend text-danger">6<br>六</th>
+                                <th class="weekend text-danger">7<br>日</th>
+                                <th>...</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleTableBody">
+                            <tr>
+                                <td colspan="9" class="text-muted py-5">
+                                    尚未載入資料，請點擊「讀取人員」或「開始 AI 排班」
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
-    <script type="module" src="./js/main.js"></script>
+
+    <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="settingsModalLabel">排班規則參數設定</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="rulesForm">
+              <h6 class="border-bottom pb-2 mb-3 text-primary"><i class="bi bi-people-fill"></i> 每日人力低限 (Min Staff)</h6>
+              <div class="row mb-3">
+                <div class="col">
+                  <label class="form-label small">白班 (D)</label>
+                  <input type="number" class="form-control" id="minStaffD" value="5">
+                </div>
+                <div class="col">
+                  <label class="form-label small">小夜 (E)</label>
+                  <input type="number" class="form-control" id="minStaffE" value="3">
+                </div>
+                <div class="col">
+                  <label class="form-label small">大夜 (N)</label>
+                  <input type="number" class="form-control" id="minStaffN" value="2">
+                </div>
+              </div>
+
+              <h6 class="border-bottom pb-2 mb-3 mt-4 text-primary"><i class="bi bi-exclamation-triangle-fill"></i> 班別限制 (Constraints)</h6>
+              <div class="mb-2 form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="avoidNtoD" checked>
+                <label class="form-check-label" for="avoidNtoD">禁止 大夜(N) 接 白班(D)</label>
+              </div>
+              <div class="mb-2 form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="avoidEtoD" checked>
+                <label class="form-check-label" for="avoidEtoD">禁止 小夜(E) 接 白班(D)</label>
+              </div>
+              
+              <div class="mt-3">
+                 <label class="form-label small">最大連續上班天數</label>
+                 <input type="number" class="form-control" id="maxConsecutiveDays" value="6">
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-primary" onclick="saveRules()">儲存並套用</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // --- 1. 全域變數：儲存目前的設定 ---
+        let currentRules = {
+          minStaff: { D: 5, E: 3, N: 2 },
+          constraints: {
+            noNtoD: true,
+            noEtoD: true,
+            maxWorkDays: 6
+          }
+        };
+
+        // --- 2. 頁面載入時執行 ---
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("系統初始化完成，等待操作...");
+            // TODO: 在這裡未來會加入「從 Google Sheet 讀取上次設定」的程式碼
+        });
+
+        // --- 3. 儲存設定的函式 ---
+        function saveRules() {
+            // 抓取 DOM 元素的值
+            const minD = parseInt(document.getElementById('minStaffD').value) || 0;
+            const minE = parseInt(document.getElementById('minStaffE').value) || 0;
+            const minN = parseInt(document.getElementById('minStaffN').value) || 0;
+            
+            const noNtoD = document.getElementById('avoidNtoD').checked;
+            const noEtoD = document.getElementById('avoidEtoD').checked;
+            const maxDays = parseInt(document.getElementById('maxConsecutiveDays').value) || 7;
+
+            // 更新全域變數物件
+            currentRules = {
+                minStaff: { D: minD, E: minE, N: minN },
+                constraints: {
+                noNtoD: noNtoD,
+                noEtoD: noEtoD,
+                maxWorkDays: maxDays
+                }
+            };
+
+            console.log("規則已更新:", currentRules);
+            
+            // 關閉 Modal
+            const modalEl = document.getElementById('settingsModal');
+            const modal = bootstrap.Modal.getInstance(modalEl); 
+            modal.hide();
+
+            // 簡單的回饋
+            alert(`設定已儲存！\n目前人力需求：D=${minD}, E=${minE}, N=${minN}`);
+            
+            // TODO: 下一步 => 呼叫 Google Apps Script 將此物件寫入試算表
+        }
+    </script>
 </body>
 </html>
