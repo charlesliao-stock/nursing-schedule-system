@@ -1,7 +1,6 @@
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
-// 【Phase 3.3 新增】引入 AI 演算法
 import { BasicAlgorithm } from "../ai/BasicAlgorithm.js";
 
 export class SchedulePage {
@@ -27,7 +26,10 @@ export class SchedulePage {
         return `
             <div class="schedule-container">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <h2 style="margin:0;">排班管理</h2>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <h2 style="margin:0;">排班管理</h2>
+                        <span id="schedule-status-badge"></span>
+                    </div>
                     <div id="loading-indicator" style="display:none; color: var(--primary-color); font-weight:bold;">
                         <i class="fas fa-spinner fa-spin"></i> 處理中...
                     </div>
@@ -47,17 +49,21 @@ export class SchedulePage {
                                style="padding:5px; border-radius:4px; border:1px solid #ccc;">
                         
                         <button id="btn-load-schedule" class="btn-primary">
-                            <i class="fas fa-search"></i> 查詢班表
+                            <i class="fas fa-search"></i> 查詢
                         </button>
                     </div>
 
                     <div style="margin-left:auto; display:flex; gap:10px;">
-                        <button id="btn-auto-fill" class="btn-secondary" style="background:#8b5cf6; color:white;">
-                            <i class="fas fa-magic"></i> AI 快速填充
+                        <button id="btn-auto-fill" class="btn-secondary" style="background:#8b5cf6; color:white; display:none;">
+                            <i class="fas fa-magic"></i> AI 填充
                         </button>
                         
                         <button id="btn-publish" class="btn-primary" style="background-color:#10b981; display:none;">
                             <i class="fas fa-paper-plane"></i> 發布班表
+                        </button>
+
+                        <button id="btn-unlock" class="btn-secondary" style="background-color:#f59e0b; color:white; display:none;">
+                            <i class="fas fa-lock-open"></i> 解鎖編輯
                         </button>
                     </div>
                 </div>
@@ -77,7 +83,10 @@ export class SchedulePage {
         const monthPicker = document.getElementById('schedule-month-picker');
         const loadBtn = document.getElementById('btn-load-schedule');
         const autoFillBtn = document.getElementById('btn-auto-fill');
+        const publishBtn = document.getElementById('btn-publish');
+        const unlockBtn = document.getElementById('btn-unlock');
 
+        // 載入按鈕
         loadBtn.addEventListener('click', async () => {
             const unitId = unitSelect.value;
             const dateVal = monthPicker.value;
@@ -89,14 +98,25 @@ export class SchedulePage {
             await this.loadData();
         });
 
-        // 【Phase 3.3 新增】綁定 AI 自動填充事件
+        // AI 填充按鈕
         autoFillBtn.addEventListener('click', async () => {
-            if (!this.state.scheduleData) {
-                alert("請先載入班表");
-                return;
-            }
-            if (confirm("AI 助手：確定要將所有「空白格子」自動填入 OFF (休假) 嗎？\n(這不會覆蓋已填寫的班別)")) {
+            if (confirm("AI 助手：確定要將所有「空白格子」自動填入 OFF 嗎？")) {
                 await this.runAutoFillOff();
+            }
+        });
+
+        // 發布按鈕
+        publishBtn.addEventListener('click', async () => {
+            // 這裡可以加入檢查邏輯 (例如：是否還有空白格)
+            if (confirm("確定要發布此班表嗎？\n發布後將鎖定編輯，並開放給員工查閱。")) {
+                await this.changeStatus('published');
+            }
+        });
+
+        // 解鎖按鈕
+        unlockBtn.addEventListener('click', async () => {
+            if (confirm("確定要撤回發布並解鎖編輯嗎？\n班表將變回「草稿」狀態。")) {
+                await this.changeStatus('draft');
             }
         });
 
@@ -120,6 +140,12 @@ export class SchedulePage {
     async loadData() {
         const container = document.getElementById('schedule-grid-container');
         container.innerHTML = '<div style="text-align:center; padding:20px;">資料載入中...</div>';
+        
+        // 重置按鈕狀態
+        document.getElementById('btn-auto-fill').style.display = 'none';
+        document.getElementById('btn-publish').style.display = 'none';
+        document.getElementById('btn-unlock').style.display = 'none';
+        document.getElementById('schedule-status-badge').innerHTML = '';
 
         try {
             const unit = await UnitService.getUnitById(this.state.currentUnitId);
@@ -138,7 +164,10 @@ export class SchedulePage {
             }
             this.state.scheduleData = schedule;
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
+            
+            this.updateUIByStatus(); // 根據狀態更新 UI (按鈕、標籤)
             this.renderGrid();
+
         } catch (error) {
             console.error(error);
             container.innerHTML = `<div style="color:red; padding:20px;">載入失敗: ${error.message}</div>`;
@@ -146,15 +175,66 @@ export class SchedulePage {
     }
 
     /**
-     * 【Phase 3.3 新增】執行 AI 自動填充 OFF
+     * 【Phase 3.4 新增】根據狀態切換按鈕與鎖定
      */
+    updateUIByStatus() {
+        const status = this.state.scheduleData.status || 'draft';
+        const badgeEl = document.getElementById('schedule-status-badge');
+        const autoFillBtn = document.getElementById('btn-auto-fill');
+        const publishBtn = document.getElementById('btn-publish');
+        const unlockBtn = document.getElementById('btn-unlock');
+
+        if (status === 'published') {
+            // 已發布狀態
+            badgeEl.className = 'status-badge status-published';
+            badgeEl.innerHTML = '<i class="fas fa-check-circle"></i> 已發布';
+            
+            autoFillBtn.style.display = 'none'; // 鎖定時不可用 AI
+            publishBtn.style.display = 'none';
+            unlockBtn.style.display = 'inline-block'; // 顯示解鎖
+        } else {
+            // 草稿狀態
+            badgeEl.className = 'status-badge status-draft';
+            badgeEl.innerHTML = '<i class="fas fa-pencil-alt"></i> 草稿';
+            
+            autoFillBtn.style.display = 'inline-block';
+            publishBtn.style.display = 'inline-block';
+            unlockBtn.style.display = 'none';
+        }
+    }
+
+    /**
+     * 【Phase 3.4 新增】切換狀態
+     */
+    async changeStatus(newStatus) {
+        const indicator = document.getElementById('loading-indicator');
+        indicator.style.display = 'block';
+        try {
+            await ScheduleService.updateStatus(
+                this.state.currentUnitId,
+                this.state.year,
+                this.state.month,
+                newStatus
+            );
+            // 更新本地狀態
+            this.state.scheduleData.status = newStatus;
+            this.updateUIByStatus();
+            this.renderGrid(); // 重新渲染以套用/解除鎖定樣式
+            
+            // alert(`班表狀態已更新為：${newStatus === 'published' ? '已發布' : '草稿'}`);
+        } catch (error) {
+            alert("狀態更新失敗: " + error.message);
+        } finally {
+            indicator.style.display = 'none';
+        }
+    }
+
     async runAutoFillOff() {
         const indicator = document.getElementById('loading-indicator');
         indicator.style.display = 'block';
         indicator.innerHTML = '<i class="fas fa-magic fa-spin"></i> AI 計算中...';
 
         try {
-            // 1. 執行演算法
             const { updatedAssignments, count } = BasicAlgorithm.fillEmptyWithOff(
                 this.state.scheduleData,
                 this.state.daysInMonth,
@@ -167,12 +247,9 @@ export class SchedulePage {
                 return;
             }
 
-            // 2. 更新本地狀態
             this.state.scheduleData.assignments = updatedAssignments;
-            this.renderGrid(); // 重新渲染 UI
+            this.renderGrid(); 
 
-            // 3. 儲存到 Firestore (這裡需要一個新的 Service 方法來儲存整張表，比較有效率)
-            // 為了簡化，我們擴充 ScheduleService 來支援「更新整張 assignments」
             await ScheduleService.updateAllAssignments(
                 this.state.currentUnitId,
                 this.state.year,
@@ -181,9 +258,7 @@ export class SchedulePage {
             );
             
             alert(`AI 完成！共填入了 ${count} 個 OFF。`);
-
         } catch (error) {
-            console.error("AI 執行失敗", error);
             alert("AI 執行失敗: " + error.message);
         } finally {
             indicator.style.display = 'none';
@@ -200,7 +275,6 @@ export class SchedulePage {
             if (code) {
                 if (stats.shiftCounts[code] !== undefined) stats.shiftCounts[code]++;
                 else stats.shiftCounts[code] = 1; 
-                
                 if (code !== 'OFF') stats.totalHours += 8; 
             }
         }
@@ -211,13 +285,14 @@ export class SchedulePage {
         const container = document.getElementById('schedule-grid-container');
         const { year, month, daysInMonth, staffList, scheduleData, unitSettings } = this.state;
         
+        // 檢查是否鎖定
+        const isLocked = scheduleData.status === 'published';
+
         const shiftMap = {};
         const availableShifts = unitSettings?.settings?.shifts || [];
         availableShifts.forEach(s => {
             shiftMap[s.code] = { color: s.color, name: s.name };
         });
-
-        // 加入 OFF 設定 (預設灰色)
         if (!shiftMap['OFF']) shiftMap['OFF'] = { color: '#e5e7eb', name: '休假' };
 
         let headerHtml = '<thead><tr><th class="sticky-col">人員 / 日期</th>';
@@ -260,6 +335,7 @@ export class SchedulePage {
                         data-current="${shiftCode}"
                         style="${style}">
                         ${shiftCode}
+                        ${isLocked ? '<i class="fas fa-lock lock-icon" style="display:none;"></i>' : ''}
                     </td>`;
             }
 
@@ -273,8 +349,14 @@ export class SchedulePage {
         });
         bodyHtml += '</tbody>';
 
-        container.innerHTML = `<table class="schedule-table">${headerHtml}${bodyHtml}</table>`;
-        this.bindEvents(availableShifts, shiftMap);
+        // 加入 locked class 以便 CSS 控制游標
+        const tableClass = isLocked ? 'schedule-table locked' : 'schedule-table';
+        container.innerHTML = `<table class="${tableClass}">${headerHtml}${bodyHtml}</table>`;
+
+        // 只有在非鎖定狀態下，才綁定點擊事件
+        if (!isLocked) {
+            this.bindEvents(availableShifts, shiftMap);
+        }
     }
 
     bindEvents(availableShifts, shiftMap) {
@@ -299,7 +381,6 @@ export class SchedulePage {
         clearItem.onclick = () => this.handleShiftSelect(targetCell, '', shiftMap);
         menu.appendChild(clearItem);
 
-        // OFF 選項
         const offItem = document.createElement('div');
         offItem.className = 'shift-menu-item';
         offItem.innerHTML = `<span class="shift-color-dot" style="background:#e5e7eb;"></span> OFF (休假)`;
@@ -307,9 +388,7 @@ export class SchedulePage {
         menu.appendChild(offItem);
 
         availableShifts.forEach(shift => {
-            // 避免重複顯示 OFF
             if (shift.code === 'OFF') return; 
-
             const item = document.createElement('div');
             item.className = 'shift-menu-item';
             item.innerHTML = `
