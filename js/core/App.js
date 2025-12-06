@@ -6,7 +6,7 @@ import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.
 
 class App {
     constructor() {
-        this.version = "1.0.2"; // 版本號更新：修正 Loading 狀態與初始化順序
+        this.version = "1.0.3"; // 版本號更新：實作 Profile 快取機制
         this.currentUserData = null;
     }
 
@@ -20,18 +20,19 @@ class App {
         authService.monitorAuthState(async (firebaseUser) => {
             const loading = document.getElementById('loading-screen');
             
-            // 重要修改：不要在這裡立即隱藏 loading
-            // 我們要等到 User Profile 讀取完畢後才隱藏
-
             if (firebaseUser) {
                 console.log("使用者已登入:", firebaseUser.email);
                 
                 try {
-                    // 等待 Firestore 資料讀取完畢
+                    // 1. 這是整個生命週期「唯一一次」查詢 Firestore
                     const userData = await userService.getUserData(firebaseUser.uid);
                     
                     if (userData) {
                         this.currentUserData = userData;
+                        
+                        // ✨ 關鍵優化：把查到的資料存進 AuthService 的記憶體倉庫
+                        authService.setProfile(userData);
+
                         // 更新最後登入時間
                         userService.updateLastLogin(firebaseUser.uid);
                         
@@ -45,7 +46,6 @@ class App {
 
                     } else {
                         console.warn("⚠️ 帳號未初始化 (Firestore 無資料)");
-                        // 雖然無資料，但也需要移除遮罩讓使用者看到錯誤提示
                         if (loading) loading.style.display = 'none';
                         router.appElement.innerHTML = `
                             <div class="alert alert-danger m-5">
@@ -61,28 +61,27 @@ class App {
                 }
             } else {
                 console.log("使用者未登入");
-                // 未登入狀態，導向登入頁
+                
+                // ✨ 登出或未登入時，清空 AuthService 的快取
+                authService.setProfile(null);
+
+                // 導向登入頁
                 router.navigate('/login');
-                // 導向後隱藏遮罩
                 if (loading) loading.style.display = 'none';
             }
         });
     }
 
     handleRouting(user) {
-        // 為了避免路由是 null，我們先建立一個預設的 Dashboard (或根據角色建立)
-        // 這裡強制註冊 /dashboard，確保 Router 不會報錯
-        
+        // 根據角色載入 Dashboard
         if (user.role === 'system_admin') {
             console.log("✅ 載入系統管理員儀表板");
             router.routes['/dashboard'] = new SystemAdminDashboard(user);
         } else {
             console.log(`ℹ️ 載入使用者儀表板 (${user.role})`);
-            // 暫時也用同一個 Dashboard，但在內部顯示權限不足，或是建立一個 UserDashboard
             router.routes['/dashboard'] = new SystemAdminDashboard(user); 
         }
 
-        // 註冊完畢後，再跳轉
         router.navigate('/dashboard');
     }
 }
