@@ -2,11 +2,41 @@ import {
     getDoc, setDoc, doc, updateDoc, deleteDoc, serverTimestamp, 
     collection, query, where, getDocs, writeBatch, arrayUnion, arrayRemove 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { firebaseService } from "./FirebaseService.js";
+import { firebaseConfig } from "../../config/firebase.config.js"; // 需引用設定檔
 import { User } from "../../models/User.js";
 
 class UserService {
     constructor() { this.collectionName = 'users'; }
+
+    /**
+     * 【核心功能】使用次級 App 實例建立 Auth 帳號
+     * 避免將目前的管理員登出
+     */
+    async createAuthUser(email, password) {
+        let secondaryApp = null;
+        try {
+            // 1. 初始化一個臨時的 Firebase App
+            secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+            const secondaryAuth = getAuth(secondaryApp);
+            
+            // 2. 建立使用者
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            
+            // 3. 立即登出這個臨時使用者，避免干擾主程式狀態
+            await signOut(secondaryAuth);
+            
+            return { success: true, uid: userCredential.user.uid };
+        } catch (error) {
+            console.error("Auth 建立失敗:", error);
+            return { success: false, error: error.code };
+        } finally {
+            // 4. 銷毀臨時 App
+            if (secondaryApp) await deleteApp(secondaryApp);
+        }
+    }
 
     async getUserData(uid) {
         try {
@@ -25,18 +55,72 @@ class UserService {
         } catch (error) { throw error; }
     }
 
-    async createStaff(staffData) {
+    /**
+     * 【修正】新增人員 (含 Auth 帳號建立)
+     */
+    async createStaff(staffData, password) {
         try {
+            // 1. 先建立 Auth 帳號
+            const authResult = await this.createAuthUser(staffData.email, password);
+            if (!authResult.success) {
+                return { success: false, error: "帳號建立失敗: " + authResult.error };
+            }
+            const uid = authResult.uid;
+
+            // 2. 準備 Firestore 資料
             const db = firebaseService.getDb();
-            const newStaffRef = doc(collection(db, this.collectionName));
+            const newStaffRef = doc(db, this.collectionName, uid);
+            
+            // 權限邏輯處理
+            let role = 'user';
+            const permissions = { 
+                canViewSchedule: true, 
+                canEditSchedule: false, 
+                canManageUnit: false, 
+                canManageSystem: false 
+            };
+
+            if (staffData.isManager) {
+                role = 'unit_manager';
+                permissions.canManageUnit = true;
+                permissions.canEditSchedule = true;
+            } else if (staffData.isScheduler) {
+                role = 'unit_scheduler';
+                permissions.canEditSchedule = true;
+            }
+
+            // 3. 寫入 Firestore
             await setDoc(newStaffRef, {
-                ...staffData, uid: newStaffRef.id, role: 'user', status: 'active',
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-                permissions: { canViewSchedule: true, canEditSchedule: false, canManageUnit: false, canManageSystem: false },
+                uid: uid,
+                staffId: staffData.staffId || '',
+                name: staffData.name,
+                email: staffData.email,
+                unitId: staffData.unitId,
+                level: staffData.title || 'N0', // title 對應 level
+                role: role,
+                permissions: permissions,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
                 profile: { avatar: '' }
             });
-            return { success: true, id: newStaffRef.id };
-        } catch (error) { return { success: false, error: error.message }; }
+
+            // 4. 如果是管理者，需更新 Unit 的 managers 陣列
+            if (role === 'unit_manager') {
+                const unitRef = doc(db, 'units', staffData.unitId);
+                await updateDoc(unitRef, { managers: arrayUnion(uid) });
+            }
+            // 如果是排班者，需更新 Unit 的 schedulers 陣列
+            if (role === 'unit_scheduler' || role === 'unit_manager') {
+                const unitRef = doc(db, 'units', staffData.unitId);
+                await updateDoc(unitRef, { schedulers: arrayUnion(uid) });
+            }
+
+            return { success: true, id: uid };
+
+        } catch (error) { 
+            return { success: false, error: error.message }; 
+        }
     }
 
     async updateStaff(staffId, updateData) {
@@ -47,7 +131,6 @@ class UserService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // 【修正】加入防呆機制，禁止刪除系統管理員
     async deleteStaff(staffId) {
         try {
             const db = firebaseService.getDb();
@@ -59,7 +142,8 @@ class UserService {
                     throw new Error("安全警告：無法刪除系統管理者帳號！");
                 }
             }
-
+            // 注意：這裡只刪除 Firestore 資料，Auth 帳號需透過 Admin SDK 刪除 (前端無法刪除他人 Auth)
+            // 實務上通常將 status 設為 'inactive' 即可
             await deleteDoc(doc(db, this.collectionName, staffId));
             return { success: true };
         } catch (error) {
@@ -93,17 +177,13 @@ class UserService {
         }
     }
 
-    // 【修正】計算邏輯：只要不是 system_admin 都算入人員總數
     async getAllStaffCount() {
         try {
             const db = firebaseService.getDb();
             const q = query(collection(db, this.collectionName), where("role", "!=", "system_admin"));
             const snapshot = await getDocs(q);
             return snapshot.size;
-        } catch (error) { 
-            console.error("計數失敗:", error);
-            return 0; 
-        }
+        } catch (error) { return 0; }
     }
 
     async updateLastLogin(uid) {
@@ -114,6 +194,7 @@ class UserService {
     }
 
     async toggleUnitManager(staffId, unitId, isManager) {
+        // ... (保持原樣)
         try {
             const db = firebaseService.getDb();
             const batch = writeBatch(db);
@@ -132,8 +213,8 @@ class UserService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // 【新增】切換排班者權限
     async toggleUnitScheduler(staffId, unitId, isScheduler) {
+        // ... (保持原樣)
         try {
             const db = firebaseService.getDb();
             const batch = writeBatch(db);
@@ -141,9 +222,6 @@ class UserService {
             const unitRef = doc(db, 'units', unitId);
 
             if (isScheduler) {
-                // 若已經是 manager，保持 manager 角色，但開啟排班權限
-                // 若是 user，則升級為 unit_scheduler
-                // 這裡簡化邏輯：我們主要透過 permissions 來判斷功能
                 batch.update(staffRef, { "permissions.canEditSchedule": true });
                 batch.update(unitRef, { schedulers: arrayUnion(staffId) });
             } else {
@@ -155,76 +233,88 @@ class UserService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // 【新增】從單位介面批次更新人員角色 (用於 UnitListPage)
-    async batchUpdateRoles(unitId, managerIds, schedulerIds) {
+    /**
+     * 【修正】批次匯入人員 (含 Auth 建立)
+     */
+    async importStaff(staffList) {
         const db = firebaseService.getDb();
-        const batch = writeBatch(db);
-        const unitRef = doc(db, 'units', unitId);
-        
-        // 1. 更新 Unit 的名單
-        batch.update(unitRef, { 
-            managers: managerIds,
-            schedulers: schedulerIds
-        });
-
-        // 2. 取得該單位所有人員
-        const staffList = await this.getUnitStaff(unitId);
-        
-        // 3. 逐一更新人員權限
-        staffList.forEach(staff => {
-            const staffRef = doc(db, this.collectionName, staff.id);
-            const isManager = managerIds.includes(staff.id);
-            const isScheduler = schedulerIds.includes(staff.id);
-            
-            let newRole = 'user';
-            if (isManager) newRole = 'unit_manager';
-            else if (isScheduler) newRole = 'unit_scheduler';
-
-            const updates = {
-                role: newRole,
-                "permissions.canManageUnit": isManager,
-                "permissions.canEditSchedule": isScheduler || isManager // 管理者通常也能排班
-            };
-            
-            batch.update(staffRef, updates);
-        });
-
-        try {
-            await batch.commit();
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-
-    async importStaff(staffList) { /* ...保持原樣... */
-        const db = firebaseService.getDb();
-        const batch = writeBatch(db);
-        const results = { success: 0, failed: 0, errors: [] };
         const units = await import('./UnitService.js').then(m => m.unitService.getAllUnits());
         const unitMap = {}; 
         units.forEach(u => { if (u.unitCode) unitMap[u.unitCode] = u.unitId; });
 
+        const results = { success: 0, failed: 0, errors: [] };
+
+        // 為了避免並發請求過多導致 Firebase Auth 錯誤，採用循序執行
         for (const staff of staffList) {
-            if (!staff.name || !staff.email || !staff.unitCode) {
-                results.failed++; results.errors.push(`資料不全: ${staff.name}`); continue;
+            // 1. 資料驗證
+            if (!staff.name || !staff.email || !staff.unitCode || !staff.password) {
+                results.failed++;
+                results.errors.push(`資料不全 (需含密碼): ${staff.name}`);
+                continue;
             }
+            
             const targetUnitId = unitMap[staff.unitCode];
             if (!targetUnitId) {
-                results.failed++; results.errors.push(`單位不存在: ${staff.unitCode}`); continue;
+                results.failed++;
+                results.errors.push(`單位代號不存在: ${staff.unitCode}`);
+                continue;
             }
-            const newStaffRef = doc(collection(db, this.collectionName));
-            batch.set(newStaffRef, {
-                uid: newStaffRef.id, staffId: staff.staffId || '', name: staff.name, email: staff.email,
-                unitId: targetUnitId, level: staff.level || 'N0', role: 'user', status: 'active',
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-                permissions: { canViewSchedule: true, canEditSchedule: false, canManageUnit: false },
-                profile: { avatar: '' }
-            });
-            results.success++;
+
+            try {
+                // 2. 建立 Auth
+                const authRes = await this.createAuthUser(staff.email, staff.password);
+                
+                if (!authRes.success) {
+                    throw new Error(authRes.error);
+                }
+
+                const uid = authRes.uid;
+                
+                // 3. 判斷角色
+                let role = 'user';
+                const permissions = { canViewSchedule: true, canEditSchedule: false, canManageUnit: false };
+                
+                if (staff.isManager) {
+                    role = 'unit_manager';
+                    permissions.canManageUnit = true;
+                    permissions.canEditSchedule = true;
+                } else if (staff.isScheduler) {
+                    role = 'unit_scheduler';
+                    permissions.canEditSchedule = true;
+                }
+
+                // 4. 寫入 Firestore
+                const newStaffRef = doc(db, this.collectionName, uid);
+                await setDoc(newStaffRef, {
+                    uid: uid,
+                    staffId: staff.staffId || '',
+                    name: staff.name,
+                    email: staff.email,
+                    unitId: targetUnitId,
+                    level: staff.level || 'N0',
+                    role: role,
+                    permissions: permissions,
+                    status: 'active',
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    profile: { avatar: '' }
+                });
+
+                // 5. 更新 Unit 關聯 (簡單起見，這裡不使用 batch，因為迴圈較大)
+                const unitRef = doc(db, 'units', targetUnitId);
+                if (staff.isManager) await updateDoc(unitRef, { managers: arrayUnion(uid), schedulers: arrayUnion(uid) });
+                else if (staff.isScheduler) await updateDoc(unitRef, { schedulers: arrayUnion(uid) });
+
+                results.success++;
+
+            } catch (error) {
+                console.error(`匯入失敗 ${staff.name}:`, error);
+                results.failed++;
+                results.errors.push(`${staff.name}: ${error.message}`);
+            }
         }
-        try { await batch.commit(); return results; } 
-        catch (error) { return { success: 0, failed: staffList.length, errors: [error.message] }; }
+        
+        return results;
     }
 }
 export const userService = new UserService();
