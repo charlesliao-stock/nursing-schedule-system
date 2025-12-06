@@ -4,8 +4,10 @@ import { userService } from "../services/firebase/UserService.js";
 
 export class MainLayout {
     constructor(user) {
-        // 初始狀態：如果 user 裡沒有 role，先給一個預設值，避免報錯
-        this.user = user || { name: '載入中...', role: 'guest' };
+        // ✨ 優化：優先從 AuthService 快取中拿資料
+        // 如果 App.js 流程正確，這裡一定拿得到完整的 Profile (含 role)
+        // 傳入的 user 參數作為備案
+        this.user = authService.getProfile() || user || { name: '載入中...', role: 'guest' };
         this.autoHideTimer = null;
     }
 
@@ -19,7 +21,7 @@ export class MainLayout {
 
         const adminMenus = [
             { path: '/system/units/list', icon: 'fas fa-building', label: '單位管理' },
-            { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' }, // Admin 也常需管理人員
+            { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
             { path: '/system/settings', icon: 'fas fa-cogs', label: '系統設定' }
         ];
 
@@ -34,8 +36,6 @@ export class MainLayout {
             { path: '/requests', icon: 'fas fa-exchange-alt', label: '換班申請' }
         ];
 
-        // 根據角色回傳對應陣列
-        // 確保 role 存在，否則預設回傳 userMenus
         const currentRole = role || 'user';
         
         if (currentRole === 'system_admin') return [...commonMenus, ...adminMenus];
@@ -46,8 +46,7 @@ export class MainLayout {
     }
 
     render() {
-        // 初次 Render 時，可能還沒有拿到 role，所以先渲染目前的狀態
-        // 等 afterRender 抓到資料後，會再更新一次 DOM
+        // 因為 constructor 已經拿到正確的 role，這裡直接渲染正確選單
         const menus = this.getMenus(this.user.role);
         const menuHtml = this.buildMenuHtml(menus);
 
@@ -107,27 +106,30 @@ export class MainLayout {
             'user': '護理師',
             'guest': '訪客'
         };
-        return map[role] || '載入中...';
+        return map[role] || role;
     }
 
     async afterRender() {
-        // 1. 綁定基本事件
         this.bindEvents();
+        
+        // ✨ 優化：移除 refreshUserRole()，不再需要重複查詢資料庫
+        // 因為資料已經在 constructor 中從 AuthService 快取拿到了
 
-        // 2. 關鍵修正：主動去抓最新的使用者資料 (包含 Role)
-        await this.refreshUserRole();
-
-        // 3. 更新目前選單的 Active 狀態
+        // 更新 Active Menu
         const currentPath = window.location.hash.slice(1) || '/dashboard';
         this.updateActiveMenu(currentPath);
+        
+        // 更新 Badge 顏色
+        const badgeEl = document.getElementById('user-role-badge');
+        if (badgeEl && this.user.role === 'system_admin') {
+            badgeEl.className = 'badge bg-danger me-2';
+        }
     }
 
     bindEvents() {
-        // Logo 點擊
         const logo = document.getElementById('header-logo');
         if(logo) logo.addEventListener('click', () => router.navigate('/dashboard'));
 
-        // 登出按鈕
         const logoutBtn = document.getElementById('layout-logout-btn');
         if(logoutBtn) logoutBtn.addEventListener('click', async () => {
             if (confirm('確定登出？')) { await authService.logout(); window.location.reload(); }
@@ -161,64 +163,18 @@ export class MainLayout {
                 toggleSidebar();
             });
 
-            // 5秒後自動收折
             this.autoHideTimer = setTimeout(() => {
                 toggleSidebar(true);
             }, 5000);
         }
     }
 
-    /**
-     * ✨ 核心修正：重新讀取使用者資料並更新選單
-     */
-    async refreshUserRole() {
-        try {
-            const currentUser = authService.getCurrentUser();
-            if (currentUser) {
-                // 從 Firestore 讀取完整資料 (包含 role)
-                const userData = await userService.getUserData(currentUser.uid);
-                
-                if (userData) {
-                    // 更新目前的 user 物件
-                    this.user = userData;
-                    
-                    // 1. 更新右上角名字與 Badge
-                    const nameEl = document.getElementById('header-user-name');
-                    const badgeEl = document.getElementById('user-role-badge');
-                    if (nameEl) nameEl.textContent = userData.name;
-                    if (badgeEl) {
-                        badgeEl.textContent = this.getRoleName(userData.role);
-                        // 根據角色給不同顏色
-                        badgeEl.className = `badge me-2 ${userData.role === 'system_admin' ? 'bg-danger' : 'bg-secondary'}`;
-                    }
-
-                    // 2. 重新產生選單 HTML (這一步會讓選單變成管理員版)
-                    const newMenus = this.getMenus(userData.role);
-                    const menuContainer = document.getElementById('sidebar-menu-container');
-                    if (menuContainer) {
-                        menuContainer.innerHTML = this.buildMenuHtml(newMenus);
-                        
-                        // 重新綁定選單點擊事件 (因為 DOM 被換掉了)
-                        // 其實直接用 href="#/..." 就不需要額外綁定 click event 來 navigate，
-                        // 但為了 updateActiveMenu，我們還是可以監聽 hashchange
-                    }
-                    
-                    console.log("選單權限已更新為:", userData.role);
-                }
-            }
-        } catch (error) {
-            console.error("更新使用者權限失敗:", error);
-        }
-    }
-
     updateActiveMenu(path) {
         document.querySelectorAll('.menu-item').forEach(item => {
             item.classList.remove('active');
-            // 模糊比對，例如 /system/units/create 也會讓 /system/units/list 亮起 (視需求調整)
             if (path.startsWith(item.dataset.path)) item.classList.add('active');
         });
         
-        // 更新標題
         const menus = this.getMenus(this.user.role);
         const currentMenu = menus.find(m => path.includes(m.path));
         const titleEl = document.getElementById('page-title');
