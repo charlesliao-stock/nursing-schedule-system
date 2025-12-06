@@ -1,43 +1,127 @@
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
-import { authService } from "../../services/firebase/AuthService.js"; // 【新增】
+import { authService } from "../../services/firebase/AuthService.js";
 import { router } from "../../core/Router.js";
 
 export class SystemAdminDashboard {
     
+    constructor(user) {
+        this.user = user;
+    }
+
     render() {
         return `
-            <div class="dashboard-content">
-                <h2>系統概覽</h2>
-                <div class="stats-grid">
-                    <div class="stat-card" onclick="location.hash='/system/units/list'" style="cursor:pointer">
-                        <div class="stat-icon"><i class="fas fa-building"></i></div>
-                        <div class="stat-info">
-                            <h3>單位總數</h3>
-                            <p id="unit-count-display" class="stat-value">...</p>
+            <div class="dashboard-content container-fluid p-0">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="h3 text-gray-800"><i class="fas fa-tachometer-alt text-primary me-2"></i>系統概覽</h2>
+                    <span class="badge bg-secondary">系統管理員模式</span>
+                </div>
+
+                <div class="stats-grid mb-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    
+                    <div class="stat-card bg-white p-4 rounded shadow-sm border-0 position-relative overflow-hidden" 
+                         onclick="location.hash='/system/units/list'" 
+                         style="cursor:pointer; border-left: 4px solid #3b82f6 !important; transition: transform 0.2s;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="z-1">
+                                <h6 class="text-uppercase text-muted fw-bold mb-2" style="font-size: 0.8rem;">單位總數</h6>
+                                <h2 id="unit-count-display" class="mb-0 fw-bold text-dark">...</h2>
+                            </div>
+                            <div class="stat-icon bg-light text-primary p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
+                                <i class="fas fa-building fa-lg"></i>
+                            </div>
                         </div>
                     </div>
-                    <div class="stat-card" onclick="location.hash='/unit/staff/list'" style="cursor:pointer">
-                        <div class="stat-icon"><i class="fas fa-user-nurse"></i></div>
-                        <div class="stat-info">
-                            <h3>人員總數</h3>
-                            <p id="staff-count-display" class="stat-value">...</p>
+
+                    <div class="stat-card bg-white p-4 rounded shadow-sm border-0" 
+                         onclick="location.hash='/unit/staff/list'" 
+                         style="cursor:pointer; border-left: 4px solid #10b981 !important; transition: transform 0.2s;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-uppercase text-muted fw-bold mb-2" style="font-size: 0.8rem;">人員總數</h6>
+                                <h2 id="staff-count-display" class="mb-0 fw-bold text-dark">...</h2>
+                            </div>
+                            <div class="stat-icon bg-light text-success p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
+                                <i class="fas fa-user-nurse fa-lg"></i>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="stat-card" onclick="location.hash='/schedule/manual'" style="cursor:pointer">
-                        <div class="stat-icon" style="background:#fff7ed; color:#f59e0b;"><i class="fas fa-calendar-check"></i></div>
-                        <div class="stat-info">
-                            <h3>本月排班狀態</h3>
-                            <p id="schedule-status-display" class="stat-value" style="font-size:1.2rem;">...</p>
+                    <div class="stat-card bg-white p-4 rounded shadow-sm border-0" 
+                         onclick="location.hash='/schedule/manual'" 
+                         style="cursor:pointer; border-left: 4px solid #f59e0b !important; transition: transform 0.2s;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-uppercase text-muted fw-bold mb-2" style="font-size: 0.8rem;">排班狀態</h6>
+                                <h4 id="schedule-status-display" class="mb-0 fw-bold text-dark" style="font-size: 1.2rem;">...</h4>
+                            </div>
+                            <div class="stat-icon bg-light text-warning p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
+                                <i class="fas fa-calendar-check fa-lg"></i>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <div style="margin-top:20px; padding:20px; background:white; border-radius:8px; border:1px solid #e5e7eb;">
-                    <h3><i class="fas fa-bullhorn"></i> 系統公告</h3>
-                    <p style="color:#666;">歡迎使用新版 AI 排班系統。左側選單可快速切換功能。</p>
+                <div class="row g-4">
+                    <div class="col-lg-8">
+                        <div class="card shadow-sm border-0 h-100">
+                            <div class="card-header bg-white py-3 border-bottom">
+                                <h5 class="m-0 font-weight-bold text-primary"><i class="fas fa-bullhorn me-2"></i>系統公告</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info border-0 bg-info-subtle text-info-emphasis">
+                                    <i class="fas fa-info-circle me-2"></i>歡迎使用新版 AI 排班系統。左側選單可快速切換功能。
+                                </div>
+                                <div class="list-group list-group-flush">
+                                    <div class="list-group-item border-0 px-0">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1 fw-bold">系統初始化完成</h6>
+                                            <small class="text-muted">剛剛</small>
+                                        </div>
+                                        <p class="mb-1 small text-muted">目前系統運作正常，Firestore 連線成功。</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <div class="card shadow-sm border-0 h-100">
+                            <div class="card-header bg-white py-3 border-bottom">
+                                <h5 class="m-0 font-weight-bold text-warning"><i class="fas fa-bolt me-2"></i>快速操作</h5>
+                            </div>
+                            <div class="list-group list-group-flush">
+                                <a href="#/system/units/create" class="list-group-item list-group-item-action py-3 d-flex align-items-center">
+                                    <div class="bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="fas fa-plus"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0 fw-bold">建立新單位</h6>
+                                        <small class="text-muted">新增病房或部門</small>
+                                    </div>
+                                </a>
+                                <a href="#/unit/staff/create" class="list-group-item list-group-item-action py-3 d-flex align-items-center">
+                                    <div class="bg-success text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="fas fa-user-plus"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0 fw-bold">新增人員帳號</h6>
+                                        <small class="text-muted">建立員工登入資料</small>
+                                    </div>
+                                </a>
+                                <a href="#/system/settings" class="list-group-item list-group-item-action py-3 d-flex align-items-center">
+                                    <div class="bg-secondary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="fas fa-cog"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0 fw-bold">系統全域設定</h6>
+                                        <small class="text-muted">調整系統參數</small>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -64,6 +148,8 @@ export class SystemAdminDashboard {
 
         } catch (e) {
             console.error("更新儀表板數據失敗:", e);
+            document.getElementById('unit-count-display').textContent = "-";
+            document.getElementById('staff-count-display').textContent = "-";
         }
     }
 
@@ -79,9 +165,8 @@ export class SystemAdminDashboard {
 
             // 【邏輯修正】如果是系統管理員，不顯示個別單位狀態
             if (user.role === 'system_admin') {
-                statusEl.textContent = "系統管理模式";
-                statusEl.style.color = "#3b82f6"; // 藍色
-                statusEl.style.fontSize = "1rem";
+                statusEl.textContent = "管理模式";
+                statusEl.className = "mb-0 fw-bold text-primary"; // 覆蓋顏色
                 return;
             }
 
@@ -96,17 +181,17 @@ export class SystemAdminDashboard {
                 
                 if (!schedule) {
                     statusEl.textContent = "未建立";
-                    statusEl.style.color = "#9ca3af";
+                    statusEl.className = "mb-0 fw-bold text-muted";
                 } else if (schedule.status === 'published') {
-                    statusEl.textContent = "✅ 已發布";
-                    statusEl.style.color = "#166534";
+                    statusEl.textContent = "已發布";
+                    statusEl.className = "mb-0 fw-bold text-success";
                 } else {
-                    statusEl.textContent = "✏️ 草稿中";
-                    statusEl.style.color = "#d97706";
+                    statusEl.textContent = "草稿中";
+                    statusEl.className = "mb-0 fw-bold text-warning";
                 }
             } else {
-                statusEl.textContent = "無所屬單位";
-                statusEl.style.fontSize = "1rem";
+                statusEl.textContent = "無單位";
+                statusEl.className = "mb-0 fw-bold text-secondary";
             }
         } catch (error) {
             console.error(error);
