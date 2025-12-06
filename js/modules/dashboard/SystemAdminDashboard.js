@@ -1,5 +1,6 @@
 import { authService } from "../../services/firebase/AuthService.js";
-import { unitService } from "../../services/firebase/UnitService.js";
+// 【修正 1】改用 UnitService (大寫 Class)
+import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { router } from "../../core/Router.js";
 
@@ -32,6 +33,9 @@ export class SystemAdminDashboard {
                             </button>
                             <button id="btn-shift-settings" class="btn-primary" style="width:auto; background-color: #8b5cf6;">
                                 <i class="fas fa-clock"></i> 班別設定
+                            </button>
+                            <button id="btn-schedule-manage" class="btn-primary" style="width:auto; background-color: #f59e0b; margin-left: 10px;">
+                                <i class="fas fa-calendar-alt"></i> 排班管理
                             </button>
                         </div>
                     </div>
@@ -67,19 +71,25 @@ export class SystemAdminDashboard {
             if (btn) btn.addEventListener('click', () => router.navigate(path));
         };
 
-        bindNav('btn-manage-units', '/system/units/list'); // 改為列表
+        bindNav('btn-manage-units', '/system/units/list');
         bindNav('btn-manage-staff', '/unit/staff/list');
         bindNav('btn-shift-settings', '/unit/settings/shifts');
+        // 新增：連結到排班頁面
+        bindNav('btn-schedule-manage', '/schedule/manual');
 
         this.updateStats();
     }
 
     async updateStats() {
         try {
-            const units = await unitService.getAllUnits();
+            // 【修正 2】使用靜態方法 UnitService.getAllUnits()
+            const units = await UnitService.getAllUnits();
             document.getElementById('unit-count-display').textContent = units.length;
+            
             const staffCount = await userService.getAllStaffCount();
             document.getElementById('staff-count-display').textContent = staffCount;
-        } catch (e) {}
+        } catch (e) {
+            console.error("更新儀表板數據失敗:", e);
+        }
     }
 }
