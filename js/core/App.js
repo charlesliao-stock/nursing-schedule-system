@@ -6,7 +6,7 @@ import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.
 
 class App {
     constructor() {
-        this.version = "1.0.1"; // 版本號更新
+        this.version = "1.0.2"; // 更新版本號
         this.currentUserData = null;
     }
 
@@ -19,12 +19,14 @@ class App {
     setupAuthListener() {
         authService.monitorAuthState(async (firebaseUser) => {
             const loading = document.getElementById('loading-screen');
-            if (loading) loading.style.display = 'none';
+            
+            // 修正 1: 不要這在裡馬上隱藏 loading，要在資料準備好之後
 
             if (firebaseUser) {
                 console.log("使用者已登入:", firebaseUser.email);
                 
                 try {
+                    // 等待 Firestore 資料讀取完畢
                     const userData = await userService.getUserData(firebaseUser.uid);
                     
                     if (userData) {
@@ -32,38 +34,48 @@ class App {
                         // 更新最後登入時間
                         userService.updateLastLogin(firebaseUser.uid);
                         
-                        console.log("👤 讀取到使用者資料, 角色為:", userData.role); // 【新增 Log】
+                        console.log("👤 讀取到使用者資料, 角色為:", userData.role);
                         
+                        // 修正 2: 將完整的 userData 注入到 Router 或全域狀態 (這裡先透過 handleRouting 傳遞)
                         this.handleRouting(userData);
+
+                        // 修正 3: 資料都準備好了，現在才隱藏 Loading
+                        if (loading) loading.style.display = 'none';
+
                     } else {
                         console.warn("⚠️ 帳號未初始化 (Firestore 無資料)");
-                        router.appElement.innerHTML = `<h1>帳號資料未建立</h1><p>請執行初始化腳本。</p>`;
+                        // 如果無資料，也需要隱藏 loading 讓使用者看到錯誤訊息
+                        if (loading) loading.style.display = 'none';
+                        router.appElement.innerHTML = `<h1>帳號資料未建立</h1><p>請聯繫管理員。</p>`;
                     }
                 } catch (error) {
                     console.error("❌ 讀取使用者資料失敗:", error);
+                    if (loading) loading.style.display = 'none';
                     alert("讀取資料失敗，請查看 Console");
                 }
             } else {
                 console.log("使用者未登入");
+                // 未登入狀態，直接導向 Login 並隱藏 Loading
                 router.navigate('/login');
+                if (loading) loading.style.display = 'none';
             }
         });
     }
 
     handleRouting(user) {
-        // 為了避免路由是 null，我們先建立一個預設的 Dashboard (或根據角色建立)
-        // 這裡強制註冊 /dashboard，確保 Router 不會報錯
-        
+        // 根據權限設定 Dashboard
         if (user.role === 'system_admin') {
             console.log("✅ 載入系統管理員儀表板");
             router.routes['/dashboard'] = new SystemAdminDashboard(user);
         } else {
-            console.log("⚠️ 使用者權限非 system_admin，載入一般視圖");
-            // 暫時也用同一個 Dashboard，但在內部顯示權限不足，或是建立一個 UserDashboard
+            // TODO: 未來可以根據不同角色載入不同 Dashboard Class
+            console.log(`ℹ️ 載入使用者儀表板 (${user.role})`);
             router.routes['/dashboard'] = new SystemAdminDashboard(user); 
         }
 
-        // 註冊完畢後，再跳轉
+        // 強制更新 Router 的當前 Layout 使用者，避免 MainLayout 第一次渲染拿到舊資料
+        // 這需要 Router.js 支援，或者我們依賴 App.js 阻擋渲染的時間差即可解決大部分問題
+        
         router.navigate('/dashboard');
     }
 }
