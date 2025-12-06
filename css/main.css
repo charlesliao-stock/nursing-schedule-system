@@ -319,3 +319,114 @@ body {
     background-color: #f1f5f9 !important;
     z-index: 12; /* 確保層級夠高 */
 }
+
+/* --- Phase 3.2: 現代化佈局 (Layout) --- */
+
+/* 全域佈局容器 */
+.app-layout {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* 1. 頂部導航列 (Header) - 固定在上方 */
+.layout-header {
+    height: 60px;
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    position: fixed;
+    top: 0;
+    left: 250px; /* 預留給側邊欄 */
+    right: 0;
+    z-index: 50;
+    transition: left 0.3s;
+}
+
+.brand-logo {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    cursor: pointer; /* 讓 Logo 看起來可點擊 */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 2. 左側側邊欄 (Sidebar) */
+.layout-sidebar {
+    width: 250px;
+    background-color: #1e293b; /* 深色背景 */
+    color: white;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 60;
+    transition: width 0.3s;
+}
+
+.sidebar-header {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    background-color: #0f172a;
+}
+
+.sidebar-menu {
+    flex: 1;
+    padding: 20px 0;
+    overflow-y: auto;
+}
+
+.menu-item {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #cbd5e1;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.menu-item:hover {
+    background-color: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.menu-item.active {
+    background-color: rgba(59, 130, 246, 0.2); /* var(--primary-color) alpha */
+    color: #60a5fa;
+    border-left: 3px solid #60a5fa;
+}
+
+/* 3. 中間內容區 (Main View) */
+.layout-content {
+    margin-top: 60px; /* Header 高度 */
+    margin-left: 250px; /* Sidebar 寬度 */
+    flex: 1;
+    background-color: #f3f4f6;
+    padding: 20px;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    width: 100%;
+}
+
+/* RWD: 手機版隱藏側邊欄 (簡化版) */
+@media (max-width: 768px) {
+    .layout-sidebar { width: 0; overflow: hidden; }
+    .layout-header { left: 0; }
+    .layout-content { margin-left: 0; }
+}
