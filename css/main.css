@@ -472,3 +472,56 @@ body {
     color: #9ca3af;
     margin-left: 5px;
 }
+
+/* --- Phase 3.5: 側邊欄收折與響應式優化 --- */
+
+/* 1. 側邊欄收折狀態 */
+.layout-sidebar.collapsed {
+    transform: translateX(-100%); /* 往左移出畫面 */
+}
+
+/* 2. 內容區域與 Header 在收折時的變化 */
+.layout-header.expanded,
+.layout-content.expanded {
+    left: 0 !important;   /* Header 靠左 */
+    margin-left: 0 !important; /* Content 靠左 */
+    width: 100% !important;
+}
+
+/* 3. 側邊欄開關小標籤 (Toggle Tab) */
+.sidebar-toggle-tab {
+    position: absolute;
+    top: 80px; /* 距離頂部的高度 */
+    right: -24px; /* 突出於側邊欄右側 */
+    width: 24px;
+    height: 48px;
+    background-color: #1e293b; /* 同側邊欄色 */
+    color: white;
+    border-radius: 0 8px 8px 0; /* 右邊圓角 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    z-index: 70;
+    transition: background-color 0.2s;
+}
+
+.sidebar-toggle-tab:hover {
+    background-color: #3b82f6; /* Hover 變色 */
+}
+
+/* 收折時，小標籤要跟著側邊欄一起動，但因為它是 absolute 於 sidebar 內，
+   所以只要 sidebar transform，它就會跟著動。
+   但我們希望收折後，小標籤要「露出來」，
+   所以當 sidebar transform -100% 時，sidebar 本體看不見，
+   但突出右邊的 tab 會剛好貼在螢幕左邊緣。 
+*/
+
+/* 修正：為了讓動畫更順暢，我們調整 MainLayout 的 CSS */
+.layout-sidebar {
+    transition: transform 0.3s ease-in-out;
+}
+.layout-header, .layout-content {
+    transition: margin-left 0.3s ease-in-out, left 0.3s ease-in-out, width 0.3s ease-in-out;
+}
