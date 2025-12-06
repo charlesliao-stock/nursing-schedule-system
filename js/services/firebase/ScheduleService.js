@@ -1,10 +1,6 @@
 import { firebaseService } from "./FirebaseService.js";
 import { 
-    doc, 
-    getDoc, 
-    setDoc, 
-    updateDoc, 
-    serverTimestamp 
+    doc, getDoc, setDoc, updateDoc, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export class ScheduleService {
@@ -13,8 +9,11 @@ export class ScheduleService {
         return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
     }
 
+    // ... getSchedule, createEmptySchedule, updateShift, updateAllAssignments 保持原樣 ...
+    // (為了節省篇幅，請保留您原本的程式碼，僅新增下方方法)
+    
     static async getSchedule(unitId, year, month) {
-        /* ... 保持原樣 ... */
+        /* ... 請保留原有的程式碼 ... */
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
@@ -25,7 +24,7 @@ export class ScheduleService {
     }
 
     static async createEmptySchedule(unitId, year, month, staffList = []) {
-        /* ... 保持原樣 ... */
+        /* ... 請保留原有的程式碼 ... */
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
@@ -42,7 +41,7 @@ export class ScheduleService {
     }
 
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
-        /* ... 保持原樣 ... */
+        /* ... 請保留原有的程式碼 ... */
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
@@ -53,24 +52,35 @@ export class ScheduleService {
         } catch (error) { throw error; }
     }
 
-    /**
-     * 【Phase 3.3 新增】批次更新整個月的排班資料
-     * 用於 AI 自動排班或重置時
-     */
     static async updateAllAssignments(unitId, year, month, assignments) {
+        /* ... 請保留原有的程式碼 ... */
+        try {
+            const db = firebaseService.getDb();
+            const scheduleId = this.getScheduleId(unitId, year, month);
+            const docRef = doc(db, "schedules", scheduleId);
+            await updateDoc(docRef, { assignments: assignments, updatedAt: serverTimestamp() });
+            return true;
+        } catch (error) { throw error; }
+    }
+
+    /**
+     * 【Phase 3.4 新增】更新班表狀態 (發布/撤回)
+     * @param {string} status - 'draft' | 'published'
+     */
+    static async updateStatus(unitId, year, month, status) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
 
-            // 直接覆蓋整個 assignments 物件
             await updateDoc(docRef, {
-                assignments: assignments,
+                status: status,
+                publishedAt: status === 'published' ? serverTimestamp() : null,
                 updatedAt: serverTimestamp()
             });
             return true;
         } catch (error) {
-            console.error("批次更新班表失敗", error);
+            console.error("更新狀態失敗", error);
             throw error;
         }
     }
