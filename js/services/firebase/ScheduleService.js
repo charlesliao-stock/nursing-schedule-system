@@ -1,52 +1,47 @@
-import { db } from "../../config/firebase.config.js";
+// 修改重點：從 FirebaseService 取得 db，而非從 config 直接 import
+import { firebaseService } from "./FirebaseService.js"; 
 import { 
     doc, 
     getDoc, 
     setDoc, 
     updateDoc, 
     serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"; // 請確認版本號與你專案一致
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export class ScheduleService {
 
-    /**
-     * 產生 Document ID Helper
-     */
     static getScheduleId(unitId, year, month) {
         return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
     }
 
-    /**
-     * 取得指定單位、月份的班表
-     * 如果不存在，是否要自動初始化？(看需求，這裡先單純回傳)
-     */
     static async getSchedule(unitId, year, month) {
+        // 【修正】透過 Service 取得 db 實例
+        const db = firebaseService.getDb();
         const scheduleId = this.getScheduleId(unitId, year, month);
         const docRef = doc(db, "schedules", scheduleId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-            return docSnap.data();
-        } else {
-            return null; // 或者回傳 null 讓 UI 決定是否要建立新表
+        
+        try {
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return docSnap.data();
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error("讀取班表失敗:", error);
+            throw error;
         }
     }
 
-    /**
-     * 初始化一張新的月份班表 (當該月還沒有資料時)
-     * @param {string} unitId 
-     * @param {number} year 
-     * @param {number} month 
-     * @param {Array} staffList - 該單位的所有人員 ID 列表 (預先建立空殼)
-     */
     static async createEmptySchedule(unitId, year, month, staffList = []) {
+        const db = firebaseService.getDb(); // 【修正】
         const scheduleId = this.getScheduleId(unitId, year, month);
         const docRef = doc(db, "schedules", scheduleId);
 
-        // 建立初始 assignments 結構
         const assignments = {};
         staffList.forEach(staffId => {
-            assignments[staffId] = {}; // 每個員工預設空的排班資料
+            // 注意：這裡是使用 staffId (doc id) 作為 key
+            assignments[staffId] = {}; 
         });
 
         const initData = {
@@ -63,15 +58,11 @@ export class ScheduleService {
         return initData;
     }
 
-    /**
-     * 更新單一格班別 (最核心的功能)
-     * 使用 updateDoc + Dot Notation 只更新該欄位，節省流量並避免衝突
-     */
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
+        const db = firebaseService.getDb(); // 【修正】
         const scheduleId = this.getScheduleId(unitId, year, month);
         const docRef = doc(db, "schedules", scheduleId);
 
-        // Firestore 巢狀更新語法: "assignments.staff_001.5": "D"
         const fieldPath = `assignments.${staffId}.${day}`;
 
         try {
