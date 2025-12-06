@@ -169,7 +169,13 @@
       </div>
     </div>
 
-    <script type="module" src="./js/app.js"></script>
+   <script type="module">
+    // 直接從核心檔案引入 app 實例
+    import { app } from './js/core/App.js';
+
+    // 啟動系統
+    app.init();
+</script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
@@ -224,3 +230,4 @@
     </script>
 </body>
 </html>
+
