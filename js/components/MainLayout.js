@@ -1,3 +1,5 @@
+// 檔案路徑: js/components/MainLayout.js
+
 import { router } from "../core/Router.js";
 import { authService } from "../services/firebase/AuthService.js";
 import { userService } from "../services/firebase/UserService.js";
@@ -11,66 +13,67 @@ export class MainLayout {
 
     /**
      * 核心邏輯：根據角色回傳選單 HTML
+     * 修正：採用「堆疊式」或「明確分級」的選單結構
      */
     getMenuByRole(role) {
-        // 定義共用選單項目
+        console.log("正在渲染選單，當前角色為:", role); // Debug 用
+
+        // 0. 基礎選單 (所有人都看得到的)
         const dashboard = `<div class="menu-item" data-path="/dashboard"><i class="fas fa-tachometer-alt"></i> 儀表板</div>`;
         
-        // 1. 系統管理者 (System Admin)
-        if (role === 'system_admin') {
-            return `
-                ${dashboard}
-                <div class="menu-label">系統管理</div>
-                <div class="menu-item" data-path="/system/units/list"><i class="fas fa-building"></i> 單位列表</div>
-                <div class="menu-item" data-path="/system/units/create"><i class="fas fa-plus-circle"></i> 建立單位</div>
-                <div class="menu-item" data-path="/system/settings"><i class="fas fa-cogs"></i> 系統全域設定</div>
-                <div class="menu-label">監控</div>
-                <div class="menu-item" data-path="/system/logs"><i class="fas fa-history"></i> 操作日誌</div>
-            `;
-        }
-
-        // 2. 單位管理者 (Unit Manager)
-        if (role === 'unit_manager') {
-            return `
-                ${dashboard}
-                <div class="menu-label">單位管理</div>
-                <div class="menu-item" data-path="/unit/staff/list"><i class="fas fa-users-cog"></i> 人員管理</div>
-                <div class="menu-item" data-path="/unit/settings/shifts"><i class="fas fa-clock"></i> 班別設定</div>
-                <div class="menu-item" data-path="/unit/settings/rules"><i class="fas fa-ruler-combined"></i> 排班規則</div>
-                
-                <div class="menu-label">排班作業</div>
-                <div class="menu-item" data-path="/schedule/manual"><i class="fas fa-calendar-alt"></i> 排班管理</div>
-                <div class="menu-item" data-path="/schedule/approval"><i class="fas fa-check-double"></i> 換班審核</div>
-                <div class="menu-item" data-path="/schedule/reports"><i class="fas fa-chart-bar"></i> 統計報表</div>
-            `;
-        }
-
-        // 3. 單位排班者 (Unit Scheduler)
-        if (role === 'unit_scheduler') {
-            return `
-                ${dashboard}
-                <div class="menu-label">排班作業</div>
-                <div class="menu-item" data-path="/schedule/manual"><i class="fas fa-calendar-alt"></i> 排班管理</div>
-                <div class="menu-item" data-path="/schedule/pre-schedule"><i class="fas fa-clipboard-list"></i> 預班管理</div>
-                <div class="menu-item" data-path="/schedule/approval"><i class="fas fa-check-double"></i> 換班審核</div>
-                
-                <div class="menu-label">個人專區</div>
-                <div class="menu-item" data-path="/my-schedule"><i class="fas fa-user-clock"></i> 我的班表</div>
-            `;
-        }
-
-        // 4. 一般使用者 (User) - 預設
-        return `
-            <div class="menu-item" data-path="/dashboard"><i class="fas fa-home"></i> 個人首頁</div>
+        // 定義各區塊 HTML
+        const personalZone = `
             <div class="menu-label">個人專區</div>
-            <div class="menu-item" data-path="/my-schedule"><i class="fas fa-calendar-check"></i> 我的班表</div>
+            <div class="menu-item" data-path="/my-schedule"><i class="fas fa-user-clock"></i> 我的班表</div>
             <div class="menu-item" data-path="/pre-schedule/submit"><i class="fas fa-edit"></i> 提交預班</div>
             <div class="menu-item" data-path="/swap/request"><i class="fas fa-exchange-alt"></i> 申請換班</div>
         `;
+
+        const scheduleZone = `
+            <div class="menu-label">排班作業</div>
+            <div class="menu-item" data-path="/schedule/manual"><i class="fas fa-calendar-alt"></i> 排班管理</div>
+            <div class="menu-item" data-path="/schedule/approval"><i class="fas fa-check-double"></i> 換班審核</div>
+            <div class="menu-item" data-path="/schedule/reports"><i class="fas fa-chart-bar"></i> 統計報表</div>
+        `;
+
+        const unitManageZone = `
+            <div class="menu-label">單位管理</div>
+            <div class="menu-item" data-path="/unit/staff/list"><i class="fas fa-users-cog"></i> 人員管理</div>
+            <div class="menu-item" data-path="/unit/settings/shifts"><i class="fas fa-clock"></i> 班別設定</div>
+            <div class="menu-item" data-path="/unit/settings/rules"><i class="fas fa-ruler-combined"></i> 排班規則</div>
+        `;
+
+        const systemZone = `
+            <div class="menu-label">系統管理</div>
+            <div class="menu-item" data-path="/system/units/list"><i class="fas fa-building"></i> 單位列表</div>
+            <div class="menu-item" data-path="/system/units/create"><i class="fas fa-plus-circle"></i> 建立單位</div>
+            <div class="menu-item" data-path="/system/settings"><i class="fas fa-cogs"></i> 系統全域設定</div>
+        `;
+
+        // === 權限判斷邏輯 (4級) ===
+
+        // Level 1: 系統管理者 (System Admin)
+        if (role === 'system_admin') {
+            return dashboard + systemZone; // 系統管理員通常專注於系統，或可加上 unitManageZone
+        }
+
+        // Level 2: 單位管理者 (Unit Manager)
+        if (role === 'unit_manager') {
+            // 管理者擁有：單位管理 + 排班作業 + 個人專區
+            return dashboard + unitManageZone + scheduleZone + personalZone;
+        }
+
+        // Level 3: 單位排班者 (Unit Scheduler)
+        if (role === 'unit_scheduler') {
+            // 排班者擁有：排班作業 + 個人專區
+            return dashboard + scheduleZone + personalZone;
+        }
+
+        // Level 4: 一般使用者 (User) - 預設
+        return dashboard + personalZone;
     }
 
     render() {
-        // 初次 Render 時，this.user.role 可能是預設值 'user'
         const menuHtml = this.getMenuByRole(this.user.role);
 
         return `
@@ -121,7 +124,7 @@ export class MainLayout {
     }
 
     async afterRender() {
-        // --- 基本事件綁定 ---
+        // 綁定 Header 事件
         const logo = document.getElementById('header-logo');
         if (logo) logo.addEventListener('click', () => router.navigate('/dashboard'));
         
@@ -134,20 +137,18 @@ export class MainLayout {
             }
         });
 
-        // 綁定選單事件 (初次)
+        // 初次綁定選單事件
         this.bindMenuEvents();
 
-        // 讀取並更新使用者資料 (包含角色權限)
+        // 【關鍵】讀取使用者詳細資料 (Role) 並重繪選單
         await this.refreshUserData();
         
-        // 設定側邊欄收折邏輯
         this.setupSidebarToggle();
     }
 
-    // 【新增】將選單點擊事件抽離，方便重繪後再次綁定
     bindMenuEvents() {
         document.querySelectorAll('.menu-item').forEach(item => {
-            // 移除舊事件避免重複 (雖然 innerHTML 替換會自動清除，但保持習慣)
+            // 複製節點以移除舊事件，防止重複綁定
             const newClone = item.cloneNode(true);
             item.parentNode.replaceChild(newClone, item);
             
@@ -158,33 +159,34 @@ export class MainLayout {
         });
     }
 
-    // 【修正】更新使用者資料後，強制重繪選單
     async refreshUserData() {
         try {
             const currentUser = authService.getCurrentUser();
             if (currentUser) {
-                // 從 Firestore 讀取完整資料 (含 role)
+                // 從 Firestore 讀取完整資料 (這一步才是真正拿到 role 的地方)
                 const userData = await userService.getUserData(currentUser.uid);
                 
                 if (userData) {
-                    // 1. 更新記憶體中的 user
+                    console.log("Firestore 資料讀取成功:", userData); // Debug
                     this.user = userData;
                     
-                    // 2. 更新頂部使用者名稱
+                    // 1. 更新 UI 文字
                     const nameEl = document.getElementById('header-user-name');
                     if (nameEl) nameEl.textContent = userData.name;
 
-                    // 3. 更新左上角角色標籤
                     const roleBadge = document.getElementById('header-role-badge');
                     if (roleBadge) roleBadge.textContent = this.getRoleName(userData.role);
 
-                    // 4. 【關鍵】根據新角色，重新產生選單 HTML
+                    // 2. 【強制重繪選單】確保權限正確
                     const menuContainer = document.getElementById('sidebar-menu-container');
                     if (menuContainer) {
+                        console.log("重繪選單，角色:", userData.role);
                         menuContainer.innerHTML = this.getMenuByRole(userData.role);
-                        // 5. 【關鍵】HTML 重寫後，必須重新綁定 click 事件
+                        // 3. 重繪後必須重新綁定事件
                         this.bindMenuEvents();
                     }
+                } else {
+                    console.warn("Firestore 中找不到此 User ID 的資料");
                 }
             }
         } catch (error) { 
@@ -230,7 +232,6 @@ export class MainLayout {
             if (path.startsWith(item.dataset.path)) item.classList.add('active');
         });
         
-        // 簡易標題對應 (可依需求擴充)
         const titleEl = document.getElementById('page-title');
         if(titleEl) {
             if (path.includes('dashboard')) titleEl.textContent = '儀表板';
