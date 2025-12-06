@@ -1,6 +1,7 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { UnitListPage } from "../modules/system/UnitListPage.js";
+import { UnitEditPage } from "../modules/system/UnitEditPage.js"; // ✨ 新增：匯入編輯頁面
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
@@ -11,13 +12,15 @@ import { authService } from "../services/firebase/AuthService.js";
 
 class Router {
     constructor() {
+        // 靜態路由表 (精確比對)
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
             // 功能頁面
-            '/dashboard': new SystemAdminDashboard(), // 預設空殼，會由 App.js 注入正確的實例
+            '/dashboard': new SystemAdminDashboard(),
             '/system/units/list': new UnitListPage(),
             '/system/units/create': new UnitCreatePage(),
+            // '/system/units/edit': new UnitEditPage(), // 註：動態路由由 handleRoute 自動處理
             '/unit/staff/list': new StaffListPage(),
             '/unit/staff/create': new StaffCreatePage(),
             '/unit/settings/shifts': new ShiftSettingsPage(),
@@ -48,33 +51,45 @@ class Router {
         const currentUser = profile || authService.getCurrentUser();
 
         if (!currentUser) {
-            // 未登入，導向登入頁
             this.navigate('/login');
             return;
         }
 
         // 3. 處理 Layout (MainLayout)
-        // 關鍵修正：如果 Layout 已存在，但 User 資料過舊 (例如原本沒 role 現在有了)，則重新建立 Layout
         if (!this.currentLayout || (profile && this.currentLayout.user !== profile)) {
-            
-            // 只有當我們真的有 profile 時，才更新 layout 的 user，避免畫面跳動
             const userToPass = profile || currentUser || { name: '載入中...', role: 'guest' };
-            
             this.currentLayout = new MainLayout(userToPass);
             this.appElement.innerHTML = this.currentLayout.render();
             this.currentLayout.afterRender();
         }
 
-        // 4. 渲染子頁面
-        const page = this.routes[path];
+        // 4. 決定要渲染的頁面 (Page Strategy)
+        let page = this.routes[path]; // 先嘗試精確比對
+
+        // ✨ 自動化處理動態路由 (Dynamic Route Handling)
+        // 如果找不到精確路徑，則檢查是否為已知的前綴路徑
+        if (!page) {
+            if (path.startsWith('/system/units/edit/')) {
+                // 遇到編輯頁面，建立新的實例 (讓 Page 內部自己去解析 URL ID)
+                page = new UnitEditPage();
+            }
+            // 未來若有其他動態路由 (如編輯人員)，可在此處追加 else if
+        }
+
+        // 5. 渲染子頁面
         const viewContainer = document.getElementById('main-view');
 
         if (page && viewContainer) {
-            this.currentLayout.updateActiveMenu(path);
+            // ✨ 優化選單連動：如果是編輯頁面，讓側邊欄的「列表」保持亮起
+            let menuPath = path;
+            if (path.startsWith('/system/units/edit/')) {
+                menuPath = '/system/units/list';
+            }
+            this.currentLayout.updateActiveMenu(menuPath);
 
             try {
                 let content;
-                // 如果是 Dashboard，確保它拿到最新的 user 資料 (如果是 SystemAdminDashboard)
+                // Dashboard 資料注入
                 if (page instanceof SystemAdminDashboard && profile) {
                     page.user = profile;
                 }
