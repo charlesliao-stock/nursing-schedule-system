@@ -525,3 +525,40 @@ body {
 .layout-header, .layout-content {
     transition: margin-left 0.3s ease-in-out, left 0.3s ease-in-out, width 0.3s ease-in-out;
 }
+
+/* --- Phase 3.6: 規則驗證樣式 --- */
+
+/* 違規的格子 */
+.shift-cell.violation {
+    background-color: #fef2f2 !important; /* 淺紅底 */
+    border: 2px solid #ef4444 !important; /* 紅框 */
+    position: relative;
+}
+
+/* 違規的小紅點/驚嘆號 */
+.violation-icon {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    color: #ef4444;
+    font-size: 10px;
+    z-index: 5;
+}
+
+/* 顯示違規原因的 Tooltip (簡單版) */
+.shift-cell.violation:hover::after {
+    content: attr(data-error);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #374151;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
