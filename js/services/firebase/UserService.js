@@ -103,6 +103,7 @@ class UserService {
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 profile: { avatar: '' }
+                constraints: staffData.constraints || { maxConsecutive: 6, canBatch: false, isPregnant: false }, // 加入這行
             });
 
             // 4. 如果是管理者，需更新 Unit 的 managers 陣列
@@ -318,3 +319,4 @@ class UserService {
     }
 }
 export const userService = new UserService();
+
