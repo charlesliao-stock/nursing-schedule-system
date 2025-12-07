@@ -12,7 +12,8 @@ import { RuleSettings } from "../modules/settings/RuleSettings.js";
 // Schedule Modules
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
 // Pre-Schedule Modules
-import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js"; // ✨ 新增匯入
+import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
+import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js"; // ✨ 新增匯入
 // Dashboard
 import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
 // Core Components
@@ -31,7 +32,6 @@ class Router {
             // --- 1. 系統管理者功能 ---
             '/system/units/list': new UnitListPage(),
             '/system/units/create': new UnitCreatePage(),
-            // '/system/units/edit': handled dynamically
             '/system/settings': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-cogs"></i> 系統全域設定</h3><p class="text-muted">功能開發中...</p></div>' },
             '/system/logs': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-list-alt"></i> 操作日誌</h3><p class="text-muted">功能開發中...</p></div>' },
 
@@ -45,9 +45,9 @@ class Router {
 
             // --- 4. 排班與預班 ---
             '/schedule/manual': new SchedulePage(),
-            '/pre-schedule/manage': new PreScheduleManagePage(), // ✨ 正式掛載
-            '/pre-schedule/submit': new SchedulePage(),       // 提交預班 (尚未實作 SubmitPage，暫留)
-            '/schedule/my': new SchedulePage(),               // 我的班表 (暫留)
+            '/pre-schedule/manage': new PreScheduleManagePage(),
+            '/pre-schedule/submit': new PreScheduleSubmitPage(), // ✨ 正式掛載
+            '/schedule/my': new SchedulePage(),               // 暫用 SchedulePage
 
             // --- 5. 換班與統計 (Phase 4 佔位) ---
             '/swaps/review': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-exchange-alt"></i> 換班審核</h3><p class="text-muted">功能開發中...</p></div>' },
