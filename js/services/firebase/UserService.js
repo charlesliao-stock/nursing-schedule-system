@@ -56,7 +56,7 @@ class UserService {
     }
 
     /**
-     * 【修正】新增人員 (含 Auth 帳號建立 + 排班限制參數)
+     * 新增人員 (含 Auth 帳號建立 + 排班限制參數)
      */
     async createStaff(staffData, password) {
         try {
@@ -100,7 +100,7 @@ class UserService {
                 role: role,
                 permissions: permissions,
                 
-                // ✨ 新增：排班限制參數 (修復語法錯誤的關鍵位置)
+                // 排班限制參數
                 constraints: staffData.constraints || { 
                     maxConsecutive: 6, 
                     canBatch: false, 
@@ -239,12 +239,14 @@ class UserService {
     }
 
     /**
-     * 【修正】批次匯入人員 (含 Auth 建立 + 預設 constraints)
+     * 【修正】批次匯入人員 (修正動態匯入語法)
      */
     async importStaff(staffList) {
         const db = firebaseService.getDb();
-        // 動態匯入 UnitService 避免循環依賴
-        const units = await import('./UnitService.js').then(m => m.unitService.getAllUnits());
+        
+        // 【關鍵修正】這裡改為 m.UnitService (大寫)，因為 UnitService 是類別，使用的是靜態方法
+        const units = await import('./UnitService.js').then(m => m.UnitService.getAllUnits());
+        
         const unitMap = {}; 
         units.forEach(u => { if (u.unitCode) unitMap[u.unitCode] = u.unitId; });
 
@@ -284,7 +286,7 @@ class UserService {
                     permissions.canEditSchedule = true;
                 }
 
-                // 3. 寫入 Firestore (加入預設 constraints)
+                // 3. 寫入 Firestore
                 const newStaffRef = doc(db, this.collectionName, uid);
                 await setDoc(newStaffRef, {
                     uid: uid,
