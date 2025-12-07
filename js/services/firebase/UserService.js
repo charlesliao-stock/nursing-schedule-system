@@ -5,7 +5,7 @@ import {
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { firebaseService } from "./FirebaseService.js";
-import { firebaseConfig } from "../../config/firebase.config.js"; // 需引用設定檔
+import { firebaseConfig } from "../../config/firebase.config.js"; 
 import { User } from "../../models/User.js";
 
 class UserService {
@@ -56,7 +56,7 @@ class UserService {
     }
 
     /**
-     * 【修正】新增人員 (含 Auth 帳號建立)
+     * 【修正】新增人員 (含 Auth 帳號建立 + 排班限制參數)
      */
     async createStaff(staffData, password) {
         try {
@@ -96,24 +96,32 @@ class UserService {
                 name: staffData.name,
                 email: staffData.email,
                 unitId: staffData.unitId,
-                level: staffData.title || 'N0', // title 對應 level
+                level: staffData.title || 'N0', 
                 role: role,
                 permissions: permissions,
+                
+                // ✨ 新增：排班限制參數 (修復語法錯誤的關鍵位置)
+                constraints: staffData.constraints || { 
+                    maxConsecutive: 6, 
+                    canBatch: false, 
+                    isPregnant: false 
+                },
+
                 status: 'active',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 profile: { avatar: '' }
-                constraints: staffData.constraints || { maxConsecutive: 6, canBatch: false, isPregnant: false }, // 加入這行
             });
 
-            // 4. 如果是管理者，需更新 Unit 的 managers 陣列
+            // 4. 更新 Unit 的 managers/schedulers 陣列
+            const unitRef = doc(db, 'units', staffData.unitId);
+            
             if (role === 'unit_manager') {
-                const unitRef = doc(db, 'units', staffData.unitId);
-                await updateDoc(unitRef, { managers: arrayUnion(uid) });
-            }
-            // 如果是排班者，需更新 Unit 的 schedulers 陣列
-            if (role === 'unit_scheduler' || role === 'unit_manager') {
-                const unitRef = doc(db, 'units', staffData.unitId);
+                await updateDoc(unitRef, { 
+                    managers: arrayUnion(uid),
+                    schedulers: arrayUnion(uid) // 管理者預設也能排班
+                });
+            } else if (role === 'unit_scheduler') {
                 await updateDoc(unitRef, { schedulers: arrayUnion(uid) });
             }
 
@@ -143,8 +151,6 @@ class UserService {
                     throw new Error("安全警告：無法刪除系統管理者帳號！");
                 }
             }
-            // 注意：這裡只刪除 Firestore 資料，Auth 帳號需透過 Admin SDK 刪除 (前端無法刪除他人 Auth)
-            // 實務上通常將 status 設為 'inactive' 即可
             await deleteDoc(doc(db, this.collectionName, staffId));
             return { success: true };
         } catch (error) {
@@ -195,7 +201,6 @@ class UserService {
     }
 
     async toggleUnitManager(staffId, unitId, isManager) {
-        // ... (保持原樣)
         try {
             const db = firebaseService.getDb();
             const batch = writeBatch(db);
@@ -215,7 +220,6 @@ class UserService {
     }
 
     async toggleUnitScheduler(staffId, unitId, isScheduler) {
-        // ... (保持原樣)
         try {
             const db = firebaseService.getDb();
             const batch = writeBatch(db);
@@ -235,19 +239,18 @@ class UserService {
     }
 
     /**
-     * 【修正】批次匯入人員 (含 Auth 建立)
+     * 【修正】批次匯入人員 (含 Auth 建立 + 預設 constraints)
      */
     async importStaff(staffList) {
         const db = firebaseService.getDb();
+        // 動態匯入 UnitService 避免循環依賴
         const units = await import('./UnitService.js').then(m => m.unitService.getAllUnits());
         const unitMap = {}; 
         units.forEach(u => { if (u.unitCode) unitMap[u.unitCode] = u.unitId; });
 
         const results = { success: 0, failed: 0, errors: [] };
 
-        // 為了避免並發請求過多導致 Firebase Auth 錯誤，採用循序執行
         for (const staff of staffList) {
-            // 1. 資料驗證
             if (!staff.name || !staff.email || !staff.unitCode || !staff.password) {
                 results.failed++;
                 results.errors.push(`資料不全 (需含密碼): ${staff.name}`);
@@ -262,16 +265,13 @@ class UserService {
             }
 
             try {
-                // 2. 建立 Auth
+                // 1. 建立 Auth
                 const authRes = await this.createAuthUser(staff.email, staff.password);
-                
-                if (!authRes.success) {
-                    throw new Error(authRes.error);
-                }
+                if (!authRes.success) throw new Error(authRes.error);
 
                 const uid = authRes.uid;
                 
-                // 3. 判斷角色
+                // 2. 判斷角色
                 let role = 'user';
                 const permissions = { canViewSchedule: true, canEditSchedule: false, canManageUnit: false };
                 
@@ -284,7 +284,7 @@ class UserService {
                     permissions.canEditSchedule = true;
                 }
 
-                // 4. 寫入 Firestore
+                // 3. 寫入 Firestore (加入預設 constraints)
                 const newStaffRef = doc(db, this.collectionName, uid);
                 await setDoc(newStaffRef, {
                     uid: uid,
@@ -295,13 +295,21 @@ class UserService {
                     level: staff.level || 'N0',
                     role: role,
                     permissions: permissions,
+                    
+                    // 匯入時給予預設限制
+                    constraints: { 
+                        maxConsecutive: 6, 
+                        canBatch: false, 
+                        isPregnant: false 
+                    },
+
                     status: 'active',
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                     profile: { avatar: '' }
                 });
 
-                // 5. 更新 Unit 關聯 (簡單起見，這裡不使用 batch，因為迴圈較大)
+                // 4. 更新 Unit 關聯
                 const unitRef = doc(db, 'units', targetUnitId);
                 if (staff.isManager) await updateDoc(unitRef, { managers: arrayUnion(uid), schedulers: arrayUnion(uid) });
                 else if (staff.isScheduler) await updateDoc(unitRef, { schedulers: arrayUnion(uid) });
@@ -319,4 +327,3 @@ class UserService {
     }
 }
 export const userService = new UserService();
-
