@@ -1,28 +1,29 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
-// System Modules
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { UnitListPage } from "../modules/system/UnitListPage.js";
 import { UnitEditPage } from "../modules/system/UnitEditPage.js";
-// Unit Modules
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
-// Settings Modules
 import { RuleSettings } from "../modules/settings/RuleSettings.js";
-// Schedule Modules
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
-// Pre-Schedule Modules
 import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
-import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js"; // ✨ 新增匯入
-// Dashboard
-import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
-// Core Components
-import { MainLayout } from "../components/MainLayout.js";
-import { authService } from "../services/firebase/AuthService.js";
+import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
 import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
 import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
 import { PersonalStatsPage } from "../modules/statistics/PersonalStatsPage.js";
 import { UnitStatsPage } from "../modules/statistics/UnitStatsPage.js";
+
+// Dashboards
+import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
+import { UnitManagerDashboard } from "../modules/dashboard/UnitManagerDashboard.js";
+import { UserDashboard } from "../modules/dashboard/UserDashboard.js";
+
+// 新增頁面
+import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
+
+import { MainLayout } from "../components/MainLayout.js";
+import { authService } from "../services/firebase/AuthService.js";
 
 class Router {
     constructor() {
@@ -30,35 +31,32 @@ class Router {
             '/': loginPage,
             '/login': loginPage,
             
-            // --- Dashboard ---
-            '/dashboard': new SystemAdminDashboard(),
+            // Dashboard (動態處理)
+            '/dashboard': null, 
 
-            // --- 1. 系統管理者功能 ---
+            // System
             '/system/units/list': new UnitListPage(),
             '/system/units/create': new UnitCreatePage(),
-            '/system/settings': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-cogs"></i> 系統全域設定</h3><p class="text-muted">功能開發中...</p></div>' },
-            '/system/logs': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-list-alt"></i> 操作日誌</h3><p class="text-muted">功能開發中...</p></div>' },
+            '/system/settings': { render: () => '<div class="p-5 text-center">開發中...</div>' },
+            '/system/logs': { render: () => '<div class="p-5 text-center">開發中...</div>' },
 
-            // --- 2. 單位/人員管理 ---
+            // Unit
             '/unit/staff/list': new StaffListPage(),
             '/unit/staff/create': new StaffCreatePage(),
-            
-            // --- 3. 設定與規則 ---
             '/unit/settings/shifts': new ShiftSettingsPage(),
             '/unit/settings/rules': new RuleSettings(),
 
-            // --- 4. 排班與預班 ---
+            // Schedule
             '/schedule/manual': new SchedulePage(),
             '/pre-schedule/manage': new PreScheduleManagePage(),
-            '/pre-schedule/submit': new PreScheduleSubmitPage(), // ✨ 正式掛載
-            '/schedule/my': new SchedulePage(),               // 暫用 SchedulePage
+            '/pre-schedule/submit': new PreScheduleSubmitPage(),
+            '/schedule/my': new MySchedulePage(), // ✨ 使用新頁面
 
-            // --- 5. 換班與統計 (Phase 4 佔位) ---
-// --- 5. 換班與統計 ---
-'/swaps/review': new SwapReviewPage(),
-'/swaps/apply': new SwapApplyPage(),
-'/stats/unit': new UnitStatsPage(),
-'/stats/personal': new PersonalStatsPage()
+            // Swap & Stats
+            '/swaps/review': new SwapReviewPage(),
+            '/swaps/apply': new SwapApplyPage(),
+            '/stats/unit': new UnitStatsPage(),
+            '/stats/personal': new PersonalStatsPage()
         };
 
         this.appElement = document.getElementById('app');
@@ -96,6 +94,15 @@ class Router {
 
         let page = this.routes[path];
 
+        // ✨ Dashboard 分流邏輯
+        if (path === '/dashboard') {
+            const role = currentUser.role;
+            if (role === 'system_admin') page = new SystemAdminDashboard(currentUser);
+            else if (role === 'unit_manager' || role === 'unit_scheduler') page = new UnitManagerDashboard(currentUser);
+            else page = new UserDashboard(currentUser);
+        }
+
+        // 動態路由
         if (!page) {
             if (path.startsWith('/system/units/edit/')) {
                 page = new UnitEditPage();
@@ -105,15 +112,15 @@ class Router {
         const viewContainer = document.getElementById('main-view');
 
         if (page && viewContainer) {
+            // 選單連動
             let menuPath = path;
-            if (path.startsWith('/system/units/edit/')) {
-                menuPath = '/system/units/list';
-            }
+            if (path.startsWith('/system/units/edit/')) menuPath = '/system/units/list';
             this.currentLayout.updateActiveMenu(menuPath);
 
             try {
-                if (page instanceof SystemAdminDashboard && profile) {
-                    page.user = profile;
+                // 注入 user
+                if (page.constructor.name.includes('Dashboard') || page.constructor.name.includes('Page')) {
+                    page.user = currentUser;
                 }
 
                 let content;
@@ -128,14 +135,10 @@ class Router {
 
             } catch (error) {
                 console.error("Page Render Error:", error);
-                viewContainer.innerHTML = `
-                    <div class="alert alert-danger m-4">
-                        <h4><i class="fas fa-exclamation-triangle"></i> 頁面載入錯誤</h4>
-                        <p>${error.message}</p>
-                    </div>`;
+                viewContainer.innerHTML = `<div class="alert alert-danger m-4">Error: ${error.message}</div>`;
             }
         } else {
-             if(viewContainer) viewContainer.innerHTML = `<div class="p-5 text-center"><h1>404</h1><p>找不到頁面: ${path}</p></div>`;
+             if(viewContainer) viewContainer.innerHTML = `<div class="p-5 text-center">404 Not Found</div>`;
         }
     }
 
@@ -145,4 +148,3 @@ class Router {
 }
 
 export const router = new Router();
-
