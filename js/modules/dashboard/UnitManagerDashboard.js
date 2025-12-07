@@ -12,7 +12,9 @@ export class UnitManagerDashboard {
             <div class="container-fluid">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h2 class="h3 text-gray-800">單位管理儀表板</h2>
-                    <span class="badge bg-primary">${this.user.unitId || '未知單位'}</span>
+                    <span class="badge bg-primary fs-6" id="dash-unit-name">
+                        <i class="fas fa-spinner fa-spin"></i> 載入中...
+                    </span>
                 </div>
 
                 <div class="row">
@@ -64,11 +66,18 @@ export class UnitManagerDashboard {
 
     async afterRender() {
         if(this.user.unitId) {
+            // Fix 6: 查詢單位名稱
+            const unit = await UnitService.getUnitById(this.user.unitId);
+            const unitNameDisplay = unit ? unit.unitName : this.user.unitId;
+            document.getElementById('dash-unit-name').textContent = unitNameDisplay;
+
             const staff = await userService.getUnitStaff(this.user.unitId);
             document.getElementById('dash-staff-count').textContent = staff.length + " 人";
 
             const swaps = await SwapService.getPendingRequests(this.user.unitId);
             document.getElementById('dash-swap-count').textContent = swaps.length + " 筆";
+        } else {
+            document.getElementById('dash-unit-name').textContent = "無單位";
         }
     }
 }
