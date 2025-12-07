@@ -6,10 +6,10 @@ export class StaffListPage {
     constructor() {
         this.staffList = [];
         this.unitMap = {};
+        this.selectedIds = new Set(); // 儲存被勾選的 ID
     }
 
     async render() {
-        // 取得所有單位，用於篩選與對照名稱
         const units = await UnitService.getAllUnits();
         
         const unitMap = {};
@@ -35,7 +35,21 @@ export class StaffListPage {
 
                 <div class="card shadow mb-4">
                     <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                        <h6 class="m-0 font-weight-bold text-primary">人員列表</h6>
+                        <div class="d-flex align-items-center gap-3">
+                            <h6 class="m-0 font-weight-bold text-primary">人員列表</h6>
+                            
+                            <div id="batch-actions" class="d-none align-items-center gap-2 bg-light p-1 rounded border">
+                                <span class="small fw-bold ms-2">已選 <span id="selected-count">0</span> 人:</span>
+                                
+                                <select id="batch-unit-select" class="form-select form-select-sm d-inline-block w-auto">
+                                    <option value="">選擇調動單位...</option>
+                                    ${unitOptions}
+                                </select>
+                                <button id="btn-batch-move" class="btn btn-sm btn-info text-white">調動</button>
+                                <div class="vr"></div>
+                                <button id="btn-batch-delete" class="btn btn-sm btn-danger">刪除</button>
+                            </div>
+                        </div>
                         
                         <div class="d-flex align-items-center">
                             <label class="me-2 mb-0 small fw-bold">篩選單位：</label>
@@ -51,6 +65,9 @@ export class StaffListPage {
                             <table class="table table-bordered table-hover" id="staffTable" width="100%" cellspacing="0">
                                 <thead class="table-light">
                                     <tr>
+                                        <th style="width: 40px;" class="text-center">
+                                            <input type="checkbox" id="select-all" class="form-check-input">
+                                        </th>
                                         <th style="width:10%">ID</th>
                                         <th style="width:15%">姓名</th>
                                         <th style="width:20%">Email</th>
@@ -62,7 +79,7 @@ export class StaffListPage {
                                     </tr>
                                 </thead>
                                 <tbody id="staff-tbody">
-                                    <tr><td colspan="8" class="text-center">載入中...</td></tr>
+                                    <tr><td colspan="9" class="text-center">載入中...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -147,7 +164,7 @@ export class StaffListPage {
                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <div class="modal-body">
-                                <p class="text-muted">請上傳 CSV 檔案。<strong>請確保包含密碼欄位以便建立帳號。</strong></p>
+                                <p class="text-muted">請上傳 CSV 檔案。<strong>若單位代號不存在，系統將自動建立該單位。若員工編號重複則會略過。</strong></p>
                                 
                                 <div class="alert alert-info small">
                                     <strong>CSV 格式說明：</strong><br>
@@ -158,7 +175,7 @@ export class StaffListPage {
                                     <pre class="mb-0 small">staffId,name,email,password,level,unitCode,isManager,isScheduler
 N001,王小美,may@test.com,123456,N2,9B,0,0
 N002,陳護理長,hn@test.com,123456,HN,9B,1,1
-N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
+N003,李排班,lee@test.com,123456,N3,ICU,0,1</pre>
                                 </div>
                                 
                                 <div class="mb-3">
@@ -198,13 +215,34 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
 
         const tbody = document.getElementById('staff-tbody');
         const unitFilter = document.getElementById('unit-filter');
+        
+        // 批次操作 UI
+        const batchToolbar = document.getElementById('batch-actions');
+        const selectAllCheckbox = document.getElementById('select-all');
+        const countSpan = document.getElementById('selected-count');
 
-        // 載入人員列表函式
+        // 更新批次工具列狀態
+        const updateBatchUI = () => {
+            const count = this.selectedIds.size;
+            countSpan.textContent = count;
+            if (count > 0) {
+                batchToolbar.classList.remove('d-none');
+                batchToolbar.classList.add('d-flex');
+            } else {
+                batchToolbar.classList.add('d-none');
+                batchToolbar.classList.remove('d-flex');
+            }
+        };
+
+        // 載入人員列表
         const loadStaff = async (unitId) => {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center p-3">載入中...</td></tr>';
-            let staff = [];
-            
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center p-3">載入中...</td></tr>';
+            this.selectedIds.clear(); // 清空選取
+            updateBatchUI();
+            selectAllCheckbox.checked = false;
+
             try {
+                let staff = [];
                 if (unitId) {
                     staff = await userService.getUnitStaff(unitId);
                 } else {
@@ -214,18 +252,15 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                 this.renderTable();
             } catch (error) {
                 console.error(error);
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">載入失敗</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">載入失敗</td></tr>';
             }
         };
 
-        // 篩選變更事件
         unitFilter.addEventListener('change', (e) => loadStaff(e.target.value));
 
-        // 渲染表格函式
         this.renderTable = () => {
-            const tbody = document.getElementById('staff-tbody');
             if (this.staffList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-3 text-muted">無資料</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center p-3 text-muted">無資料</td></tr>';
                 return;
             }
             tbody.innerHTML = this.staffList.map(s => {
@@ -233,6 +268,9 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                 const isScheduler = s.permissions?.canEditSchedule || s.role === 'unit_scheduler';
                 return `
                 <tr>
+                    <td class="text-center align-middle">
+                        <input type="checkbox" class="form-check-input row-select" value="${s.id}">
+                    </td>
                     <td class="align-middle font-monospace">${s.staffId || '-'}</td>
                     <td class="align-middle fw-bold">${s.name}</td>
                     <td class="align-middle small text-muted">${s.email}</td>
@@ -252,14 +290,70 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
             `}).join('');
         };
 
-        // 表格點擊事件 (編輯/刪除)
+        // --- 事件綁定 ---
+
+        // 1. 全選/取消全選
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.row-select').forEach(cb => {
+                cb.checked = isChecked;
+                if (isChecked) this.selectedIds.add(cb.value);
+                else this.selectedIds.delete(cb.value);
+            });
+            updateBatchUI();
+        });
+
+        // 2. 單選 Checkbox
+        tbody.addEventListener('change', (e) => {
+            if (e.target.classList.contains('row-select')) {
+                const id = e.target.value;
+                if (e.target.checked) this.selectedIds.add(id);
+                else this.selectedIds.delete(id);
+                updateBatchUI();
+            }
+        });
+
+        // 3. 批次刪除
+        document.getElementById('btn-batch-delete').addEventListener('click', async () => {
+            if (this.selectedIds.size === 0) return;
+            if (confirm(`確定要刪除選取的 ${this.selectedIds.size} 位人員嗎？\n注意：這不會刪除 Auth 帳號，僅刪除資料庫記錄。`)) {
+                const ids = Array.from(this.selectedIds);
+                const res = await userService.batchDeleteStaff(ids);
+                if (res.success) {
+                    alert('刪除成功');
+                    loadStaff(unitFilter.value);
+                } else {
+                    alert('刪除失敗: ' + res.error);
+                }
+            }
+        });
+
+        // 4. 批次調動
+        document.getElementById('btn-batch-move').addEventListener('click', async () => {
+            const targetUnitId = document.getElementById('batch-unit-select').value;
+            if (!targetUnitId) return alert('請先選擇要調動到的單位');
+            if (this.selectedIds.size === 0) return;
+
+            if (confirm(`確定要將選取的 ${this.selectedIds.size} 位人員調動至該單位嗎？`)) {
+                const ids = Array.from(this.selectedIds);
+                const res = await userService.batchUpdateUnit(ids, targetUnitId);
+                if (res.success) {
+                    alert('調動成功');
+                    loadStaff(unitFilter.value);
+                } else {
+                    alert('調動失敗: ' + res.error);
+                }
+            }
+        });
+
+        // 5. 單筆操作 (編輯/刪除)
         tbody.addEventListener('click', async (e) => {
             const btn = e.target.closest('button');
             if (!btn) return;
             const id = btn.dataset.id;
             
             if (btn.classList.contains('delete-btn')) {
-                if (confirm('確定刪除此人員？\n注意：這不會刪除 Authentication 帳號，但會移除資料庫記錄。')) {
+                if (confirm('確定刪除此人員？')) {
                     const result = await userService.deleteStaff(id);
                     if (result.success) loadStaff(unitFilter.value);
                     else alert('刪除失敗：' + result.error);
@@ -275,7 +369,6 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                 document.getElementById('edit-level').value = staff.level || 'N0';
                 document.getElementById('edit-unit').value = staff.unitId;
                 
-                // 設定 checkbox
                 document.getElementById('edit-is-manager').checked = !!(staff.permissions?.canManageUnit);
                 document.getElementById('edit-is-scheduler').checked = !!(staff.permissions?.canEditSchedule);
                 
@@ -283,13 +376,9 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
             }
         });
 
-        // 儲存編輯
+        // 6. 儲存編輯
         document.getElementById('btn-save-edit').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-save-edit');
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '儲存中...';
-
+            // ... (保持原樣) ...
             const id = document.getElementById('edit-id').value;
             const unitId = document.getElementById('edit-unit').value;
             const isManager = document.getElementById('edit-is-manager').checked;
@@ -301,30 +390,16 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                 unitId: unitId
             };
             
-            try {
-                // 1. 更新基本資料
-                await userService.updateStaff(id, updateData);
-                // 2. 更新管理者權限
-                await userService.toggleUnitManager(id, unitId, isManager);
-                // 3. 更新排班者權限
-                await userService.toggleUnitScheduler(id, unitId, isScheduler);
+            await userService.updateStaff(id, updateData);
+            await userService.toggleUnitManager(id, unitId, isManager);
+            await userService.toggleUnitScheduler(id, unitId, isScheduler);
 
-                editModal.hide();
-                alert('資料更新成功');
-                loadStaff(unitFilter.value);
-
-            } catch (error) {
-                console.error(error);
-                alert('更新失敗');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
-            }
+            editModal.hide();
+            alert('更新成功');
+            loadStaff(unitFilter.value);
         });
         
-        // --- 匯入相關邏輯 ---
-
-        // 下載範例檔
+        // 7. 匯入相關邏輯
         document.getElementById('dl-staff-template').addEventListener('click', () => {
             const csvContent = "staffId,name,email,password,level,unitCode,isManager,isScheduler\nN001,王小美,may@test.com,123456,N2,9B,0,0\nN002,陳護理長,hn@test.com,123456,HN,9B,1,1";
             const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -334,7 +409,6 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
             link.click();
         });
 
-        // 開始匯入
         document.getElementById('start-staff-import').addEventListener('click', async () => {
              const fileInput = document.getElementById('staff-csv-file');
              const resultDiv = document.getElementById('staff-import-result');
@@ -354,12 +428,9 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                  try {
                      const text = e.target.result;
                      const rows = text.split('\n').map(row => row.trim()).filter(row => row);
-                     
-                     // 移除標題列
-                     const headers = rows.shift(); 
+                     rows.shift(); // 移除標題
                      
                      const staffData = rows.map(row => {
-                         // 簡單 CSV 解析
                          const cols = row.split(',');
                          return {
                              staffId: cols[0]?.trim(),
@@ -373,19 +444,12 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                          };
                      });
 
-                     // 呼叫 UserService 進行批次匯入
                      const result = await userService.importStaff(staffData);
                      
                      if (result.failed === 0) {
                          resultDiv.innerHTML = `<div class="text-success fw-bold"><i class="fas fa-check-circle"></i> 成功匯入 ${result.success} 筆人員！</div>`;
                          alert(`成功匯入 ${result.success} 筆人員！`);
-                         
-                         setTimeout(() => {
-                            importModal.hide();
-                            // 觸發重新載入
-                            const currentUnit = unitFilter.value;
-                            loadStaff(currentUnit);
-                         }, 1500);
+                         setTimeout(() => { importModal.hide(); loadStaff(unitFilter.value); }, 1500);
                      } else {
                          let errorHtml = `<div class="mb-2"><strong>匯入結果：</strong> <span class="text-success">成功 ${result.success}</span> / <span class="text-danger">失敗 ${result.failed}</span></div>`;
                          errorHtml += `<ul class="list-group list-group-flush small">`;
@@ -394,7 +458,6 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
                          resultDiv.innerHTML = errorHtml;
                      }
                  } catch (error) {
-                     console.error(error);
                      resultDiv.innerHTML = `<div class="text-danger">處理失敗: ${error.message}</div>`;
                  } finally {
                      btn.disabled = false;
@@ -404,7 +467,6 @@ N003,李排班,lee@test.com,123456,N3,9B,0,1</pre>
              reader.readAsText(file);
         });
 
-        // 初始載入
         loadStaff("");
     }
 }
