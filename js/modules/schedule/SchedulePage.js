@@ -123,15 +123,22 @@ export class SchedulePage {
             alert("驗證完成，違規項目已標示紅框。");
         });
 
+        // 發布/撤回按鈕邏輯
         const btnPublish = document.getElementById('btn-publish');
         if(btnPublish) {
              btnPublish.addEventListener('click', async () => {
                  if(!this.state.scheduleData) return;
-                 const newStatus = this.state.scheduleData.status === 'published' ? 'draft' : 'published';
-                 if(confirm(`確定要將狀態變更為 ${newStatus === 'published' ? '發布 (Published)' : '草稿 (Draft)'} 嗎？`)) {
-                     await ScheduleService.updateStatus(this.state.currentUnitId, this.state.year, this.state.month, newStatus);
-                     this.state.scheduleData.status = newStatus;
-                     this.updateStatusBadge();
+                 const currentStatus = this.state.scheduleData.status;
+                 const newStatus = currentStatus === 'published' ? 'draft' : 'published';
+                 const actionText = newStatus === 'published' ? '發布' : '撤回';
+                 
+                 if(confirm(`確定要 ${actionText} 此班表嗎？`)) {
+                     const res = await ScheduleService.updateStatus(this.state.currentUnitId, this.state.year, this.state.month, newStatus);
+                     if(res) {
+                         this.state.scheduleData.status = newStatus;
+                         this.updateStatusBadge();
+                         alert(`班表已${actionText}`);
+                     }
                  }
              });
         }
@@ -143,6 +150,7 @@ export class SchedulePage {
         // 如果單位選單有值 (單位管理者)，自動觸發載入
         if (unitSelect.value) {
             this.state.currentUnitId = unitSelect.value;
+            // 延遲一下確保 DOM 穩定
             setTimeout(() => {
                  const btn = document.getElementById('btn-load-schedule');
                  if(btn) btn.click();
@@ -150,14 +158,12 @@ export class SchedulePage {
         }
     }
 
-    // 【補回】全域點擊處理
     handleGlobalClick(e) {
         if (!e.target.closest('.shift-cell') && this.state.activeMenu) {
             this.closeMenu();
         }
     }
 
-    // 【補回】關閉選單
     closeMenu() {
         if (this.state.activeMenu) {
             this.state.activeMenu.remove();
@@ -173,7 +179,7 @@ export class SchedulePage {
         container.innerHTML = '<div class="text-center p-5">資料載入中...</div>';
 
         try {
-            // 檢查預班狀態
+            // 1. 檢查預班狀態
             const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, this.state.year, this.state.month);
             if (preSchedule && preSchedule.status === 'open') {
                 if (confirm(`目前 ${this.state.month} 月還在預班開放期間。\n是否要提早關閉預班並開始排班？`)) {
@@ -185,6 +191,7 @@ export class SchedulePage {
                 }
             }
 
+            // 2. 並行載入資料
             const [unit, staffList, schedule] = await Promise.all([
                 UnitService.getUnitById(this.state.currentUnitId),
                 userService.getUnitStaff(this.state.currentUnitId),
@@ -232,7 +239,7 @@ export class SchedulePage {
         const { year, month, daysInMonth, staffList, scheduleData, unitSettings } = this.state;
         const shiftDefs = unitSettings?.settings?.shifts || [];
         
-        // 執行驗證
+        // 執行驗證 (使用簡單規則或從 Settings 讀取)
         const rules = { minStaff: {}, constraints: {} }; 
         const validation = RuleEngine.validateAll(scheduleData, daysInMonth, staffList, unitSettings, rules);
         const { staffReport, coverageErrors } = validation;
@@ -301,7 +308,6 @@ export class SchedulePage {
         });
     }
 
-    // 【補回】開啟班別選單
     openShiftMenu(targetCell, availableShifts) {
         this.closeMenu();
         const menu = document.createElement('div');
@@ -327,7 +333,6 @@ export class SchedulePage {
             menu.appendChild(item);
         });
 
-        // 定位
         const rect = targetCell.getBoundingClientRect();
         menu.style.top = `${rect.bottom + window.scrollY}px`;
         menu.style.left = `${rect.left + window.scrollX}px`;
@@ -336,19 +341,16 @@ export class SchedulePage {
         this.state.activeMenu = menu;
     }
 
-    // 【補回】處理班別選擇
     async handleShiftSelect(cell, shiftCode) {
         this.closeMenu();
         const staffId = cell.dataset.staffId;
         const day = cell.dataset.day;
 
-        // 更新本地資料
         if (!this.state.scheduleData.assignments[staffId]) {
             this.state.scheduleData.assignments[staffId] = {};
         }
         this.state.scheduleData.assignments[staffId][day] = shiftCode;
 
-        // 重新渲染 (觸發驗證)
         this.renderGrid();
 
         try {
@@ -366,7 +368,6 @@ export class SchedulePage {
         }
     }
 
-    // 【補回】AI 填充
     async runAutoFillOff() {
         if (!confirm("確定要將所有空白格子填入 OFF？")) return;
         const { updatedAssignments, count } = BasicAlgorithm.fillEmptyWithOff(
@@ -388,19 +389,24 @@ export class SchedulePage {
 
     updateStatusBadge() {
         const badge = document.getElementById('schedule-status-badge');
+        const btn = document.getElementById('btn-publish');
         if(!badge || !this.state.scheduleData) return;
         
         const status = this.state.scheduleData.status;
         if (status === 'published') {
             badge.className = 'badge bg-success';
             badge.textContent = '已發布 (Published)';
-            document.getElementById('btn-publish').textContent = '撤回班表';
-            document.getElementById('btn-publish').classList.replace('btn-primary', 'btn-warning');
+            if(btn) {
+                btn.textContent = '撤回班表';
+                btn.classList.replace('btn-primary', 'btn-warning');
+            }
         } else {
-            badge.className = 'badge bg-warning text-dark';
+            badge.className = 'badge bg-secondary';
             badge.textContent = '草稿 (Draft)';
-            document.getElementById('btn-publish').textContent = '發布班表';
-            document.getElementById('btn-publish').classList.replace('btn-warning', 'btn-primary');
+            if(btn) {
+                btn.textContent = '發布班表';
+                btn.classList.replace('btn-warning', 'btn-primary');
+            }
         }
     }
 }
