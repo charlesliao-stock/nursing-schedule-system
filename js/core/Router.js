@@ -19,6 +19,10 @@ import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.
 // Core Components
 import { MainLayout } from "../components/MainLayout.js";
 import { authService } from "../services/firebase/AuthService.js";
+import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
+import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
+import { PersonalStatsPage } from "../modules/statistics/PersonalStatsPage.js";
+import { UnitStatsPage } from "../modules/statistics/UnitStatsPage.js";
 
 class Router {
     constructor() {
@@ -50,10 +54,11 @@ class Router {
             '/schedule/my': new SchedulePage(),               // 暫用 SchedulePage
 
             // --- 5. 換班與統計 (Phase 4 佔位) ---
-            '/swaps/review': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-exchange-alt"></i> 換班審核</h3><p class="text-muted">功能開發中...</p></div>' },
-            '/swaps/apply': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-exchange-alt"></i> 申請換班</h3><p class="text-muted">功能開發中...</p></div>' },
-            '/stats/unit': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-chart-bar"></i> 單位統計報表</h3><p class="text-muted">功能開發中...</p></div>' },
-            '/stats/personal': { render: () => '<div class="p-5 text-center"><h3><i class="fas fa-chart-pie"></i> 個人統計</h3><p class="text-muted">功能開發中...</p></div>' }
+// --- 5. 換班與統計 ---
+'/swaps/review': new SwapReviewPage(),
+'/swaps/apply': new SwapApplyPage(),
+'/stats/unit': new UnitStatsPage(),
+'/stats/personal': new PersonalStatsPage()
         };
 
         this.appElement = document.getElementById('app');
@@ -140,3 +145,4 @@ class Router {
 }
 
 export const router = new Router();
+
