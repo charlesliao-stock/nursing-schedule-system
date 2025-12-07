@@ -16,13 +16,11 @@ export class PreScheduleManagePage {
     }
 
     async render() {
-        // 1. 取得當前使用者的單位
         const user = authService.getProfile();
         if (user && user.unitId) {
             this.currentUnitId = user.unitId;
         }
 
-        // 單位選單 (若為 admin 或有多單位權限可選，這裡簡化為讀取當前單位)
         const units = await UnitService.getAllUnits();
         const unitOptions = units.map(u => 
             `<option value="${u.unitId}" ${u.unitId === this.currentUnitId ? 'selected' : ''}>${u.unitName}</option>`
@@ -58,18 +56,81 @@ export class PreScheduleManagePage {
                 <div id="manage-content">
                     <div class="text-center p-5 text-muted">請選擇月份並查詢</div>
                 </div>
+
+                <div id="external-staff-modal" class="modal fade" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">加入支援人員 (跨單位)</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label>輸入員工 ID (Staff ID)</label>
+                                    <div class="input-group">
+                                        <input type="text" id="search-staff-id" class="form-control" placeholder="例如: N12345">
+                                        <button class="btn btn-outline-secondary" id="btn-search-staff">搜尋</button>
+                                    </div>
+                                </div>
+                                <div id="search-result" class="border rounded p-3 bg-light" style="display:none;">
+                                    <strong>姓名：</strong> <span id="res-name"></span><br>
+                                    <strong>單位：</strong> <span id="res-unit"></span><br>
+                                    <button id="btn-add-external" class="btn btn-success btn-sm mt-2 w-100">加入此預班表</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
 
     async afterRender() {
-        // 綁定查詢事件
         document.getElementById('filter-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             await this.loadData();
         });
 
-        // 初始載入
+        // 搜尋外調人員
+        const modalEl = document.getElementById('external-staff-modal');
+        this.externalModal = new bootstrap.Modal(modalEl);
+        
+        document.getElementById('btn-search-staff').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const staffId = document.getElementById('search-staff-id').value.trim();
+            if(!staffId) return;
+            
+            // 這裡需要 UserService 提供 queryByStaffId，暫時用 getAllStaff filter 模擬
+            // 實務上應新增 query 介面
+            const allStaff = await userService.getAllStaff();
+            const found = allStaff.find(s => s.staffId === staffId);
+            
+            const resDiv = document.getElementById('search-result');
+            if (found) {
+                resDiv.style.display = 'block';
+                document.getElementById('res-name').textContent = found.name;
+                document.getElementById('res-unit').textContent = found.unitId; // 可轉中文名稱
+                
+                // 綁定加入按鈕
+                const addBtn = document.getElementById('btn-add-external');
+                addBtn.onclick = async () => {
+                    addBtn.disabled = true;
+                    const res = await PreScheduleService.addExternalStaff(this.currentUnitId, this.year, this.month, found);
+                    if(res.success) {
+                        alert('已加入！');
+                        this.externalModal.hide();
+                        this.loadData(); // 重整列表
+                    } else {
+                        alert('加入失敗: ' + res.error);
+                    }
+                    addBtn.disabled = false;
+                };
+            } else {
+                alert('找不到此員工 ID');
+                resDiv.style.display = 'none';
+            }
+        });
+
         if (this.currentUnitId) {
             await this.loadData();
         }
@@ -101,102 +162,87 @@ export class PreScheduleManagePage {
         }
     }
 
-    /**
-     * 視圖：尚未建立，顯示建立表單
-     */
     renderCreateView(container) {
+        // 取得該單位總人數 (用以試算)
+        // 這裡需要呼叫 UserService，為簡化先不顯示動態試算，留待 renderManageView
         container.innerHTML = `
             <div class="card shadow border-left-primary">
                 <div class="card-body text-center p-5">
-                    <div class="mb-4">
-                        <i class="fas fa-calendar-plus fa-4x text-gray-300"></i>
-                    </div>
                     <h3>尚未建立 ${this.year}年${this.month}月 預班表</h3>
-                    <p class="text-muted mb-4">建立後，同仁即可開始提交休假需求。</p>
-                    
                     <div class="text-start mx-auto" style="max-width: 500px;">
-                        <h5 class="border-bottom pb-2">初始化設定</h5>
                         <form id="create-form">
                             <div class="mb-3">
-                                <label class="form-label">每人可預休天數 (含假日)</label>
+                                <label class="form-label">每人可預休天數</label>
                                 <input type="number" id="init-maxOff" class="form-control" value="8">
                             </div>
                             <div class="row mb-3">
-                                <div class="col">
-                                    <label class="form-label">開放日期</label>
-                                    <input type="date" id="init-openDate" class="form-control" value="${new Date().toISOString().split('T')[0]}">
-                                </div>
-                                <div class="col">
-                                    <label class="form-label">截止日期</label>
-                                    <input type="date" id="init-closeDate" class="form-control">
-                                </div>
+                                <label class="form-label">每班需求人數 (用於試算可休額度)</label>
+                                <div class="col"><input type="number" id="init-req-d" class="form-control" placeholder="白班" value="5"></div>
+                                <div class="col"><input type="number" id="init-req-e" class="form-control" placeholder="小夜" value="3"></div>
+                                <div class="col"><input type="number" id="init-req-n" class="form-control" placeholder="大夜" value="2"></div>
                             </div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="init-canChooseShift">
-                                <label class="form-check-label">允許同仁指定班別 (不只是畫 OFF)</label>
+                            
+                            <div class="row mb-3">
+                                <div class="col"><label>開放日期</label><input type="date" id="init-openDate" class="form-control"></div>
+                                <div class="col"><label>截止日期</label><input type="date" id="init-closeDate" class="form-control"></div>
                             </div>
-                            <button type="submit" class="btn btn-primary w-100 btn-lg">
-                                <i class="fas fa-plus-circle"></i> 建立預班表
-                            </button>
+                            <button type="submit" class="btn btn-primary w-100">建立預班表</button>
                         </form>
                     </div>
                 </div>
             </div>
         `;
+        // 設定預設日期
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('init-openDate').value = today;
 
         document.getElementById('create-form').addEventListener('submit', (e) => this.handleCreate(e));
     }
 
-    /**
-     * 視圖：已建立，顯示管理介面
-     */
     renderManageView(container) {
         const { status, settings, submissions } = this.preScheduleData;
         const totalStaff = Object.keys(submissions || {}).length;
         const submittedCount = Object.values(submissions || {}).filter(s => s.submitted).length;
-        const progress = totalStaff > 0 ? Math.round((submittedCount / totalStaff) * 100) : 0;
+        
+        // 每日可休人數試算
+        const reqStaff = (parseInt(settings.minStaff?.D)||0) + (parseInt(settings.minStaff?.E)||0) + (parseInt(settings.minStaff?.N)||0);
+        const dailyAvailableOff = totalStaff - reqStaff;
 
-        // 狀態標籤
-        let statusBadge = '';
-        if (status === 'draft') statusBadge = '<span class="badge bg-secondary">草稿</span>';
-        else if (status === 'open') statusBadge = '<span class="badge bg-success">開放填寫中</span>';
-        else if (status === 'closed') statusBadge = '<span class="badge bg-danger">已截止</span>';
+        let statusBadge = status === 'open' 
+            ? '<span class="badge bg-success">開放中</span>' 
+            : '<span class="badge bg-secondary">關閉/截止</span>';
 
         container.innerHTML = `
             <div class="row">
                 <div class="col-lg-4 mb-4">
                     <div class="card shadow mb-4">
-                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                            <h6 class="m-0 font-weight-bold text-primary">預班狀態</h6>
+                        <div class="card-header py-3 d-flex justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-primary">設定與狀態</h6>
                             ${statusBadge}
                         </div>
                         <div class="card-body">
-                            <h4 class="small font-weight-bold">提交進度 <span class="float-end">${submittedCount}/${totalStaff} 人</span></h4>
-                            <div class="progress mb-4">
-                                <div class="progress-bar bg-info" role="progressbar" style="width: ${progress}%"></div>
-                            </div>
-
-                            <ul class="list-group list-group-flush mb-4">
+                            <ul class="list-group list-group-flush mb-3">
                                 <li class="list-group-item d-flex justify-content-between">
-                                    <span>每人可休上限</span>
-                                    <strong>${settings.maxOffDays} 天</strong>
+                                    <span>總人數 / 提交數</span>
+                                    <strong>${totalStaff} / ${submittedCount}</strong>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between">
-                                    <span>開放日期</span>
-                                    <span>${settings.openDate || '-'}</span>
+                                    <span>每班需求總計</span>
+                                    <strong>${reqStaff} 人</strong>
                                 </li>
-                                <li class="list-group-item d-flex justify-content-between">
-                                    <span>截止日期</span>
-                                    <span class="text-danger">${settings.closeDate || '-'}</span>
+                                <li class="list-group-item d-flex justify-content-between bg-light">
+                                    <span>每日可休人數 (試算)</span>
+                                    <strong class="text-success">約 ${dailyAvailableOff} 人</strong>
                                 </li>
                             </ul>
-
                             <div class="d-grid gap-2">
                                 ${status === 'open' 
-                                    ? `<button class="btn btn-warning" onclick="window.updateStatus('closed')"><i class="fas fa-lock"></i> 停止收件 (截止)</button>` 
-                                    : `<button class="btn btn-success" onclick="window.updateStatus('open')"><i class="fas fa-lock-open"></i> 開放填寫</button>`
+                                    ? `<button class="btn btn-warning" onclick="window.updateStatus('closed')">停止收件</button>` 
+                                    : `<button class="btn btn-success" onclick="window.updateStatus('open')">開放填寫</button>`
                                 }
-                                <button class="btn btn-primary" onclick="window.location.hash='/schedule/manual'"><i class="fas fa-arrow-right"></i> 前往排班</button>
+                                <button class="btn btn-outline-primary" onclick="this.parentElement.parentElement.querySelector('.modal').classList.add('show')">
+                                    <i class="fas fa-user-plus"></i> 加入支援人力
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -204,8 +250,11 @@ export class PreScheduleManagePage {
 
                 <div class="col-lg-8">
                     <div class="card shadow">
-                        <div class="card-header py-3">
-                            <h6 class="m-0 font-weight-bold text-primary">人員提交狀況</h6>
+                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                            <h6 class="m-0 font-weight-bold text-primary">人員名單</h6>
+                            <button class="btn btn-sm btn-primary" onclick="document.getElementById('external-staff-modal').style.display='block'; new bootstrap.Modal(document.getElementById('external-staff-modal')).show();">
+                                <i class="fas fa-plus"></i> 支援
+                            </button>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
@@ -213,14 +262,13 @@ export class PreScheduleManagePage {
                                     <thead class="table-light">
                                         <tr>
                                             <th>姓名</th>
+                                            <th>類型</th>
                                             <th>狀態</th>
-                                            <th>預休天數</th>
-                                            <th>最後更新</th>
+                                            <th>預休</th>
                                             <th>備註</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="submission-tbody">
-                                        </tbody>
+                                    <tbody id="submission-tbody"></tbody>
                                 </table>
                             </div>
                         </div>
@@ -230,34 +278,27 @@ export class PreScheduleManagePage {
         `;
         
         this.renderSubmissionList();
-        
-        // 把 updateStatus 掛載到 window 以便 onclick 呼叫 (或是改用 addEventListener 綁定)
-        window.updateStatus = (status) => this.handleStatusUpdate(status);
+        window.updateStatus = (s) => this.handleStatusUpdate(s);
     }
 
     async renderSubmissionList() {
         const tbody = document.getElementById('submission-tbody');
         const submissions = this.preScheduleData.submissions;
         
-        // 取得所有人員資料以顯示姓名
-        const staffList = await userService.getUnitStaff(this.currentUnitId);
+        // 這裡直接用 submissions 的資料渲染，因為可能包含外調人員 (不在 getUnitStaff 裡)
+        // 若要顯示詳細職級，可再做一次對照
         
-        tbody.innerHTML = staffList.map(staff => {
-            const sub = submissions[staff.id] || { submitted: false, wishes: {} };
-            const wishCount = Object.values(sub.wishes).filter(w => w === 'OFF').length;
-            const updatedTime = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleString() : '-';
+        tbody.innerHTML = Object.entries(submissions).map(([id, sub]) => {
+            const wishCount = Object.values(sub.wishes || {}).filter(w => w === 'OFF').length;
+            const typeBadge = sub.isExternal ? '<span class="badge bg-warning text-dark">支援</span>' : '<span class="badge bg-light text-dark">本單位</span>';
             
             return `
                 <tr>
-                    <td>${staff.name} <span class="small text-muted">(${staff.level})</span></td>
-                    <td>
-                        ${sub.submitted 
-                            ? '<span class="badge bg-success">已提交</span>' 
-                            : '<span class="badge bg-light text-dark border">未提交</span>'}
-                    </td>
+                    <td>${sub.name}</td>
+                    <td>${typeBadge}</td>
+                    <td>${sub.submitted ? '<i class="fas fa-check text-success"></i>' : '-'}</td>
                     <td>${wishCount}</td>
-                    <td class="small">${updatedTime}</td>
-                    <td class="small text-muted text-truncate" style="max-width: 150px;">${sub.notes || ''}</td>
+                    <td class="small text-muted text-truncate" style="max-width:150px;">${sub.notes || ''}</td>
                 </tr>
             `;
         }).join('');
@@ -269,16 +310,14 @@ export class PreScheduleManagePage {
             maxOffDays: document.getElementById('init-maxOff').value,
             openDate: document.getElementById('init-openDate').value,
             closeDate: document.getElementById('init-closeDate').value,
-            canChooseShift: document.getElementById('init-canChooseShift').checked
+            minStaff: {
+                D: document.getElementById('init-req-d').value,
+                E: document.getElementById('init-req-e').value,
+                N: document.getElementById('init-req-n').value
+            }
         };
 
-        const btn = e.target.querySelector('button');
-        btn.disabled = true;
-        btn.innerHTML = '建立中...';
-
-        // 取得該單位目前所有員工，初始化名單
         const staffList = await userService.getUnitStaff(this.currentUnitId);
-
         const result = await PreScheduleService.createPreSchedule(
             this.currentUnitId, this.year, this.month, settings, staffList
         );
@@ -288,21 +327,12 @@ export class PreScheduleManagePage {
             this.loadData();
         } else {
             alert('建立失敗: ' + result.error);
-            btn.disabled = false;
         }
     }
 
     async handleStatusUpdate(newStatus) {
-        if (!confirm(`確定要將狀態變更為 ${newStatus} 嗎？`)) return;
-
-        const result = await PreScheduleService.updateStatus(
-            this.currentUnitId, this.year, this.month, newStatus
-        );
-
-        if (result.success) {
-            this.loadData();
-        } else {
-            alert('更新失敗');
-        }
+        if (!confirm('確定變更狀態？')) return;
+        const result = await PreScheduleService.updateStatus(this.currentUnitId, this.year, this.month, newStatus);
+        if(result.success) this.loadData();
     }
 }
