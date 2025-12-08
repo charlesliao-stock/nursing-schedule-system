@@ -3,53 +3,47 @@ import { userService } from "../../services/firebase/UserService.js";
 import { authService } from "../../services/firebase/AuthService.js";
 
 export class GroupSettingsPage {
-    constructor() { this.groups = []; this.targetUnitId = null; this.modal = null; }
+    constructor() { this.groups = []; this.staffList = []; this.targetUnitId = null; this.modal = null; }
 
     async render() {
-        const user = authService.getProfile();
-        const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
-        
-        let unitOpts = '';
-        if(isAdmin) {
-            const units = await UnitService.getAllUnits();
-            unitOpts = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-        } else {
-            const units = await UnitService.getUnitsByManager(user.uid);
-            unitOpts = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-        }
-
         return `
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-layer-group"></i> 組別設定</h3>
-                    <p class="text-muted small mb-0">定義單位內的組別（如資深、資淺），並分配人員。</p>
+                    <p class="text-muted small mb-0">定義單位內的分組（如資深、資淺），並進行人員分配。</p>
                 </div>
 
                 <div class="card shadow-sm mb-4 border-left-primary">
                     <div class="card-body py-2 d-flex align-items-center gap-2">
                         <label class="fw-bold mb-0 text-nowrap">選擇單位：</label>
-                        <select id="unit-select" class="form-select w-auto">${unitOpts}</select>
+                        <select id="unit-select" class="form-select w-auto">
+                            <option value="">載入中...</option>
+                        </select>
                         <div class="vr mx-2"></div>
-                        <button id="btn-add" class="btn btn-primary text-nowrap"><i class="fas fa-plus"></i> 新增組別</button>
+                        <button id="btn-add" class="btn btn-primary text-nowrap">
+                            <i class="fas fa-plus"></i> 新增組別
+                        </button>
                     </div>
                 </div>
 
-                <div class="row">
+                <div id="content-area" class="row" style="display:none;">
                     <div class="col-md-4">
                         <div class="card shadow mb-4">
-                            <div class="card-header py-3 bg-white fw-bold text-primary">已定義組別</div>
+                            <div class="card-header py-3 bg-white fw-bold text-primary border-bottom">已定義組別</div>
                             <ul class="list-group list-group-flush" id="group-list">
-                                <li class="list-group-item text-center text-muted">載入中...</li>
+                                <li class="list-group-item text-center text-muted py-4">載入中...</li>
                             </ul>
                         </div>
                     </div>
                     <div class="col-md-8">
                         <div class="card shadow">
-                            <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
+                            <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center border-bottom">
                                 <h6 class="m-0 fw-bold text-success">人員分配預覽</h6>
-                                <button id="btn-save-assign" class="btn btn-sm btn-success w-auto">儲存分配變更</button>
+                                <button id="btn-save-assign" class="btn btn-sm btn-success w-auto shadow-sm">
+                                    <i class="fas fa-save"></i> 儲存分配變更
+                                </button>
                             </div>
-                            <div class="card-body p-0 table-responsive" style="max-height: 500px;">
+                            <div class="card-body p-0 table-responsive" style="max-height: 600px;">
                                 <table class="table table-hover mb-0 align-middle">
                                     <thead class="table-light sticky-top"><tr><th>姓名</th><th>職級</th><th>組別</th></tr></thead>
                                     <tbody id="staff-tbody"></tbody>
@@ -82,36 +76,68 @@ export class GroupSettingsPage {
         this.modal = new bootstrap.Modal(document.getElementById('group-modal'));
         const unitSelect = document.getElementById('unit-select');
         
-        unitSelect.addEventListener('change', () => this.loadData(unitSelect.value));
-        document.getElementById('btn-add').addEventListener('click', () => {
-            document.getElementById('new-group-name').value = '';
-            this.modal.show();
-        });
-        document.getElementById('btn-save-group').addEventListener('click', () => this.addGroup());
-        document.getElementById('btn-save-assign').addEventListener('click', () => this.saveAssignments());
+        // 載入單位
+        const user = authService.getProfile();
+        const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
+        
+        let availableUnits = [];
+        if(isAdmin) {
+            availableUnits = await UnitService.getAllUnits();
+        } else {
+            availableUnits = await UnitService.getUnitsByManager(user.uid);
+            if(availableUnits.length === 0 && user.unitId) {
+                const u = await UnitService.getUnitById(user.unitId);
+                if(u) availableUnits.push(u);
+            }
+        }
 
-        if(unitSelect.options.length > 0) {
-            unitSelect.selectedIndex = 0;
-            this.loadData(unitSelect.value);
+        if (availableUnits.length === 0) {
+            unitSelect.innerHTML = '<option value="">無可用單位</option>';
+            unitSelect.disabled = true;
+        } else {
+            unitSelect.innerHTML = availableUnits.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            unitSelect.addEventListener('change', () => this.loadData(unitSelect.value));
+            document.getElementById('btn-add').addEventListener('click', () => {
+                document.getElementById('new-group-name').value = '';
+                this.modal.show();
+            });
+            document.getElementById('btn-save-group').addEventListener('click', () => this.addGroup());
+            document.getElementById('btn-save-assign').addEventListener('click', () => this.saveAssignments());
+
+            // 預設載入
+            this.loadData(availableUnits[0].unitId);
         }
     }
 
     async loadData(uid) {
         if(!uid) return;
         this.targetUnitId = uid;
-        const [unit, staff] = await Promise.all([
-            UnitService.getUnitById(uid),
-            userService.getUsersByUnit(uid)
-        ]);
-        this.groups = unit.groups || [];
-        this.staffList = staff;
-        this.renderGroups();
-        this.renderStaff();
+        document.getElementById('content-area').style.display = 'flex';
+        
+        try {
+            const [unit, staff] = await Promise.all([
+                UnitService.getUnitById(uid),
+                userService.getUsersByUnit(uid)
+            ]);
+
+            // ✅ Crash Fix: 檢查 unit
+            if (!unit) {
+                this.groups = [];
+                alert("無法讀取單位資料");
+                return;
+            }
+
+            this.groups = unit.groups || [];
+            this.staffList = staff;
+            this.renderGroups();
+            this.renderStaff();
+        } catch (e) { console.error(e); }
     }
 
     renderGroups() {
         const ul = document.getElementById('group-list');
-        if(this.groups.length === 0) { ul.innerHTML = '<li class="list-group-item text-center text-muted">無組別</li>'; return; }
+        if(this.groups.length === 0) { ul.innerHTML = '<li class="list-group-item text-center text-muted py-3">無組別</li>'; return; }
         ul.innerHTML = this.groups.map((g, i) => `
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 ${g} <button class="btn btn-sm text-danger" onclick="window.routerPage.deleteGroup(${i})"><i class="fas fa-times"></i></button>
@@ -125,7 +151,7 @@ export class GroupSettingsPage {
         tbody.innerHTML = this.staffList.map(u => `
             <tr>
                 <td class="fw-bold">${u.name}</td>
-                <td><span class="badge bg-light text-dark border">${u.rank}</span></td>
+                <td><span class="badge bg-light text-dark border">${u.rank || '-'}</span></td>
                 <td>
                     <select class="form-select form-select-sm group-select" data-uid="${u.uid}" style="width:120px;">
                         ${opts.replace(`value="${u.group}"`, `value="${u.group}" selected`)}
@@ -141,7 +167,7 @@ export class GroupSettingsPage {
         await UnitService.updateUnit(this.targetUnitId, { groups: this.groups });
         this.modal.hide();
         this.renderGroups();
-        this.renderStaff(); // 更新下拉選單
+        this.renderStaff();
     }
 
     async deleteGroup(idx) {
