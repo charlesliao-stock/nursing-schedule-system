@@ -1,79 +1,75 @@
 import { UnitService } from "../../services/firebase/UnitService.js";
+import { userService } from "../../services/firebase/UserService.js"; // 引入
 import { router } from "../../core/Router.js";
 
 export class UnitEditPage {
-    constructor() {
-        this.unitId = null;
-        this.unitData = null;
-    }
+    constructor() { this.unitId = null; this.unitData = null; }
 
     async render() {
-        // 從 URL Hash 解析 ID (簡單實作)
-        // 假設 hash 格式為 #/system/units/edit/{id}
         const hashParts = window.location.hash.split('/');
         this.unitId = hashParts[hashParts.length - 1];
+        if (!this.unitId) return `<div class="p-5 text-danger">無效 ID</div>`;
 
-        if (!this.unitId) {
-            return `<div class="container p-5 text-center text-danger">錯誤：無效的單位 ID</div>`;
-        }
-
-        // 1. 讀取單位資料
         this.unitData = await UnitService.getUnitById(this.unitId);
+        if (!this.unitData) return `<div class="p-5 text-danger">找不到單位</div>`;
 
-        if (!this.unitData) {
-            return `<div class="container p-5 text-center text-danger">找不到此單位 (ID: ${this.unitId})</div>`;
-        }
+        // 讀取該單位人員 (用於下拉選單)
+        const staffList = await userService.getUsersByUnit(this.unitId);
+        const staffOptions = `<option value="">(未指定)</option>` + 
+            staffList.map(u => `<option value="${u.uid}">${u.name} (${u.staffId || '-'})</option>`).join('');
 
-        // 2. 渲染編輯表單
+        // 找出目前的管理者與排班者 (支援多選或單選，這裡示範取第一個顯示)
+        const currentManager = (this.unitData.managers && this.unitData.managers.length > 0) ? this.unitData.managers[0] : '';
+        const currentScheduler = (this.unitData.schedulers && this.unitData.schedulers.length > 0) ? this.unitData.schedulers[0] : '';
+
         return `
-            <div class="container-fluid">
+            <div class="container-fluid mt-4">
                 <div class="d-flex align-items-center mb-4">
-                    <button class="btn btn-link text-decoration-none ps-0 text-secondary" onclick="history.back()">
-                        <i class="fas fa-arrow-left"></i> 返回
-                    </button>
-                    <h2 class="h3 mb-0 text-gray-800 ms-2">編輯單位</h2>
+                    <button class="btn btn-link text-secondary" onclick="history.back()"><i class="fas fa-arrow-left"></i> 返回</button>
+                    <h2 class="h3 mb-0 text-gray-800">編輯單位: ${this.unitData.unitName}</h2>
                 </div>
 
-                <div class="row justify-content-center">
-                    <div class="col-lg-8 col-xl-6">
-                        <div class="card shadow mb-4">
-                            <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                                <h6 class="m-0 font-weight-bold text-primary">單位資料</h6>
-                                <span class="badge bg-secondary">${this.unitData.unitCode}</span>
+                <div class="card shadow mb-4">
+                    <div class="card-body">
+                        <form id="edit-unit-form">
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">單位代號</label>
+                                    <input type="text" class="form-control bg-light" value="${this.unitData.unitCode}" disabled>
+                                </div>
+                                <div class="col-md-8">
+                                    <label class="form-label fw-bold">單位名稱</label>
+                                    <input type="text" class="form-control" id="editUnitName" value="${this.unitData.unitName}" required>
+                                </div>
                             </div>
-                            <div class="card-body">
-                                <form id="edit-unit-form">
-                                    <div class="row">
-                                        <div class="col-md-4 mb-3">
-                                            <label class="form-label fw-bold">單位代號</label>
-                                            <input type="text" class="form-control bg-light" value="${this.unitData.unitCode}" disabled 
-                                                   title="代號建立後不可修改">
-                                        </div>
-
-                                        <div class="col-md-8 mb-3">
-                                            <label for="editUnitName" class="form-label fw-bold">單位名稱 <span class="text-danger">*</span></label>
-                                            <input type="text" class="form-control" id="editUnitName" value="${this.unitData.unitName}" required>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <label for="editDescription" class="form-label fw-bold">描述</label>
-                                        <textarea class="form-control" id="editDescription" rows="4">${this.unitData.description || ''}</textarea>
-                                    </div>
-
-                                    <hr>
-
-                                    <div class="d-flex justify-content-end gap-2">
-                                        <button type="button" class="btn btn-secondary" onclick="history.back()">
-                                            取消
-                                        </button>
-                                        <button type="submit" class="btn btn-primary" id="btn-save-unit">
-                                            <i class="fas fa-save"></i> 儲存變更
-                                        </button>
-                                    </div>
-                                </form>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">描述</label>
+                                <textarea class="form-control" id="editDescription" rows="3">${this.unitData.description || ''}</textarea>
                             </div>
-                        </div>
+                            
+                            <hr>
+                            <h6 class="text-primary font-weight-bold">人員指派</h6>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">主要管理者 (Manager)</label>
+                                    <select class="form-select" id="managerSelect">
+                                        ${staffOptions}
+                                    </select>
+                                    <div class="form-text small">被選中者將擁有管理單位權限</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">主要排班者 (Scheduler)</label>
+                                    <select class="form-select" id="schedulerSelect">
+                                        ${staffOptions}
+                                    </select>
+                                    <div class="form-text small">被選中者將擁有編輯排班表權限</div>
+                                </div>
+                            </div>
+
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary" id="btn-save"><i class="fas fa-save"></i> 儲存變更</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -82,37 +78,36 @@ export class UnitEditPage {
 
     async afterRender() {
         if (!this.unitData) return;
+        
+        // 設定下拉選單預設值
+        const managerSelect = document.getElementById('managerSelect');
+        const schedulerSelect = document.getElementById('schedulerSelect');
+        
+        if (this.unitData.managers && this.unitData.managers.length > 0) managerSelect.value = this.unitData.managers[0];
+        if (this.unitData.schedulers && this.unitData.schedulers.length > 0) schedulerSelect.value = this.unitData.schedulers[0];
 
-        const form = document.getElementById('edit-unit-form');
-        form.addEventListener('submit', async (e) => {
+        document.getElementById('edit-unit-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
-            const btn = document.getElementById('btn-save-unit');
-            const originalText = btn.innerHTML;
+            const btn = document.getElementById('btn-save');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 儲存中...';
+            btn.innerHTML = '儲存中...';
 
             const updateData = {
                 unitName: document.getElementById('editUnitName').value.trim(),
-                description: document.getElementById('editDescription').value.trim()
+                description: document.getElementById('editDescription').value.trim(),
+                // 將選擇轉換為陣列
+                managers: managerSelect.value ? [managerSelect.value] : [],
+                schedulers: schedulerSelect.value ? [schedulerSelect.value] : []
             };
 
-            try {
-                const result = await UnitService.updateUnit(this.unitId, updateData);
-
-                if (result.success) {
-                    alert('✅ 單位資料更新成功！');
-                    router.navigate('/system/units/list');
-                } else {
-                    alert('❌ 更新失敗: ' + result.error);
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            } catch (error) {
-                console.error(error);
-                alert('系統錯誤');
+            const res = await UnitService.updateUnit(this.unitId, updateData);
+            if (res.success) {
+                alert('✅ 更新成功');
+                router.navigate('/system/units/list');
+            } else {
+                alert('失敗: ' + res.error);
                 btn.disabled = false;
-                btn.innerHTML = originalText;
+                btn.innerHTML = '儲存變更';
             }
         });
     }
