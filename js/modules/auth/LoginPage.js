@@ -1,3 +1,4 @@
+//js/modules/auth/LoginPage.js
 import { authService } from "../../services/firebase/AuthService.js";
 import { router } from "../../core/Router.js";
 
@@ -73,3 +74,4 @@ class LoginPage {
 }
 
 export const loginPage = new LoginPage();
+
