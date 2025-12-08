@@ -8,13 +8,11 @@ export class RuleSettings {
 
     async render() {
         const user = authService.getProfile();
-        // 關鍵：只要原始身分是管理員，或是當前身分是管理員，都視為 Admin
+        // ✅ 關鍵：只要真實身分是管理員，就開啟切換功能
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
         
         let unitSelector = '';
-        
         if (isAdmin) {
-            // 管理員模式：顯示下拉選單
             unitSelector = `
                 <div class="mb-4 d-flex align-items-center bg-light p-2 rounded border">
                     <label class="fw-bold me-2 text-danger mb-0"><i class="fas fa-user-shield"></i> 管理員/模擬模式：</label>
@@ -23,7 +21,6 @@ export class RuleSettings {
                     </select>
                 </div>`;
         } else {
-            // 一般模式：鎖定
             this.targetUnitId = user.unitId;
             unitSelector = `
                 <div class="mb-4">
@@ -39,7 +36,7 @@ export class RuleSettings {
                 <div id="rule-content" style="display:none;">
                     <div class="card shadow mb-4">
                         <div class="card-header py-3">
-                            <h6 class="m-0 font-weight-bold text-primary">每日人力最低需求</h6>
+                            <h6 class="m-0 font-weight-bold text-primary">每日人力最低需求 (Min Staff)</h6>
                         </div>
                         <div class="card-body">
                             <form id="rules-form">
