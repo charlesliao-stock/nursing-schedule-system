@@ -1,6 +1,7 @@
 import { 
     getDoc, setDoc, doc, updateDoc, deleteDoc, serverTimestamp, 
-    collection, query, where, getDocs, writeBatch, arrayUnion, arrayRemove, Timestamp 
+    collection, query, where, getDocs, writeBatch, arrayUnion, arrayRemove,
+    getCountFromServer 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -13,16 +14,12 @@ class UserService {
     }
 
     // ==========================================
-    //  1. Auth 與 帳號建立 (核心功能)
+    //  1. Auth 與 帳號建立
     // ==========================================
 
-    /**
-     * 使用次級 App 實例建立 Auth 帳號 (避免將當前管理員登出)
-     */
     async createAuthUser(email, password) {
         let secondaryApp = null;
         try {
-            // 使用完全獨立的 App 實例來操作 Auth，防止干擾主程式的登入狀態
             secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
             const secondaryAuth = getAuth(secondaryApp);
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
@@ -38,7 +35,6 @@ class UserService {
 
     async createStaff(staffData, password) {
         try {
-            // 檢查 staffId 是否重複
             if (staffData.staffId) {
                 const existing = await this.getStaffByStaffId(staffData.staffId);
                 if (existing) return { success: false, error: "員工編號已存在" };
@@ -49,8 +45,7 @@ class UserService {
             const uid = authRes.uid;
             
             const db = firebaseService.getDb();
-            let role = 'user'; // 對應 'staff'
-            // 權限設定
+            let role = 'user';
             const permissions = { canViewSchedule: true, canEditSchedule: false, canManageUnit: false, canManageSystem: false };
             
             if (staffData.isManager) { 
@@ -62,14 +57,12 @@ class UserService {
                 permissions.canEditSchedule = true; 
             }
 
-            // 寫入 Firestore
             await setDoc(doc(db, this.collectionName, uid), {
                 uid, 
                 staffId: staffData.staffId || '', 
                 name: staffData.name, 
                 email: staffData.email,
                 unitId: staffData.unitId, 
-                // 注意：UI 傳來的可能是 level 或 title，這裡做個兼容
                 rank: staffData.title || staffData.level || 'N0', 
                 role, 
                 permissions,
@@ -81,7 +74,6 @@ class UserService {
                 profile: { avatar: '' }
             });
 
-            // 更新 Unit 關聯 (Managers/Schedulers 陣列)
             if (staffData.unitId) {
                 const unitRef = doc(db, 'units', staffData.unitId);
                 if (role === 'unit_manager') await updateDoc(unitRef, { managers: arrayUnion(uid), schedulers: arrayUnion(uid) });
@@ -93,7 +85,7 @@ class UserService {
     }
 
     // ==========================================
-    //  2. 讀取資料 (相容 UI 呼叫名稱)
+    //  2. 讀取資料
     // ==========================================
 
     async getUserData(uid) {
@@ -105,30 +97,18 @@ class UserService {
         } catch (error) { throw error; }
     }
 
-    /**
-     * [相容性修復] StaffListPage 呼叫 getAllUsers
-     */
-    async getAllUsers() {
-        return this.getAllStaff();
-    }
-
-    /**
-     * [相容性修復] StaffListPage 呼叫 getUsersByUnit
-     */
-    async getUsersByUnit(unitId) {
-        return this.getUnitStaff(unitId);
-    }
+    // UI 相容性方法
+    async getAllUsers() { return this.getAllStaff(); }
+    async getUsersByUnit(unitId) { return this.getUnitStaff(unitId); }
 
     // 原始實作
     async getAllStaff() {
         const db = firebaseService.getDb();
-        // 排除系統管理員，避免列出最高權限帳號
         const q = query(collection(db, this.collectionName), where("role", "!=", "system_admin"));
         const snap = await getDocs(q);
         return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
 
-    // 原始實作
     async getUnitStaff(unitId) {
         const db = firebaseService.getDb();
         const q = query(collection(db, this.collectionName), where("unitId", "==", unitId));
@@ -143,13 +123,26 @@ class UserService {
         return !snap.empty;
     }
 
-    /**
-     * [新增] 搜尋功能 (StaffListPage 需要)
-     */
+    // ✅ 新增：修復 Dashboard 錯誤的方法
+    async getAllStaffCount() {
+        try {
+            const db = firebaseService.getDb();
+            // 計算所有非系統管理員的人數
+            const q = query(collection(db, this.collectionName), where("role", "!=", "system_admin"));
+            
+            // 使用 getCountFromServer 更高效 (如果 SDK 版本支援)，否則用 getDocs.size
+            // 為了最大相容性，這裡先用 getDocs (若您的 Firestore 資料量很大，建議改用 getCountFromServer)
+            const snapshot = await getDocs(q);
+            return snapshot.size;
+        } catch (error) {
+            console.error("取得總人數失敗:", error);
+            return 0;
+        }
+    }
+
     async searchUsers(keyword) {
         try {
             const db = firebaseService.getDb();
-            // Firestore 只能做簡單的前綴搜尋
             const q = query(
                 collection(db, this.collectionName),
                 where("name", ">=", keyword),
@@ -158,7 +151,6 @@ class UserService {
             const snap = await getDocs(q);
             const users = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
             
-            // 如果名字搜不到，嘗試搜 Email (前端過濾可能更好，但這裡提供基本後端支援)
             if (users.length === 0) {
                  const qEmail = query(
                     collection(db, this.collectionName),
@@ -179,12 +171,7 @@ class UserService {
     //  3. 更新與刪除
     // ==========================================
 
-    /**
-     * [相容性修復] StaffListPage 呼叫 updateUser
-     */
-    async updateUser(uid, updateData) {
-        return this.updateStaff(uid, updateData);
-    }
+    async updateUser(uid, updateData) { return this.updateStaff(uid, updateData); }
 
     async updateStaff(staffId, updateData) {
         const db = firebaseService.getDb();
@@ -204,21 +191,14 @@ class UserService {
         try {
             const db = firebaseService.getDb();
             await updateDoc(doc(db, this.collectionName, uid), { lastLoginAt: serverTimestamp() });
-        } catch (e) {
-            // Silently fail if user not found or permission denied
-        }
+        } catch (e) {}
     }
 
     // ==========================================
-    //  4. 批次操作 (StaffListPage 需要)
+    //  4. 批次操作
     // ==========================================
 
-    /**
-     * [相容性修復] StaffListPage 呼叫 batchDeleteUsers
-     */
-    async batchDeleteUsers(uids) {
-        return this.batchDeleteStaff(uids);
-    }
+    async batchDeleteUsers(uids) { return this.batchDeleteStaff(uids); }
 
     async batchDeleteStaff(staffIds) {
         const db = firebaseService.getDb();
@@ -251,7 +231,6 @@ class UserService {
     // ==========================================
 
     async toggleUnitManager(staffId, unitId, isManager) { 
-        // ... (保持您原有的邏輯)
         try {
             const db = firebaseService.getDb();
             const batch = writeBatch(db);
@@ -271,10 +250,9 @@ class UserService {
     }
 
     async importStaff(staffList) {
-        // ... (保持您原有的邏輯)
         const db = firebaseService.getDb();
         
-        // Dynamic import to avoid circular dependency
+        // Dynamic import
         const UnitServiceClass = await import('./UnitService.js').then(m => m.UnitService);
         const units = await UnitServiceClass.getAllUnits();
         const unitMap = {}; 
@@ -287,29 +265,24 @@ class UserService {
                 results.failed++; results.errors.push(`資料不全: ${staff.name}`); continue;
             }
 
-            // ... (其餘 import 邏輯保持不變，因為這部分相對獨立)
              try {
-                // 嘗試建立帳號
                 const authRes = await this.createAuthUser(staff.email, staff.password);
                 if (!authRes.success) throw new Error(authRes.error);
                 
-                // 取得 Unit ID
                 let targetUnitId = unitMap[staff.unitCode];
                 if (!targetUnitId) {
-                     // 自動建立 Unit 的邏輯...
                      const createRes = await UnitServiceClass.createUnit({
                         unitCode: staff.unitCode, unitName: `${staff.unitCode}病房`
                      });
                      if (createRes.success) targetUnitId = createRes.unitId;
                 }
 
-                // 寫入 User Doc
                 await setDoc(doc(db, this.collectionName, authRes.uid), {
                     uid: authRes.uid,
                     name: staff.name,
                     email: staff.email,
                     unitId: targetUnitId,
-                    role: 'user', // 預設
+                    role: 'user', 
                     createdAt: serverTimestamp(),
                     status: 'active'
                 });
