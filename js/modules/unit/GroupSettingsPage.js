@@ -4,17 +4,37 @@ import { authService } from "../../services/firebase/AuthService.js";
 
 export class GroupSettingsPage {
     constructor() {
+        this.currentUser = null;
+        this.targetUnitId = null;
         this.currentUnit = null;
         this.staffList = [];
-        this.groups = []; // 單位目前的組別列表 ["A", "B"]
+        this.groups = [];
+        this.unitsList = [];
     }
 
     async render() {
+        this.currentUser = authService.getProfile();
+        const isAdmin = this.currentUser.role === 'system_admin';
+
+        let headerControl = '';
+        if (isAdmin) {
+             headerControl = `
+                <select id="admin-unit-select" class="form-select form-select-sm" style="width: auto;">
+                    <option value="">載入中...</option>
+                </select>
+            `;
+        } else {
+             headerControl = `<span class="badge bg-warning text-dark fs-6" id="unit-name-display">本單位</span>`;
+        }
+
         return `
             <div class="container-fluid mt-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-layer-group"></i> 組別與分組設定</h2>
-                    <button class="btn btn-secondary btn-sm" onclick="history.back()">返回</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="mb-0 fw-bold">設定單位：</label>
+                        ${headerControl}
+                    </div>
                 </div>
 
                 <div class="row">
@@ -25,13 +45,12 @@ export class GroupSettingsPage {
                             </div>
                             <div class="card-body">
                                 <div class="input-group mb-3">
-                                    <input type="text" id="new-group-name" class="form-control" placeholder="輸入新組名 (如: 資深組)">
+                                    <input type="text" id="new-group-name" class="form-control" placeholder="輸入新組名 (如: A組)">
                                     <button class="btn btn-success" id="btn-add-group"><i class="fas fa-plus"></i></button>
                                 </div>
                                 <ul class="list-group" id="group-list-ul">
                                     <li class="list-group-item text-center">載入中...</li>
                                 </ul>
-                                <small class="text-muted mt-2 d-block">* 點擊 X 刪除組別 (不會刪除人員，僅清空該人員的組別欄位)</small>
                             </div>
                         </div>
                     </div>
@@ -69,21 +88,52 @@ export class GroupSettingsPage {
     }
 
     async afterRender() {
-        const user = authService.getCurrentUser();
-        const profile = authService.getProfile();
-        
-        if (!user || !profile.unitId) {
-            alert("權限不足或未綁定單位");
-            return;
+        if (!this.currentUser) return;
+        const isAdmin = this.currentUser.role === 'system_admin';
+
+        // 1. 初始化單位選擇
+        if (isAdmin) {
+            this.unitsList = await UnitService.getAllUnits();
+            const select = document.getElementById('admin-unit-select');
+            select.innerHTML = this.unitsList.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            if (this.unitsList.length > 0) {
+                this.targetUnitId = this.unitsList[0].unitId;
+                select.value = this.targetUnitId;
+            }
+
+            select.addEventListener('change', (e) => {
+                this.targetUnitId = e.target.value;
+                this.loadData();
+            });
+        } else {
+            this.targetUnitId = this.currentUser.unitId;
+            const unit = await UnitService.getUnitById(this.targetUnitId);
+            if(unit) document.getElementById('unit-name-display').textContent = unit.unitName;
         }
 
-        // 1. 載入資料
+        // 2. 載入資料
+        if (this.targetUnitId) await this.loadData();
+
+        // 3. 綁定事件
+        document.getElementById('btn-add-group').addEventListener('click', () => this.handleAddGroup());
+        document.getElementById('btn-save-assignments').addEventListener('click', () => this.handleSaveAssignments());
+        
+        // 綁定刪除組別 (Delegation)
+        document.getElementById('group-list-ul').addEventListener('click', (e) => {
+            const btn = e.target.closest('.btn-del-group');
+            if(btn) this.handleDeleteGroup(btn.dataset.idx);
+        });
+    }
+
+    async loadData() {
+        if(!this.targetUnitId) return;
+
         try {
-            this.currentUnit = await UnitService.getUnitById(profile.unitId);
-            // 如果單位還沒有 groups 欄位，給空陣列
+            this.currentUnit = await UnitService.getUnitById(this.targetUnitId);
             this.groups = this.currentUnit.groups || [];
             
-            this.staffList = await userService.getUsersByUnit(profile.unitId);
+            this.staffList = await userService.getUsersByUnit(this.targetUnitId);
             
             this.renderGroupList();
             this.renderStaffList();
@@ -91,38 +141,25 @@ export class GroupSettingsPage {
             console.error(e);
             alert("載入失敗");
         }
-
-        // 2. 綁定事件
-        document.getElementById('btn-add-group').addEventListener('click', () => this.handleAddGroup());
-        document.getElementById('btn-save-assignments').addEventListener('click', () => this.handleSaveAssignments());
     }
 
     renderGroupList() {
         const ul = document.getElementById('group-list-ul');
         if (this.groups.length === 0) {
-            ul.innerHTML = '<li class="list-group-item text-muted text-center">尚無組別設定</li>';
+            ul.innerHTML = '<li class="list-group-item text-muted text-center">尚無組別</li>';
             return;
         }
-
         ul.innerHTML = this.groups.map((g, index) => `
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 ${g}
-                <button class="btn btn-sm btn-outline-danger btn-del-group" data-idx="${index}">
-                    <i class="fas fa-times"></i>
-                </button>
+                <button class="btn btn-sm btn-outline-danger btn-del-group" data-idx="${index}"><i class="fas fa-times"></i></button>
             </li>
         `).join('');
-
-        // 綁定刪除按鈕
-        document.querySelectorAll('.btn-del-group').forEach(btn => {
-            btn.addEventListener('click', (e) => this.handleDeleteGroup(e.currentTarget.dataset.idx));
-        });
     }
 
     renderStaffList() {
         const tbody = document.getElementById('staff-group-tbody');
-        const options = `<option value="">(未分組)</option>` + 
-                        this.groups.map(g => `<option value="${g}">${g}</option>`).join('');
+        const options = `<option value="">(未分組)</option>` + this.groups.map(g => `<option value="${g}">${g}</option>`).join('');
 
         tbody.innerHTML = this.staffList.map(u => `
             <tr>
@@ -145,24 +182,16 @@ export class GroupSettingsPage {
         if (this.groups.includes(name)) { alert("組名重複"); return; }
 
         this.groups.push(name);
-        
-        // 更新 Unit 資料
-        await UnitService.updateUnit(this.currentUnit.unitId, { groups: this.groups });
+        await UnitService.updateUnit(this.targetUnitId, { groups: this.groups });
         input.value = '';
         this.renderGroupList();
-        this.renderStaffList(); // 重繪下拉選單
+        this.renderStaffList();
     }
 
     async handleDeleteGroup(index) {
         if (!confirm("確定刪除此組別？")) return;
-        const removedGroup = this.groups[index];
         this.groups.splice(index, 1);
-        
-        // 更新 Unit
-        await UnitService.updateUnit(this.currentUnit.unitId, { groups: this.groups });
-        
-        // 重繪 UI (注意：這裡還沒清空人員身上的 group 欄位，可以選擇是否要同時跑批次清空，
-        // 這裡為了效能，我們只更新 UI 下拉選單，讓管理者自己決定是否要重分)
+        await UnitService.updateUnit(this.targetUnitId, { groups: this.groups });
         this.renderGroupList();
         this.renderStaffList();
     }
@@ -177,19 +206,17 @@ export class GroupSettingsPage {
         selects.forEach(sel => {
             const uid = sel.dataset.uid;
             const newGroup = sel.value;
-            // 找到原始資料比對，有變更才更新
             const original = this.staffList.find(u => u.uid === uid);
             if (original && original.group !== newGroup) {
                 updates.push(userService.updateUser(uid, { group: newGroup }));
-                // 更新本地暫存
                 original.group = newGroup; 
             }
         });
 
         try {
             await Promise.all(updates);
-            alert(`成功更新 ${updates.length} 筆人員資料`);
-            this.renderStaffList(); // 重新渲染以更新「目前組別」欄位
+            alert(`✅ 成功更新 ${updates.length} 筆人員資料`);
+            this.renderStaffList();
         } catch (e) {
             alert("更新失敗: " + e.message);
         } finally {
