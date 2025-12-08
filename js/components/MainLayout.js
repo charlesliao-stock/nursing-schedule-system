@@ -5,232 +5,249 @@ import { userService } from "../services/firebase/UserService.js";
 export class MainLayout {
     constructor(user) {
         this.user = authService.getProfile() || user || { name: '載入中...', role: 'guest' };
-        
-        // 確保 system_admin 角色狀態正確
+        // 確保 system_admin 狀態
         if (this.user.role === 'system_admin' && !this.user.originalRole) {
             this.user.originalRole = 'system_admin';
             authService.setProfile(this.user);
         }
-        
         this.realRole = this.user.originalRole || this.user.role; 
         this.currentRole = this.user.role;
         this.autoHideTimer = null;
     }
 
-    render() {
-        // 判斷是否為管理職 (包含系統管理員 與 單位管理者)
-        const isManager = ['system_admin', 'unit_manager'].includes(this.currentRole);
-        const isAdmin = this.currentRole === 'system_admin';
-        
-        // 角色顯示名稱
-        const roleMap = { 'system_admin': '系統管理員', 'unit_manager': '單位護理長', 'unit_scheduler': '排班人員', 'user': '護理師' };
-        const displayRoleName = roleMap[this.realRole] || this.realRole;
-        const displayName = this.user.name || '使用者';
+    /**
+     * 定義選單項目 (扁平化結構，適配 layout-sidebar)
+     */
+    getMenus(role) {
+        const dashboard = { path: '/dashboard', icon: 'fas fa-tachometer-alt', label: '儀表板' };
 
-        // 系統管理員的視角切換器
+        // 1. 系統管理者
+        const adminMenus = [
+            dashboard,
+            { isHeader: true, label: '管理功能' },
+            { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
+            { path: '/system/units/list', icon: 'fas fa-building', label: '單位管理' },
+            { path: '/system/settings', icon: 'fas fa-tools', label: '系統設定' },
+            
+            { isHeader: true, label: '參數設定' },
+            { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' },
+            { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' },
+            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' },
+            
+            { isHeader: true, label: '紀錄' },
+            { path: '/system/logs', icon: 'fas fa-list-alt', label: '操作日誌' }
+        ];
+
+        // 2. 單位管理者
+        const managerMenus = [
+            dashboard,
+            { isHeader: true, label: '單位管理' },
+            { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
+            { path: '/pre-schedule/manage', icon: 'fas fa-edit', label: '預班管理' },
+            { path: '/schedule/manual', icon: 'fas fa-calendar-alt', label: '排班作業' },
+            
+            { isHeader: true, label: '參數設定' },
+            { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' },
+            { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' },
+            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' },
+            
+            { isHeader: true, label: '審核與統計' },
+            { path: '/swaps/review', icon: 'fas fa-check-double', label: '換班審核' },
+            { path: '/stats/unit', icon: 'fas fa-chart-bar', label: '單位統計' }
+        ];
+
+        // 3. 單位排班者
+        const schedulerMenus = [
+            dashboard,
+            { isHeader: true, label: '排班作業' },
+            { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員檢視' },
+            { path: '/pre-schedule/manage', icon: 'fas fa-edit', label: '預班管理' },
+            { path: '/schedule/manual', icon: 'fas fa-calendar-alt', label: '排班作業' },
+            
+            { isHeader: true, label: '參數設定' },
+            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' },
+            
+            { isHeader: true, label: '其他' },
+            { path: '/swaps/review', icon: 'fas fa-check-double', label: '換班審核' },
+            { path: '/stats/unit', icon: 'fas fa-chart-bar', label: '單位統計' }
+        ];
+
+        // 4. 一般使用者
+        const userMenus = [
+            dashboard,
+            { isHeader: true, label: '個人作業' },
+            { path: '/pre-schedule/submit', icon: 'fas fa-pen-fancy', label: '提交預班' },
+            { path: '/schedule/my', icon: 'fas fa-calendar-check', label: '我的班表' },
+            { path: '/swaps/apply', icon: 'fas fa-exchange-alt', label: '申請換班' },
+            { path: '/stats/personal', icon: 'fas fa-chart-pie', label: '個人統計' }
+        ];
+
+        const r = role || 'user';
+        if (r === 'system_admin') return adminMenus;
+        if (r === 'unit_manager') return managerMenus;
+        if (r === 'unit_scheduler') return schedulerMenus;
+        return userMenus;
+    }
+
+    render() {
+        const menus = this.getMenus(this.currentRole);
+        const menuHtml = this.buildMenuHtml(menus);
+        
+        const displayName = this.user.name || this.user.displayName || '使用者';
+        const displayRoleName = this.getRoleName(this.realRole);
+        
+        // 角色切換器 (僅 Admin 可見)
         const showSwitcher = (this.realRole === 'system_admin');
         const roleSwitcherHtml = showSwitcher ? `
             <div class="me-3 d-flex align-items-center bg-white rounded px-2 border shadow-sm" style="height: 32px;">
-                <i class="fas fa-random text-primary me-2" title="視角切換"></i>
-                <select id="role-switcher" class="form-select form-select-sm border-0 bg-transparent p-0 shadow-none" style="width: auto; cursor: pointer; font-weight: bold; color: #333; -webkit-appearance: none;">
-                    <option value="system_admin" ${this.currentRole === 'system_admin' ? 'selected' : ''}>👁️ 系統管理員</option>
-                    <option disabled>──────────</option>
-                    <option value="unit_manager" ${this.currentRole === 'unit_manager' ? 'selected' : ''}>👁️ 模擬：單位管理者</option>
-                    <option value="unit_scheduler" ${this.currentRole === 'unit_scheduler' ? 'selected' : ''}>👁️ 模擬：排班者</option>
-                    <option value="user" ${this.currentRole === 'user' ? 'selected' : ''}>👁️ 模擬：一般使用者</option>
+                <i class="fas fa-user-secret text-primary me-2"></i>
+                <select id="role-switcher" class="form-select form-select-sm border-0 bg-transparent p-0 shadow-none fw-bold" style="width: auto; cursor: pointer;">
+                    <option value="system_admin" ${this.currentRole === 'system_admin' ? 'selected' : ''}>系統管理員</option>
+                    <option disabled>────────</option>
+                    <option value="unit_manager" ${this.currentRole === 'unit_manager' ? 'selected' : ''}>模擬: 單位主管</option>
+                    <option value="unit_scheduler" ${this.currentRole === 'unit_scheduler' ? 'selected' : ''}>模擬: 排班者</option>
+                    <option value="user" ${this.currentRole === 'user' ? 'selected' : ''}>模擬: 一般人員</option>
                 </select>
-                <i class="fas fa-caret-down text-muted ms-2" style="font-size: 0.8rem; pointer-events:none;"></i>
             </div>` : '';
 
+        // ✅ 使用正確的 app-layout 結構
         return `
-            <div id="wrapper">
-                <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
-                    <a class="sidebar-brand d-flex align-items-center justify-content-center" href="#/dashboard">
-                        <div class="sidebar-brand-icon rotate-n-15"><i class="fas fa-user-nurse"></i></div>
-                        <div class="sidebar-brand-text mx-3">護理排班系統</div>
-                    </a>
-                    <hr class="sidebar-divider my-0">
-
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/dashboard"><i class="fas fa-fw fa-tachometer-alt"></i> <span>儀表板</span></a>
-                    </li>
-                    <hr class="sidebar-divider">
-
-                    <div class="sidebar-heading">排班作業</div>
-                    
-                    ${isManager ? `
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/schedule/manual"><i class="fas fa-fw fa-calendar-alt"></i> <span>排班表</span></a>
-                    </li>
-                    ` : `
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/schedule/my"><i class="fas fa-fw fa-calendar-check"></i> <span>我的班表</span></a>
-                    </li>
-                    `}
-
-                    <li class="nav-item">
-                        <a class="nav-link collapsed" href="#" data-bs-toggle="collapse" data-bs-target="#collapsePre" aria-expanded="true">
-                            <i class="fas fa-fw fa-edit"></i> <span>預班管理</span>
-                        </a>
-                        <div id="collapsePre" class="collapse" data-parent="#accordionSidebar">
-                            <div class="bg-white py-2 collapse-inner rounded">
-                                <a class="collapse-item" href="#/pre-schedule/submit">提交預班</a>
-                                ${isManager ? '<a class="collapse-item" href="#/pre-schedule/manage">預班管理 (主管)</a>' : ''}
-                            </div>
-                        </div>
-                    </li>
-
-                    ${!isManager ? `
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/swaps/apply"><i class="fas fa-fw fa-exchange-alt"></i> <span>申請換班</span></a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/stats/personal"><i class="fas fa-fw fa-chart-pie"></i> <span>個人統計</span></a>
-                    </li>
-                    ` : ''}
-
-                    ${isManager ? `
-                    <hr class="sidebar-divider">
-                    <div class="sidebar-heading">單位管理</div>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/unit/staff/list"><i class="fas fa-fw fa-users"></i> <span>人員管理</span></a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link collapsed" href="#" data-bs-toggle="collapse" data-bs-target="#collapseSettings" aria-expanded="true">
-                            <i class="fas fa-fw fa-cogs"></i> <span>參數設定</span>
-                        </a>
-                        <div id="collapseSettings" class="collapse" data-parent="#accordionSidebar">
-                            <div class="bg-white py-2 collapse-inner rounded">
-                                <h6 class="collapse-header">排班參數:</h6>
-                                <a class="collapse-item" href="#/unit/settings/shifts">班別設定</a>
-                                <a class="collapse-item" href="#/unit/settings/groups">組別設定</a>
-                                <a class="collapse-item" href="#/unit/settings/rules">排班規則</a>
-                            </div>
-                        </div>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/swaps/review"><i class="fas fa-fw fa-check-double"></i> <span>換班審核</span></a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/stats/unit"><i class="fas fa-fw fa-chart-bar"></i> <span>單位統計</span></a>
-                    </li>
-                    ` : ''}
-
-                    ${isAdmin ? `
-                    <hr class="sidebar-divider">
-                    <div class="sidebar-heading">系統後台</div>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/system/units/list"><i class="fas fa-fw fa-hospital"></i> <span>單位列表</span></a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/system/settings"><i class="fas fa-fw fa-tools"></i> <span>系統設定</span></a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#/system/logs"><i class="fas fa-fw fa-list-alt"></i> <span>操作日誌</span></a>
-                    </li>
-                    ` : ''}
-                    
-                    <hr class="sidebar-divider d-none d-md-block">
-                    <div class="text-center d-none d-md-inline">
-                        <button class="rounded-circle border-0" id="sidebarToggle" onclick="document.body.classList.toggle('sidebar-toggled')"></button>
-                    </div>
-                </ul>
-
-                <div id="content-wrapper" class="d-flex flex-column">
-                    <div id="content">
-                        <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
-                             <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3" onclick="document.body.classList.toggle('sidebar-toggled')">
-                                <i class="fa fa-bars"></i>
-                            </button>
-                            <ul class="navbar-nav ms-auto">
-                                <div class="topbar-divider d-none d-sm-block"></div>
-                                <li class="nav-item dropdown no-arrow">
-                                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                                        <span class="mr-2 d-none d-lg-inline text-gray-600 small">${displayName}</span>
-                                        <span class="badge bg-danger me-2">${displayRoleName}</span>
-                                        <div class="bg-primary rounded-circle text-white d-flex align-items-center justify-content-center" style="width:32px; height:32px;">
-                                            ${displayName.charAt(0)}
-                                        </div>
-                                    </a>
-                                    <div class="dropdown-menu dropdown-menu-end shadow animated--grow-in">
-                                        <a class="dropdown-item" href="#" id="logout-btn">
-                                            <i class="fas fa-sign-out-alt fa-sm fa-fw mr-2 text-gray-400"></i> 登出
-                                        </a>
-                                    </div>
-                                </li>
-                            </ul>
-                        </nav>
-                        
-                        <div id="main-view"></div> 
+            <div class="app-layout">
+                <aside class="layout-sidebar" id="layout-sidebar">
+                    <div class="sidebar-toggle-tab" id="sidebar-toggle-btn" title="縮放選單">
+                        <i class="fas fa-chevron-left" id="sidebar-toggle-icon"></i>
                     </div>
                     
-                    <footer class="sticky-footer bg-white">
-                        <div class="container my-auto">
-                            <div class="copyright text-center my-auto">
-                                <span>Copyright &copy; Nursing Schedule System 2025</span>
-                            </div>
-                        </div>
-                    </footer>
-                </div>
+                    <div class="sidebar-header" style="cursor:pointer;" onclick="window.location.hash='/dashboard'">
+                        <i class="fas fa-hospital-user fa-lg me-2"></i> 
+                        <span class="sidebar-title">護理排班系統</span>
+                    </div>
+                    
+                    <nav class="sidebar-menu" id="sidebar-menu-container">
+                        ${menuHtml}
+                    </nav>
+                </aside>
+
+                <header class="layout-header" id="layout-header">
+                    <div class="brand-logo" id="header-logo">
+                        <span id="page-title" class="h5 mb-0 text-gray-800">儀表板</span>
+                    </div>
+                    <div class="user-info">
+                        ${roleSwitcherHtml}
+                        <span id="user-role-badge" class="badge bg-primary me-2">${displayRoleName}</span>
+                        <span class="me-3 text-gray-600 small">
+                            <i class="fas fa-user-circle me-1"></i> ${displayName}
+                        </span>
+                        <button id="layout-logout-btn" class="btn btn-sm btn-outline-danger border-0" title="登出">
+                            <i class="fas fa-sign-out-alt fa-lg"></i>
+                        </button>
+                    </div>
+                </header>
+
+                <main id="main-view" class="layout-content"></main>
             </div>
         `;
     }
 
-    afterRender() {
-        // 登出事件
-        document.getElementById('logout-btn')?.addEventListener('click', async (e) => {
-            e.preventDefault();
-            if (confirm('確定登出系統？')) {
-                await authService.logout();
-                window.location.reload();
+    /**
+     * 產生選單 HTML (適配 layout-sidebar 樣式)
+     */
+    buildMenuHtml(menus) {
+        return menus.map(item => {
+            // 分隔標題
+            if (item.isHeader) {
+                return `<div class="menu-header text-uppercase text-xs font-weight-bold text-gray-500 mt-3 mb-1 px-3">${item.label}</div>`;
             }
-        });
+            // 選單連結
+            return `
+                <a href="#${item.path}" class="menu-item" data-path="${item.path}">
+                    <i class="${item.icon} fa-fw me-2"></i> 
+                    <span>${item.label}</span>
+                </a>
+            `;
+        }).join('');
+    }
+
+    getRoleName(role) { 
+        if (!role) return ''; 
+        const map = { 'system_admin': '系統管理員', 'unit_manager': '單位護理長', 'unit_scheduler': '排班人員', 'user': '護理師', 'guest': '訪客' }; 
+        return map[role] || role; 
+    }
+
+    async afterRender() {
+        this.bindEvents();
+        const currentPath = window.location.hash.slice(1) || '/dashboard';
+        this.updateActiveMenu(currentPath);
         
-        // 角色切換器事件
+        // Admin Badge Color
+        const badgeEl = document.getElementById('user-role-badge');
+        if (badgeEl && this.realRole === 'system_admin') { 
+            badgeEl.className = 'badge bg-danger me-2'; 
+        }
+    }
+
+    bindEvents() {
+        // 登出
+        document.getElementById('layout-logout-btn')?.addEventListener('click', async () => { 
+            if (confirm('確定登出？')) { 
+                await authService.logout(); 
+                window.location.reload(); 
+            } 
+        });
+
+        // 角色切換
         const roleSwitcher = document.getElementById('role-switcher');
         if (roleSwitcher) {
             roleSwitcher.addEventListener('change', (e) => {
                 this.user.role = e.target.value;
                 authService.setProfile(this.user);
-                // 強制重新載入路由以更新畫面
                 router.currentLayout = null; 
                 router.handleRoute();
             });
         }
 
-        // 更新目前選單狀態
-        this.updateActiveMenu(window.location.hash.slice(1));
+        // Sidebar Toggle
+        const sidebar = document.getElementById('layout-sidebar');
+        const header = document.getElementById('layout-header');
+        const content = document.getElementById('main-view');
+        const toggleBtn = document.getElementById('sidebar-toggle-btn');
+        const toggleIcon = document.getElementById('sidebar-toggle-icon');
+
+        if(toggleBtn && sidebar) {
+            const toggleSidebar = () => {
+                const isCollapsed = sidebar.classList.toggle('collapsed');
+                if(header) header.classList.toggle('expanded');
+                if(content) content.classList.toggle('expanded');
+                
+                // 切換箭頭
+                if(toggleIcon) {
+                    toggleIcon.className = isCollapsed ? 'fas fa-chevron-right' : 'fas fa-chevron-left';
+                }
+            };
+            toggleBtn.addEventListener('click', toggleSidebar);
+        }
     }
 
     updateActiveMenu(path) {
-        // 清除舊的 active 狀態
-        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.collapse-item').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.collapse').forEach(el => el.classList.remove('show'));
-
-        // 1. 限制搜尋範圍：只在 Sidebar 內找連結，避免抓到 Topbar 或 Content 的連結
-        const selector = `#accordionSidebar a[href="#${path}"]`;
-        const link = document.querySelector(selector);
+        // 移除舊 Active
+        document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
         
-        if (link) {
-            if (link.classList.contains('collapse-item')) {
-                // 如果是摺疊選單內的項目
-                link.classList.add('active');
-                const parentCollapse = link.closest('.collapse');
-                if (parentCollapse) {
-                    parentCollapse.classList.add('show');
-                    // 讓外層的 nav-item 也亮起 (選擇性)
-                    const parentNavItem = parentCollapse.closest('.nav-item');
-                    if (parentNavItem) parentNavItem.classList.add('active');
-                }
-            } else {
-                // 如果是第一層選單
-                const navItem = link.closest('.nav-item');
-                // 2. 安全檢查：確認 navItem 存在才操作
-                if (navItem) {
-                    navItem.classList.add('active');
-                }
+        // 尋找並加入 Active
+        // 邏輯：完全符合 > 開頭符合
+        let target = document.querySelector(`.menu-item[data-path="${path}"]`);
+        if (!target) {
+            // 嘗試前綴匹配 (例如 /system/units/edit/1 -> /system/units/list)
+            if (path.includes('/edit/')) {
+                const listPath = path.replace('/create', '/list').replace(/\/edit\/.*/, '/list');
+                target = document.querySelector(`.menu-item[data-path="${listPath}"]`);
             }
+        }
+        
+        if (target) {
+            target.classList.add('active');
+            // 更新上方標題
+            const titleEl = document.getElementById('page-title');
+            if(titleEl) titleEl.textContent = target.querySelector('span').textContent;
         }
     }
 }
