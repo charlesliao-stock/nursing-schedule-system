@@ -23,17 +23,21 @@ export class MainLayout {
             { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
             { path: '/system/units/list', icon: 'fas fa-building', label: '單位管理' },
             { path: '/system/settings', icon: 'fas fa-cogs', label: '系統設定' },
+            { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' }, 
+            { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' },
+            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' },
             { path: '/system/logs', icon: 'fas fa-list-alt', label: '操作日誌' }
         ];
 
-        // 2. 單位管理者 (Fix 1: 加入班別設定)
+        // 2. 單位管理者
         const managerMenus = [
             dashboard,
             { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
-            { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' }, // 新增
             { path: '/pre-schedule/manage', icon: 'fas fa-clipboard-list', label: '預班管理' },
             { path: '/schedule/manual', icon: 'fas fa-calendar-alt', label: '排班管理' },
-            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' },
+            { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' }, // 獨立顯示
+            { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' }, // Fix 2: 獨立顯示
+            { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '排班規則' }, // 獨立顯示
             { path: '/swaps/review', icon: 'fas fa-exchange-alt', label: '換班審核' },
             { path: '/stats/unit', icon: 'fas fa-chart-bar', label: '統計報表' }
         ];
@@ -85,7 +89,6 @@ export class MainLayout {
                 <i class="fas fa-caret-down text-muted ms-2" style="font-size: 0.8rem; pointer-events:none;"></i>
             </div>` : '';
 
-        // Fix 2: 預設箭頭 icon 改為左 (展開狀態)
         return `
             <div class="app-layout">
                 <aside class="layout-sidebar" id="layout-sidebar">
@@ -122,7 +125,11 @@ export class MainLayout {
         `).join('');
     }
 
-    getRoleName(role) { /*...同前版...*/ if (!role) return ''; const map = { 'system_admin': '系統管理員', 'unit_manager': '單位護理長', 'unit_scheduler': '排班人員', 'user': '護理師', 'guest': '訪客' }; return map[role] || role; }
+    getRoleName(role) { 
+        if (!role) return ''; 
+        const map = { 'system_admin': '系統管理員', 'unit_manager': '單位護理長', 'unit_scheduler': '排班人員', 'user': '護理師', 'guest': '訪客' }; 
+        return map[role] || role; 
+    }
 
     async afterRender() {
         this.bindEvents();
@@ -138,7 +145,6 @@ export class MainLayout {
         const logoutBtn = document.getElementById('layout-logout-btn');
         if(logoutBtn) logoutBtn.addEventListener('click', async () => { if (confirm('確定登出？')) { await authService.logout(); window.location.reload(); } });
 
-        // Role Switcher
         const roleSwitcher = document.getElementById('role-switcher');
         if (roleSwitcher) {
             roleSwitcher.addEventListener('change', (e) => {
@@ -150,7 +156,6 @@ export class MainLayout {
             });
         }
 
-        // Sidebar Toggle (Fix 2: 修正箭頭方向)
         const sidebar = document.getElementById('layout-sidebar');
         const header = document.getElementById('layout-header');
         const content = document.getElementById('main-view');
@@ -166,7 +171,7 @@ export class MainLayout {
                     if(content) content.classList.add('expanded');
                     if(toggleIcon) {
                         toggleIcon.classList.remove('fa-chevron-left');
-                        toggleIcon.classList.add('fa-chevron-right'); // 縮進去後變成往右箭頭
+                        toggleIcon.classList.add('fa-chevron-right'); 
                     }
                 } else {
                     sidebar.classList.remove('collapsed');
@@ -174,7 +179,7 @@ export class MainLayout {
                     if(content) content.classList.remove('expanded');
                     if(toggleIcon) {
                         toggleIcon.classList.remove('fa-chevron-right');
-                        toggleIcon.classList.add('fa-chevron-left'); // 展開後變成往左箭頭
+                        toggleIcon.classList.add('fa-chevron-left'); 
                     }
                 }
             };
