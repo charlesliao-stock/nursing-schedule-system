@@ -5,61 +5,145 @@ import { authService } from "../../services/firebase/AuthService.js";
 
 export class PreScheduleManagePage {
     constructor() {
-        // 預設為下個月
-        const today = new Date();
-        let targetMonth = today.getMonth() + 1 + 1;
-        let targetYear = today.getFullYear();
-        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
-
-        this.year = targetYear;
-        this.month = targetMonth;
-        this.currentUnitId = null;
-        this.preScheduleData = null; // 存放載入的預班資料
-        this.addStaffModal = null;   // Bootstrap Modal 實例
+        this.targetUnitId = null;
+        this.preSchedules = [];
+        this.unitData = null;
+        this.unitStaff = []; // 本單位人員
+        this.selectedStaff = []; // 最終參與預班的人員清單
+        this.modal = null;
     }
 
     async render() {
+        const user = authService.getProfile();
+        const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
+        
+        let unitOptions = '<option value="">載入中...</option>';
+        if (isAdmin) {
+            const units = await UnitService.getAllUnits();
+            unitOptions = `<option value="">請選擇單位...</option>` + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+        } else {
+            const units = await UnitService.getUnitsByManager(user.uid);
+            // Fallback
+            if(units.length === 0 && user.unitId) {
+                const u = await UnitService.getUnitById(user.unitId);
+                if(u) units.push(u);
+            }
+            unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+        }
+
         return `
             <div class="container-fluid mt-4">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-tasks"></i> 預班管理 (管理者)</h2>
+                <div class="mb-3">
+                    <h3 class="text-gray-800 fw-bold"><i class="fas fa-calendar-check"></i> 預班管理</h3>
+                    <p class="text-muted small mb-0">設定每月的預班開放時間、規則限制與參與人員。</p>
                 </div>
 
-                <div class="card shadow mb-4">
-                    <div class="card-body bg-light py-2">
-                        <form id="filter-form" class="row align-items-center g-2">
-                            <div class="col-auto">
-                                <label class="col-form-label fw-bold">管理月份：</label>
-                            </div>
-                            <div class="col-auto">
-                                <input type="month" id="manage-month" class="form-control" 
-                                       value="${this.year}-${String(this.month).padStart(2,'0')}">
-                            </div>
-                            <div class="col-auto">
-                                <button type="submit" class="btn btn-primary"><i class="fas fa-sync-alt"></i> 載入</button>
-                            </div>
-                        </form>
+                <div class="card shadow-sm mb-4 border-left-primary">
+                    <div class="card-body py-2 d-flex align-items-center gap-2">
+                        <label class="fw-bold mb-0 text-nowrap">選擇單位：</label>
+                        <select id="unit-select" class="form-select w-auto">${unitOptions}</select>
+                        <div class="vr mx-2"></div>
+                        <button id="btn-add" class="btn btn-primary w-auto text-nowrap">
+                            <i class="fas fa-plus"></i> 新增預班表
+                        </button>
                     </div>
                 </div>
 
-                <div id="manage-content">
-                    <div class="text-center p-5"><span class="spinner-border text-primary"></span> 載入中...</div>
+                <div class="card shadow">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>預班月份</th>
+                                        <th>開放區間</th>
+                                        <th>參與人數</th>
+                                        <th>狀態</th>
+                                        <th class="text-end pe-3">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body">
+                                    <tr><td colspan="5" class="text-center py-5 text-muted">請先選擇單位</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="modal fade" id="add-staff-modal" tabindex="-1">
-                    <div class="modal-dialog">
+                <div class="modal fade" id="pre-modal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">新增支援人員 (External Staff)</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                <h5 class="modal-title fw-bold" id="modal-title">新增預班表</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
-                                <div class="input-group mb-3">
-                                    <input type="text" id="search-keyword" class="form-control" placeholder="輸入姓名或 Email 搜尋...">
-                                    <button class="btn btn-outline-secondary" type="button" id="btn-modal-search">搜尋</button>
-                                </div>
-                                <div id="search-results" class="list-group">
+                                <form id="pre-form">
+                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2">基本設定</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">預班月份</label>
+                                            <input type="month" id="edit-month" class="form-control" required>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">開放日期 (起)</label>
+                                            <input type="date" id="edit-open" class="form-control" required>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">截止日期 (迄)</label>
+                                            <input type="date" id="edit-close" class="form-control" required>
+                                        </div>
                                     </div>
+
+                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4">休假限制</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-bold">每人可預班天數 (含假日)</label>
+                                            <input type="number" id="edit-maxOff" class="form-control" value="8" min="0">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-bold">其中假日可預班天數</label>
+                                            <input type="number" id="edit-maxHoliday" class="form-control" value="2" min="0">
+                                        </div>
+                                    </div>
+
+                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4">人力限制</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-bold">每日小夜 (E) 上限</label>
+                                            <input type="number" id="edit-maxE" class="form-control" value="3">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-bold">每日大夜 (N) 上限</label>
+                                            <input type="number" id="edit-maxN" class="form-control" value="2">
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="group-limits-container" class="bg-light p-3 rounded mb-3">
+                                        <label class="form-label fw-bold mb-2">各組每日最少上班人數：</label>
+                                        <div id="group-inputs" class="row g-2">
+                                            <div class="text-muted small">載入中...</div>
+                                        </div>
+                                    </div>
+
+                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4 d-flex justify-content-between">
+                                        <span>參與人員名單</span>
+                                        <span class="badge bg-secondary" id="staff-count">0 人</span>
+                                    </h6>
+                                    
+                                    <div class="input-group mb-2">
+                                        <input type="text" id="staff-search" class="form-control" placeholder="搜尋並加入外部人員 (姓名/Email)...">
+                                        <button type="button" class="btn btn-outline-primary" id="btn-search-staff">加入</button>
+                                    </div>
+
+                                    <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                        <div id="staff-list-container"></div>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary w-auto" data-bs-dismiss="modal">取消</button>
+                                <button type="button" id="btn-save" class="btn btn-primary w-auto">建立預班</button>
                             </div>
                         </div>
                     </div>
@@ -69,360 +153,224 @@ export class PreScheduleManagePage {
     }
 
     async afterRender() {
-        const user = authService.getCurrentUser();
-        if (!user) {
-            window.location.hash = '/login';
-            return;
+        this.modal = new bootstrap.Modal(document.getElementById('pre-modal'));
+        const unitSelect = document.getElementById('unit-select');
+        
+        // 全域綁定
+        window.routerPage = this;
+
+        unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
+        document.getElementById('btn-add').addEventListener('click', () => this.openModal());
+        document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
+        
+        // 搜尋人員按鈕
+        document.getElementById('btn-search-staff').addEventListener('click', () => this.searchAndAddStaff());
+
+        if (unitSelect.options.length > 0 && unitSelect.value) {
+            this.loadList(unitSelect.value);
         }
-
-        // 1. 獲取 Unit ID
-        const userData = await userService.getUserData(user.uid);
-        if (!userData.unitId) {
-            document.getElementById('manage-content').innerHTML = '<div class="alert alert-danger">您尚未綁定單位，無法管理預班。</div>';
-            return;
-        }
-        this.currentUnitId = userData.unitId;
-
-        // 2. 初始化 Modal
-        const modalEl = document.getElementById('add-staff-modal');
-        if (modalEl) {
-            this.addStaffModal = new bootstrap.Modal(modalEl);
-        }
-
-        // 3. 綁定主要事件
-        document.getElementById('filter-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const val = document.getElementById('manage-month').value;
-            if (val) {
-                const [y, m] = val.split('-');
-                this.year = parseInt(y);
-                this.month = parseInt(m);
-                await this.loadData();
-            }
-        });
-
-        document.getElementById('btn-modal-search').addEventListener('click', () => this.searchModalStaff());
-
-        // 4. 初始載入
-        await this.loadData();
     }
 
-    async loadData() {
-        const container = document.getElementById('manage-content');
-        container.innerHTML = `<div class="text-center p-5"><span class="spinner-border text-primary"></span> 資料讀取中...</div>`;
+    async loadList(uid) {
+        if (!uid) return;
+        this.targetUnitId = uid;
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><span class="spinner-border spinner-border-sm"></span></td></tr>';
 
         try {
-            this.preScheduleData = await PreScheduleService.getPreSchedule(this.currentUnitId, this.year, this.month);
-
-            if (!this.preScheduleData) {
-                // 情境 A: 資料不存在 -> 顯示「建立預班表」畫面
-                this.renderCreateView(container);
-            } else {
-                // 情境 B: 資料存在 -> 顯示「管理介面」
-                this.renderManageView(container);
-            }
-        } catch (error) {
-            console.error(error);
-            container.innerHTML = `<div class="alert alert-danger">載入失敗: ${error.message}</div>`;
-        }
-    }
-
-    /**
-     * 渲染 A: 建立新預班表視圖
-     */
-    renderCreateView(container) {
-        // 計算預設日期
-        const defaultOpen = new Date().toISOString().split('T')[0]; // 今天
-        // 預設下個月5號截止
-        let nextMonth = this.month + 1;
-        let nextYear = this.year;
-        if(nextMonth > 12) { nextMonth = 1; nextYear++; }
-        const defaultClose = `${nextYear}-${String(nextMonth).padStart(2,'0')}-05`;
-
-        container.innerHTML = `
-            <div class="row justify-content-center">
-                <div class="col-md-8 col-lg-6">
-                    <div class="card shadow border-left-primary">
-                        <div class="card-body text-center p-5">
-                            <i class="fas fa-calendar-plus fa-4x text-gray-300 mb-3"></i>
-                            <h3>${this.year} 年 ${this.month} 月 預班表尚未建立</h3>
-                            <p class="text-muted mb-4">建立後，單位同仁即可開始填寫休假需求。</p>
-                            
-                            <div class="text-start bg-light p-4 rounded mb-3">
-                                <h6 class="fw-bold">初始化設定：</h6>
-                                <div class="mb-2">
-                                    <label class="small">每人可預休上限 (天)</label>
-                                    <input type="number" id="init-maxOff" class="form-control" value="8">
-                                </div>
-                                <div class="row g-2">
-                                    <div class="col">
-                                        <label class="small">開放日期</label>
-                                        <input type="date" id="init-openDate" class="form-control" value="${defaultOpen}">
-                                    </div>
-                                    <div class="col">
-                                        <label class="small">截止日期</label>
-                                        <input type="date" id="init-closeDate" class="form-control" value="${defaultClose}">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button id="btn-create" class="btn btn-primary btn-lg w-100 shadow">
-                                <i class="fas fa-plus-circle"></i> 立即建立預班表
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('btn-create').addEventListener('click', () => this.handleCreate());
-    }
-
-    async handleCreate() {
-        if(!confirm(`確定要建立 ${this.year}-${this.month} 的預班表嗎？`)) return;
-
-        const settings = {
-            maxOffDays: parseInt(document.getElementById('init-maxOff').value) || 8,
-            openDate: document.getElementById('init-openDate').value,
-            closeDate: document.getElementById('init-closeDate').value
-        };
-
-        try {
-            await PreScheduleService.createPreSchedule(this.currentUnitId, this.year, this.month, settings);
-            alert("✅ 建立成功！");
-            await this.loadData(); // 重新載入變成管理介面
-        } catch (e) {
-            alert("建立失敗: " + e.message);
-        }
-    }
-
-    /**
-     * 渲染 B: 管理既有預班表視圖
-     */
-    renderManageView(container) {
-        const { status, settings, submissions } = this.preScheduleData;
-        const totalStaff = Object.keys(submissions || {}).length;
-        const submittedCount = Object.values(submissions || {}).filter(s => s.submitted).length;
-        
-        // 狀態 Badge
-        const statusBadge = status === 'open' 
-            ? '<span class="badge bg-success">開放填寫中</span>' 
-            : '<span class="badge bg-secondary">已關閉 / 鎖定</span>';
-
-        container.innerHTML = `
-            <div class="row">
-                <div class="col-lg-4 mb-4">
-                    <div class="card shadow h-100">
-                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                            <h6 class="m-0 font-weight-bold text-primary">設定與狀態</h6>
-                            ${statusBadge}
-                        </div>
-                        <div class="card-body">
-                            <h6 class="text-gray-800 fw-bold mb-3">參數設定</h6>
-                            <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">每人可休天數</label>
-                                <input type="number" id="setting-maxOff" class="form-control form-control-sm" value="${settings.maxOffDays}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">開放日期</label>
-                                <input type="date" id="setting-openDate" class="form-control form-control-sm" value="${settings.openDate}">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">截止日期</label>
-                                <input type="date" id="setting-closeDate" class="form-control form-control-sm" value="${settings.closeDate}">
-                            </div>
-                            <button id="btn-update-settings" class="btn btn-sm btn-outline-primary w-100 mb-4">
-                                <i class="fas fa-save"></i> 更新設定
-                            </button>
-
-                            <hr>
-
-                            <h6 class="text-gray-800 fw-bold mb-3">流程控制</h6>
-                            <ul class="list-group list-group-flush mb-3 small">
-                                <li class="list-group-item d-flex justify-content-between"><span>提交進度</span><strong>${submittedCount} / ${totalStaff}</strong></li>
-                            </ul>
-                            
-                            <div class="d-grid gap-2">
-                                ${status === 'open' 
-                                    ? `<button id="btn-close-status" class="btn btn-warning"><i class="fas fa-lock"></i> 停止收件 (關閉)</button>` 
-                                    : `<button id="btn-open-status" class="btn btn-success"><i class="fas fa-lock-open"></i> 開放填寫</button>`
-                                }
-                                <button class="btn btn-primary mt-2" onclick="window.location.hash='/schedule/manual'">
-                                    <i class="fas fa-calendar-alt"></i> 前往正式排班
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-8">
-                    <div class="card shadow">
-                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                            <h6 class="m-0 font-weight-bold text-primary">人員提交名單</h6>
-                            <button class="btn btn-sm btn-primary shadow-sm" id="btn-open-add-modal">
-                                <i class="fas fa-user-plus"></i> + 支援人員
-                            </button>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th class="ps-4">姓名</th>
-                                            <th>類型</th>
-                                            <th class="text-center">狀態</th>
-                                            <th class="text-center">預休天數</th>
-                                            <th>備註</th>
-                                            <th class="text-end pe-4">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="submission-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // 渲染列表
-        this.renderSubmissionList();
-
-        // 綁定事件
-        document.getElementById('btn-update-settings').addEventListener('click', () => this.handleUpdateSettings());
-        
-        const btnClose = document.getElementById('btn-close-status');
-        if(btnClose) btnClose.addEventListener('click', () => this.handleStatusUpdate('closed'));
-        
-        const btnOpen = document.getElementById('btn-open-status');
-        if(btnOpen) btnOpen.addEventListener('click', () => this.handleStatusUpdate('open'));
-
-        document.getElementById('btn-open-add-modal').addEventListener('click', () => {
-             this.addStaffModal.show();
-        });
-
-        // 處理動態表格內的移除按鈕
-        document.getElementById('submission-tbody').addEventListener('click', (e) => {
-            const btn = e.target.closest('.btn-remove-staff');
-            if (btn) {
-                const staffId = btn.dataset.id;
-                this.handleRemoveStaff(staffId);
-            }
-        });
-    }
-
-    renderSubmissionList() {
-        const tbody = document.getElementById('submission-tbody');
-        if (!this.preScheduleData.submissions) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4">尚無人員資料</td></tr>';
-            return;
-        }
-
-        const list = Object.entries(this.preScheduleData.submissions).map(([id, sub]) => {
-            const submittedIcon = sub.submitted 
-                ? '<span class="badge bg-success">已提交</span>' 
-                : '<span class="badge bg-light text-secondary border">未提交</span>';
+            // 取得該單位的預班表列表
+            this.preSchedules = await PreScheduleService.getPreSchedulesList(uid);
             
-            const wishCount = Object.values(sub.wishes || {}).filter(w => w === 'OFF').length;
-
-            return `
-                <tr>
-                    <td class="ps-4 fw-bold">${sub.name}</td>
-                    <td>${sub.isExternal ? '<span class="badge bg-warning text-dark">支援</span>' : '<span class="text-muted small">本單位</span>'}</td>
-                    <td class="text-center">${submittedIcon}</td>
-                    <td class="text-center"><span class="badge bg-info text-white rounded-pill">${wishCount}</span></td>
-                    <td class="small text-muted text-truncate" style="max-width: 150px;">${sub.notes || '-'}</td>
-                    <td class="text-end pe-4">
-                        ${sub.isExternal 
-                            ? `<button class="btn btn-sm btn-outline-danger btn-remove-staff" data-id="${id}" title="移除"><i class="fas fa-trash-alt"></i></button>` 
-                            : ''}
-                    </td>
-                </tr>
-            `;
-        });
-
-        tbody.innerHTML = list.join('');
-    }
-
-    async handleUpdateSettings() {
-        const settings = {
-            maxOffDays: parseInt(document.getElementById('setting-maxOff').value),
-            openDate: document.getElementById('setting-openDate').value,
-            closeDate: document.getElementById('setting-closeDate').value
-        };
-        try {
-            const res = await PreScheduleService.updateSettings(this.currentUnitId, this.year, this.month, settings);
-            if (res.success) alert('✅ 設定已更新');
-            else throw new Error('更新失敗');
-        } catch (e) {
-            alert(e.message);
-        }
-    }
-
-    async handleStatusUpdate(newStatus) {
-        if (!confirm(`確定要將狀態改為 ${newStatus} 嗎？`)) return;
-        try {
-            await PreScheduleService.updateSettings(this.currentUnitId, this.year, this.month, { status: newStatus }); 
-            alert('狀態已更新');
-            this.loadData();
-        } catch (e) {
-            console.error(e);
-            alert("更新狀態失敗");
-        }
-    }
-
-    async searchModalStaff() {
-        const keyword = document.getElementById('search-keyword').value;
-        const resultDiv = document.getElementById('search-results');
-        resultDiv.innerHTML = '<div class="text-center text-muted">搜尋中...</div>';
-
-        try {
-            // 呼叫 UserService 搜尋
-            const users = await userService.searchUsers(keyword); 
-            if (users.length === 0) {
-                resultDiv.innerHTML = '<div class="text-center text-muted">無符合結果</div>';
+            if (this.preSchedules.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">目前無預班表</td></tr>';
                 return;
             }
 
-            resultDiv.innerHTML = users.map(u => `
-                <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                    onclick="window.addStaffToPre('${u.uid}', '${u.name}')">
-                    <div>
-                        <strong>${u.name}</strong> <small class="text-muted">(${u.email})</small>
-                        <br><small class="text-muted">${u.unitId || '無單位'}</small>
+            tbody.innerHTML = this.preSchedules.map(p => {
+                const statusBadge = this.getStatusBadge(p.status, p.openDate, p.closeDate);
+                const participantCount = p.staffIds ? p.staffIds.length : (Object.keys(p.submissions || {}).length || 0);
+                
+                return `
+                    <tr>
+                        <td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td>
+                        <td>${p.settings?.openDate} ~ ${p.settings?.closeDate}</td>
+                        <td><span class="badge bg-light text-dark border">${participantCount} 人</span></td>
+                        <td>${statusBadge}</td>
+                        <td class="text-end pe-3">
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="alert('編輯功能請直接在預班管理介面操作')"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="window.routerPage.deletePreSchedule('${p.id}')"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">載入失敗</td></tr>';
+        }
+    }
+
+    getStatusBadge(status, start, end) {
+        const now = new Date().toISOString().split('T')[0];
+        if (status === 'closed') return '<span class="badge bg-secondary">已截止</span>';
+        if (now < start) return '<span class="badge bg-warning text-dark">準備中</span>';
+        if (now > end) return '<span class="badge bg-secondary">已過期</span>';
+        return '<span class="badge bg-success">開放中</span>';
+    }
+
+    async openModal() {
+        if (!this.targetUnitId) { alert("請先選擇單位"); return; }
+        
+        document.getElementById('pre-form').reset();
+        
+        // 設定預設月份 (下個月)
+        const nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        document.getElementById('edit-month').value = nextMonth.toISOString().slice(0, 7);
+        
+        // 預設日期
+        const y = nextMonth.getFullYear();
+        const m = nextMonth.getMonth() + 1;
+        document.getElementById('edit-open').value = `${y}-${String(m).padStart(2,'0')}-01`;
+        document.getElementById('edit-close').value = `${y}-${String(m).padStart(2,'0')}-05`;
+
+        // 載入單位資料 (組別、人員)
+        try {
+            const [unit, staff] = await Promise.all([
+                UnitService.getUnitById(this.targetUnitId),
+                userService.getUsersByUnit(this.targetUnitId)
+            ]);
+            
+            this.unitData = unit;
+            this.unitStaff = staff; // 原始名單
+            this.selectedStaff = [...staff]; // 預設全員參加
+
+            // 1. 渲染組別限制輸入框
+            const groupContainer = document.getElementById('group-inputs');
+            if (unit.groups && unit.groups.length > 0) {
+                groupContainer.innerHTML = unit.groups.map(g => `
+                    <div class="col-md-6 d-flex align-items-center">
+                        <label class="me-2 mb-0" style="min-width:80px;">${g}組：</label>
+                        <input type="number" class="form-control form-control-sm group-min-input" data-group="${g}" value="1" min="0">
+                        <span class="ms-1 small text-muted">人</span>
                     </div>
-                    <span class="badge bg-primary rounded-pill">+</span>
+                `).join('');
+            } else {
+                groupContainer.innerHTML = '<div class="text-muted small">此單位未設定組別</div>';
+            }
+
+            // 2. 渲染人員名單
+            this.renderStaffList();
+
+            this.modal.show();
+
+        } catch (e) {
+            console.error(e);
+            alert("讀取單位資料失敗");
+        }
+    }
+
+    renderStaffList() {
+        const container = document.getElementById('staff-list-container');
+        document.getElementById('staff-count').textContent = `${this.selectedStaff.length} 人`;
+        
+        container.innerHTML = this.selectedStaff.map((u, idx) => `
+            <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+                <div>
+                    <span class="fw-bold">${u.name}</span> 
+                    <small class="text-muted">(${u.group || '未分組'})</small>
+                </div>
+                <button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})">
+                    <i class="fas fa-times"></i>
                 </button>
-            `).join('');
+            </div>
+        `).join('');
+    }
 
-            // 臨時綁定事件到 window 讓 onclick 生效 (因為 innerHTML 限制)
-            window.addStaffToPre = (uid, name) => this.handleAddExternalStaff(uid, name);
+    removeStaff(idx) {
+        this.selectedStaff.splice(idx, 1);
+        this.renderStaffList();
+    }
 
+    async searchAndAddStaff() {
+        const keyword = document.getElementById('staff-search').value.trim();
+        if (!keyword) return;
+        
+        const results = await userService.searchUsers(keyword);
+        if (results.length === 0) { alert("找不到使用者"); return; }
+        
+        // 簡單取第一個 (實務上可做選單)
+        const user = results[0];
+        
+        // 檢查是否已在名單
+        if (this.selectedStaff.find(s => s.uid === user.uid)) { alert("此人已在名單中"); return; }
+        
+        this.selectedStaff.push(user);
+        this.renderStaffList();
+        document.getElementById('staff-search').value = '';
+    }
+
+    async savePreSchedule() {
+        const btn = document.getElementById('btn-save');
+        btn.disabled = true;
+        btn.innerHTML = '建立中...';
+
+        const monthStr = document.getElementById('edit-month').value; // YYYY-MM
+        const [year, month] = monthStr.split('-').map(Number);
+
+        // 收集組別限制
+        const groupConstraints = {};
+        document.querySelectorAll('.group-min-input').forEach(input => {
+            groupConstraints[input.dataset.group] = parseInt(input.value) || 0;
+        });
+
+        const data = {
+            unitId: this.targetUnitId,
+            year,
+            month,
+            settings: {
+                openDate: document.getElementById('edit-open').value,
+                closeDate: document.getElementById('edit-close').value,
+                maxOffDays: parseInt(document.getElementById('edit-maxOff').value),
+                maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
+                maxE: parseInt(document.getElementById('edit-maxE').value),
+                maxN: parseInt(document.getElementById('edit-maxN').value),
+                groupMin: groupConstraints
+            },
+            staffIds: this.selectedStaff.map(s => s.uid), // 只存 ID
+            status: 'open'
+        };
+
+        try {
+            const res = await PreScheduleService.createPreSchedule(data);
+            if (res.success) {
+                alert("✅ 預班表建立成功");
+                this.modal.hide();
+                this.loadList(this.targetUnitId);
+            } else {
+                alert("建立失敗: " + res.error);
+            }
         } catch (e) {
-            resultDiv.innerHTML = `<div class="text-danger">搜尋錯誤: ${e.message}</div>`;
+            console.error(e);
+            alert("系統錯誤");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '建立預班';
         }
     }
 
-    async handleAddExternalStaff(uid, name) {
-        if (!confirm(`確定要加入 ${name} 到本月預班名單嗎？`)) return;
-        try {
-            await PreScheduleService.addExternalStaff(this.currentUnitId, this.year, this.month, { uid, name });
-            this.addStaffModal.hide();
-            this.loadData(); // 重整列表
-            alert(`✅ ${name} 已加入`);
-        } catch (e) {
-            alert("加入失敗: " + e.message);
+    async deletePreSchedule(id) {
+        // 檢查是否有人提交
+        const hasSubmissions = await PreScheduleService.checkHasSubmissions(id);
+        
+        let msg = "確定要刪除此預班表嗎？";
+        if (hasSubmissions) {
+            msg = "⚠️ 警告：已經有人員提交預班需求！\n刪除將會遺失所有已提交的資料。\n\n確定要繼續刪除嗎？";
         }
-    }
 
-    async handleRemoveStaff(staffId) {
-        if (!confirm('確定移除此支援人員？')) return;
-        try {
-            await PreScheduleService.removeExternalStaff(this.currentUnitId, this.year, this.month, staffId);
-            this.loadData();
-        } catch (e) {
-            alert("移除失敗: " + e.message);
+        if (confirm(msg)) {
+            await PreScheduleService.deletePreSchedule(id);
+            this.loadList(this.targetUnitId);
         }
     }
 }
