@@ -1,181 +1,115 @@
 import { 
-    doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, arrayUnion, arrayRemove
+    collection, doc, setDoc, getDoc, updateDoc, deleteDoc, 
+    getDocs, query, where, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { firebaseService } from "./FirebaseService.js";
-import { ScheduleService } from "./ScheduleService.js";
 
 export class PreScheduleService {
-    
-    static getCollectionName() { return 'pre_schedules'; }
+    static COLLECTION = 'pre_schedules';
 
-    static getDocId(unitId, year, month) {
-        return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
-    }
-
-    static async getPreSchedule(unitId, year, month) {
+    // 取得單位的預班列表 (用於管理頁面)
+    static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
-            const docId = this.getDocId(unitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
-            const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? docSnap.data() : null;
+            const q = query(
+                collection(db, this.COLLECTION),
+                where("unitId", "==", unitId)
+            );
+            const snapshot = await getDocs(q);
+            const list = [];
+            snapshot.forEach(d => list.push({ id: d.id, ...d.data() }));
+            // 排序 (新月份在前)
+            list.sort((a, b) => (b.year * 100 + b.month) - (a.year * 100 + a.month));
+            return list;
         } catch (error) {
-            console.error("Get PreSchedule Error:", error);
-            throw error;
+            console.error("List fetch error:", error);
+            return [];
         }
     }
 
-    /**
-     * 建立預班表 (支援每週需求矩陣與自訂人員名單)
-     */
-    static async createPreSchedule(unitId, year, month, settings, staffList) {
+    // 建立/覆蓋預班表
+    static async createPreSchedule(data) {
         try {
             const db = firebaseService.getDb();
-            const docId = this.getDocId(unitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
+            // ID 格式: UNIT_YYYY_MM (確保唯一)
+            const docId = `${data.unitId}_${data.year}_${String(data.month).padStart(2,'0')}`;
+            const docRef = doc(db, this.COLLECTION, docId);
 
-            // 建立 submissions 結構
+            // 初始化 submissions 結構
             const submissions = {};
-            staffList.forEach(staff => {
-                submissions[staff.id] = {
-                    name: staff.name,
-                    level: staff.level || '',
-                    isExternal: staff.unitId !== unitId, // 簡單判斷是否為外調
-                    originUnitId: staff.unitId,
-                    submitted: false,
-                    wishes: {},
-                    notes: '',
-                    updatedAt: null
-                };
+            // 預先為名單內的人建立空位
+            data.staffIds.forEach(uid => {
+                submissions[uid] = { submitted: false, wishes: {} };
             });
 
-            // 找出所有外調人員 ID
-            const externalStaffIds = staffList
-                .filter(s => s.unitId !== unitId)
-                .map(s => s.id);
-
-            const data = {
-                unitId, year, month,
-                status: 'draft',
-                settings: {
-                    isOpen: false,
-                    openDate: settings.openDate || null,
-                    closeDate: settings.closeDate || null,
-                    maxOffDays: parseInt(settings.maxOffDays) || 8,
-                    canChooseShift: settings.canChooseShift || false,
-                    holidays: settings.holidays || [],
-                    
-                    // 儲存 21 格需求矩陣 { D: {0:1, 1:2...}, E: {...}, N: {...} }
-                    weeklyRequirements: settings.weeklyRequirements || { D:{}, E:{}, N:{} }
-                },
-                submissions: submissions, 
-                externalStaffIds: externalStaffIds,
+            await setDoc(docRef, {
+                ...data,
+                submissions, 
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
-            };
-
-            await setDoc(docRef, data);
+            });
             return { success: true };
         } catch (error) {
             return { success: false, error: error.message };
         }
     }
 
-    static async updateSettings(unitId, year, month, newSettings) {
+    // 檢查是否有提交資料
+    static async checkHasSubmissions(docId) {
         try {
             const db = firebaseService.getDb();
-            const docId = this.getDocId(unitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
+            const docSnap = await getDoc(doc(db, this.COLLECTION, docId));
+            if (!docSnap.exists()) return false;
             
-            const updates = {};
-            for (const [key, value] of Object.entries(newSettings)) {
-                updates[`settings.${key}`] = value;
-            }
-            updates.updatedAt = serverTimestamp();
-
-            await updateDoc(docRef, updates);
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+            const data = docSnap.data();
+            const subs = data.submissions || {};
+            // 檢查是否有任何人的 submitted 為 true
+            return Object.values(subs).some(s => s.submitted === true);
+        } catch (e) { return false; }
     }
 
-    static async updateStatus(unitId, year, month, status) {
+    // 刪除
+    static async deletePreSchedule(docId) {
         try {
             const db = firebaseService.getDb();
-            const docId = this.getDocId(unitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
-            await updateDoc(docRef, { 
-                status: status,
+            await deleteDoc(doc(db, this.COLLECTION, docId));
+            return { success: true };
+        } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    // 更新設定
+    static async updateSettings(unitId, year, month, settings) {
+        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
+        try {
+            const db = firebaseService.getDb();
+            await updateDoc(doc(db, this.COLLECTION, docId), { 
+                settings: settings, 
                 updatedAt: serverTimestamp() 
             });
             return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        } catch (e) { return { success: false, error: e.message }; }
     }
 
-    static async submitPersonalWish(unitId, year, month, staffId, wishes, notes) {
+    // (保留原本的 getPreSchedule, submitPersonalWish 等方法，請勿刪除)
+    static async getPreSchedule(unitId, year, month) {
+        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
+        const db = firebaseService.getDb();
+        const snap = await getDoc(doc(db, this.COLLECTION, docId));
+        return snap.exists() ? snap.data() : null;
+    }
+
+    static async submitPersonalWish(unitId, year, month, uid, wishes, notes) {
+        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
         try {
             const db = firebaseService.getDb();
-            const docId = this.getDocId(unitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
-            const fieldPath = `submissions.${staffId}`;
-            
-            await updateDoc(docRef, {
-                [`${fieldPath}.submitted`]: true,
-                [`${fieldPath}.wishes`]: wishes,
-                [`${fieldPath}.notes`]: notes,
-                [`${fieldPath}.updatedAt`]: serverTimestamp()
-            });
-
-            return { success: true };
-        } catch (error) {
-            console.error("提交失敗:", error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    // (保留 addExternalStaff, removeExternalStaff, getUserHistory, getPreviousMonthLast6Days 方法)
-    // 為確保完整性，請從前一次回答複製貼上這些方法，或直接使用此檔案 (此檔案假設您已整合)
-    static async addExternalStaff(targetUnitId, year, month, staffData) {
-        /* ...請參考前次實作... */
-        try {
-            const db = firebaseService.getDb();
-            const docId = this.getDocId(targetUnitId, year, month);
-            const docRef = doc(db, this.getCollectionName(), docId);
-            const fieldPath = `submissions.${staffData.id}`;
-            await updateDoc(docRef, {
-                [fieldPath]: {
-                    name: staffData.name,
-                    level: staffData.level,
-                    isExternal: true,
-                    originUnitId: staffData.unitId,
-                    submitted: false,
-                    wishes: {},
-                    notes: '',
-                    updatedAt: null
-                },
-                externalStaffIds: arrayUnion(staffData.id)
+            const updatePath = `submissions.${uid}`;
+            await updateDoc(doc(db, this.COLLECTION, docId), {
+                [`${updatePath}.wishes`]: wishes,
+                [`${updatePath}.notes`]: notes,
+                [`${updatePath}.submitted`]: true,
+                [`${updatePath}.submittedAt`]: serverTimestamp()
             });
             return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
-
-    static async getPreviousMonthLast6Days(unitId, currentYear, currentMonth, staffId) {
-        let prevYear = currentYear;
-        let prevMonth = currentMonth - 1;
-        if (prevMonth === 0) { prevMonth = 12; prevYear--; }
-        try {
-            const schedule = await ScheduleService.getSchedule(unitId, prevYear, prevMonth);
-            if (!schedule || !schedule.assignments || !schedule.assignments[staffId]) return {};
-            const daysInPrevMonth = new Date(prevYear, prevMonth, 0).getDate();
-            const startDay = daysInPrevMonth - 5;
-            const result = {};
-            for (let d = startDay; d <= daysInPrevMonth; d++) {
-                result[d] = schedule.assignments[staffId][d] || '';
-            }
-            return { year: prevYear, month: prevMonth, data: result };
-        } catch (error) { return {}; }
+        } catch (e) { return { success: false, error: e.message }; }
     }
 }
