@@ -18,7 +18,7 @@ export class PreScheduleService {
         } catch (e) { return false; }
     }
 
-    // 建立
+    // 建立 (初始化 submissions)
     static async createPreSchedule(data) {
         try {
             const db = firebaseService.getDb();
@@ -32,7 +32,7 @@ export class PreScheduleService {
 
             await setDoc(docRef, {
                 ...data,
-                submissions,
+                submissions, 
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -40,7 +40,7 @@ export class PreScheduleService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // 更新設定 (保留 submissions)
+    // 更新設定 (不覆蓋 submissions)
     static async updatePreScheduleSettings(docId, data) {
         try {
             const db = firebaseService.getDb();
@@ -56,7 +56,6 @@ export class PreScheduleService {
         } catch (e) { return { success: false, error: e.message }; }
     }
 
-    // 列表查詢
     static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
@@ -69,7 +68,6 @@ export class PreScheduleService {
         } catch (error) { return []; }
     }
 
-    // 其他方法保持不變 (delete, checkHasSubmissions, getPreSchedule...)
     static async checkHasSubmissions(docId) {
         try {
             const db = firebaseService.getDb();
