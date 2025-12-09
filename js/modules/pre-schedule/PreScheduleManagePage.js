@@ -82,7 +82,7 @@ export class PreScheduleManagePage {
                                     <div class="d-flex justify-content-between align-items-center mb-3">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" id="chk-use-defaults" checked>
-                                            <label class="form-check-label small" for="chk-use-defaults">設為預設值 (迄日為當月15日)</label>
+                                            <label class="form-check-label small" for="chk-use-defaults">設為預設值 (起:今日 / 迄:15日)</label>
                                         </div>
                                         <button type="button" class="btn btn-sm btn-outline-info" id="btn-import-last">
                                             <i class="fas fa-history"></i> 帶入上月設定
@@ -98,17 +98,21 @@ export class PreScheduleManagePage {
                                             <label class="small fw-bold">開放日期 (起)</label>
                                             <input type="date" id="edit-open" class="form-control form-control-sm" required>
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="col-md-3">
                                             <label class="small fw-bold">截止日期 (迄)</label>
                                             <input type="date" id="edit-close" class="form-control form-control-sm" required>
                                         </div>
-                                        <div class="col-md-2">
-                                            <label class="small fw-bold" title="預班上限 (含假日)">預班上限</label>
-                                            <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
-                                        </div>
-                                        <div class="col-md-2">
-                                            <label class="small fw-bold text-danger">假日上限</label>
-                                            <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
+                                        <div class="col-md-3">
+                                            <div class="row g-1">
+                                                <div class="col-6">
+                                                    <label class="small fw-bold" title="預班上限 (含假日)">預班上限</label>
+                                                    <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="small fw-bold text-danger">假日上限</label>
+                                                    <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -119,7 +123,7 @@ export class PreScheduleManagePage {
                                     <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
                                         <span><i class="fas fa-user-check"></i> 參與人員 (<span id="staff-count">0</span>)</span>
                                         <div class="input-group input-group-sm w-auto">
-                                            <input type="text" id="staff-search" class="form-control" placeholder="輸入職編或姓名...">
+                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋外部人員...">
                                             <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-search"></i></button>
                                         </div>
                                     </h6>
@@ -161,13 +165,14 @@ export class PreScheduleManagePage {
         unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
         document.getElementById('btn-add').addEventListener('click', () => this.openModal(null));
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
+        
         document.getElementById('btn-search-staff').addEventListener('click', () => this.searchStaff());
         document.getElementById('staff-search').addEventListener('keypress', (e) => {
             if(e.key === 'Enter') { e.preventDefault(); this.searchStaff(); }
         });
+
         document.getElementById('btn-import-last').addEventListener('click', () => this.importLastMonthSettings());
         
-        // 日期連動
         document.getElementById('chk-use-defaults').addEventListener('change', (e) => {
             if(e.target.checked) this.setDefaultDates();
         });
@@ -193,17 +198,14 @@ export class PreScheduleManagePage {
                 return;
             }
             tbody.innerHTML = this.preSchedules.map((p, index) => {
-                // 計算人數
                 const count = p.staffIds ? p.staffIds.length : Object.keys(p.submissions || {}).length;
-                // 判斷狀態 (開放 / 準備 / 截止)
-                const statusHtml = this.getStatusBadge(p.status, p.settings?.openDate, p.settings?.closeDate);
-                
+                const status = this.getStatusText(p.status);
                 return `
                     <tr>
                         <td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td>
                         <td><small>${p.settings?.openDate} ~ ${p.settings?.closeDate}</small></td>
                         <td><span class="badge bg-light text-dark border">${count} 人</span></td>
-                        <td>${statusHtml}</td>
+                        <td>${status}</td>
                         <td class="text-end pe-3">
                             <button class="btn btn-sm btn-outline-primary me-1" onclick="window.routerPage.openModal(${index})"><i class="fas fa-edit"></i> 編輯</button>
                             <button class="btn btn-sm btn-outline-danger" onclick="window.routerPage.deletePreSchedule('${p.id}')"><i class="fas fa-trash"></i></button>
@@ -213,23 +215,19 @@ export class PreScheduleManagePage {
         } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">載入失敗</td></tr>'; }
     }
 
-    getStatusBadge(status, start, end) {
-        const now = new Date().toISOString().split('T')[0];
-        // 優先判斷日期
-        if (now > end) return '<span class="badge bg-secondary">已截止</span>';
-        if (now < start) return '<span class="badge bg-warning text-dark">準備中</span>';
-        // 若在日期內，則看是否被手動關閉
-        if (status === 'closed') return '<span class="badge bg-danger">已關閉</span>';
-        return '<span class="badge bg-success">開放中</span>';
+    getStatusText(s) {
+        if(s === 'open') return '<span class="badge bg-success">開放中</span>';
+        if(s === 'closed') return '<span class="badge bg-secondary">已截止</span>';
+        return '<span class="badge bg-warning text-dark">準備中</span>';
     }
 
     setDefaultDates() {
         const monthStr = document.getElementById('edit-month').value;
         if (!monthStr) return;
-        const [y, m] = monthStr.split('-').map(Number);
         
+        const [y, m] = monthStr.split('-').map(Number);
         const today = new Date().toISOString().split('T')[0];
-        // 截止日：當月 15 日
+        // 截止日：設定為該預班月份的 15 號
         const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0];
         
         document.getElementById('edit-open').value = today;
@@ -241,6 +239,8 @@ export class PreScheduleManagePage {
         
         document.getElementById('pre-form').reset();
         document.getElementById('search-results-dropdown').innerHTML = '';
+        document.getElementById('search-results-dropdown').style.display = 'none';
+        
         this.isEditMode = (index !== null);
         
         try {
@@ -261,10 +261,9 @@ export class PreScheduleManagePage {
             document.getElementById('edit-open').value = s.openDate || '';
             document.getElementById('edit-close').value = s.closeDate || '';
             document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
-            document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2;
+            document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2; 
             document.getElementById('chk-use-defaults').checked = false;
 
-            // 載入人員
             const currentUnitStaff = await userService.getUsersByUnit(this.targetUnitId);
             const savedStaffIds = data.staffIds || [];
             const savedSettings = data.staffSettings || {};
@@ -301,7 +300,10 @@ export class PreScheduleManagePage {
 
     renderGroupInputs(groups, values = {}) {
         const container = document.getElementById('group-limits-container');
-        if (groups.length === 0) { container.innerHTML = '<div class="text-muted small">無組別</div>'; return; }
+        if (groups.length === 0) {
+            container.innerHTML = '<div class="text-muted small">無組別</div>';
+            return;
+        }
         
         container.innerHTML = `
             <div class="table-responsive">
@@ -331,32 +333,63 @@ export class PreScheduleManagePage {
             </div>`;
     }
 
-    renderStaffList(groups) { /*...同前版...*/ 
+    renderStaffList(groups) {
         const tbody = document.getElementById('staff-list-tbody');
         document.getElementById('staff-count').textContent = this.selectedStaff.length;
         const groupOpts = `<option value="">(無)</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
-        tbody.innerHTML = this.selectedStaff.map((u, idx) => `<tr><td class="text-start ps-3 fw-bold">${u.name}</td><td><small>${u.staffId || '-'}</small></td><td><span class="badge bg-light text-dark border">${u.rank || '-'}</span></td><td><select class="form-select form-select-sm py-0 staff-group-select" onchange="window.routerPage.updateStaffGroup(${idx}, this.value)">${groupOpts.replace(`value="${u.tempGroup}"`, `value="${u.tempGroup}" selected`)}</select></td><td><button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})"><i class="fas fa-times"></i></button></td></tr>`).join('');
+
+        tbody.innerHTML = this.selectedStaff.map((u, idx) => `
+            <tr>
+                <td class="text-start ps-3 fw-bold">${u.name}</td>
+                <td><small>${u.staffId || '-'}</small></td>
+                <td><span class="badge bg-light text-dark border">${u.rank || '-'}</span></td>
+                <td>
+                    <select class="form-select form-select-sm py-0 staff-group-select" 
+                            onchange="window.routerPage.updateStaffGroup(${idx}, this.value)">
+                        ${groupOpts.replace(`value="${u.tempGroup}"`, `value="${u.tempGroup}" selected`)}
+                    </select>
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
     }
 
     updateStaffGroup(idx, val) { this.selectedStaff[idx].tempGroup = val; }
     removeStaff(idx) { this.selectedStaff.splice(idx, 1); this.renderStaffList(this.unitData.groups || []); }
-    async searchStaff() { /*...同前版...*/ 
+
+    async searchStaff() {
         const keyword = document.getElementById('staff-search').value.trim();
         const container = document.getElementById('search-results-dropdown');
         if (!keyword) return;
-        container.style.display = 'block'; container.innerHTML = '<div class="list-group-item text-center">...</div>';
+
+        container.style.display = 'block';
+        container.innerHTML = '<div class="list-group-item text-center"><span class="spinner-border spinner-border-sm"></span> 搜尋中...</div>';
+
         try {
             const results = await userService.searchUsers(keyword);
-            if (results.length === 0) { container.innerHTML = '<div class="list-group-item text-muted">無結果</div>'; setTimeout(() => container.style.display = 'none', 1500); return; }
-            container.innerHTML = results.map(u => `
-                <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${this.selectedStaff.some(s=>s.uid===u.uid)?'disabled bg-light':''}"
-                    onclick="window.routerPage.addStaffFromSearch('${u.uid}', '${u.name}', '${u.rank||''}', '${u.staffId||''}', '${u.group||''}')">
-                    <div><strong>${u.name}</strong> <small class="text-muted">(${u.staffId || ''})</small></div>
-                    ${this.selectedStaff.some(s=>s.uid===u.uid) ? '<span>已加</span>' : '<span class="badge bg-primary">+</span>'}
-                </button>`).join('');
+            if (results.length === 0) {
+                container.innerHTML = '<div class="list-group-item text-muted text-center">無結果</div>';
+                setTimeout(() => container.style.display = 'none', 1500);
+                return;
+            }
+
+            container.innerHTML = results.map(u => {
+                const isAdded = this.selectedStaff.some(s => s.uid === u.uid);
+                return `
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${isAdded ? 'disabled bg-light' : ''}"
+                        onclick="window.routerPage.addStaffFromSearch('${u.uid}', '${u.name}', '${u.rank||''}', '${u.staffId||''}', '${u.group||''}')">
+                        <div><strong>${u.name}</strong> <small class="text-muted">(${u.staffId || ''})</small></div>
+                        ${isAdded ? '<span class="badge bg-secondary">已加入</span>' : '<span class="badge bg-primary"><i class="fas fa-plus"></i></span>'}
+                    </button>
+                `;
+            }).join('');
         } catch(e) { console.error(e); }
     }
-    
+
     addStaffFromSearch(uid, name, rank, staffId, group) {
         this.selectedStaff.push({ uid, name, rank, staffId, tempGroup: group });
         document.getElementById('search-results-dropdown').style.display = 'none';
@@ -364,9 +397,55 @@ export class PreScheduleManagePage {
         this.renderStaffList(this.unitData.groups || []);
     }
 
-    async importLastMonthSettings() { /*...同前版...*/ 
-        // Logic same as previous, just update variable names
-        // ... (省略以節省篇幅，請保留原有的實作) ...
+    // 🌟 重點修正：帶入上月設定 (相容新舊資料結構)
+    async importLastMonthSettings() {
+        const currentMonthStr = document.getElementById('edit-month').value;
+        if (!currentMonthStr) { alert("請先選擇預班月份"); return; }
+        
+        const [y, m] = currentMonthStr.split('-').map(Number);
+        let prevY = y, prevM = m - 1;
+        if (prevM === 0) { prevM = 12; prevY -= 1; }
+
+        const lastSchedule = await PreScheduleService.getPreSchedule(this.targetUnitId, prevY, prevM);
+        
+        if (!lastSchedule) { alert("⚠️ 找不到上個月的預班表，無法帶入。"); return; }
+
+        const s = lastSchedule.settings || {};
+        document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
+        document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2;
+        
+        // 處理組別限制 (相容舊資料)
+        const gl = s.groupLimits || {};
+        const groups = this.unitData.groups || [];
+        const oldGroupMin = s.groupMin || {}; // 舊版資料結構 (如果有的話)
+        const oldMaxE = s.maxE;
+        const oldMaxN = s.maxN;
+
+        groups.forEach(g => {
+            // 嘗試取得新版結構，若無則嘗試舊版，最後預設為 0 或空
+            let v = gl[g];
+            
+            // 相容性處理：如果沒有新版結構，嘗試用舊版全域或單一值填充
+            if (!v) {
+                v = {
+                    minD: oldGroupMin[g] || 0,
+                    minE: 0,
+                    minN: 0,
+                    maxE: oldMaxE || '',
+                    maxN: oldMaxN || ''
+                };
+            }
+
+            const row = document.querySelector(`.g-min-d[data-group="${g}"]`)?.closest('tr');
+            if(row) {
+                row.querySelector('.g-min-d').value = v.minD ?? 0;
+                row.querySelector('.g-min-e').value = v.minE ?? 0;
+                row.querySelector('.g-min-n').value = v.minN ?? 0;
+                row.querySelector('.g-max-e').value = v.maxE ?? '';
+                row.querySelector('.g-max-n').value = v.maxN ?? '';
+            }
+        });
+        alert("✅ 已帶入上月設定！");
     }
 
     async savePreSchedule() {
@@ -399,7 +478,7 @@ export class PreScheduleManagePage {
                 openDate: document.getElementById('edit-open').value,
                 closeDate: document.getElementById('edit-close').value,
                 maxOffDays: parseInt(document.getElementById('edit-maxOff').value),
-                maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value), // 新增
+                maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
                 groupLimits: groupLimits
             },
             staffIds: this.selectedStaff.map(s => s.uid),
@@ -425,7 +504,10 @@ export class PreScheduleManagePage {
         }
     }
 
-    async deletePreSchedule(id) { /*...同前版...*/ 
-        if(confirm("確定刪除？")) { await PreScheduleService.deletePreSchedule(id); this.loadList(this.targetUnitId); }
+    async deletePreSchedule(id) {
+        if(confirm("確定刪除？")) { 
+            await PreScheduleService.deletePreSchedule(id); 
+            this.loadList(this.targetUnitId); 
+        }
     }
 }
