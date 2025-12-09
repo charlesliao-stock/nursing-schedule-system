@@ -5,6 +5,7 @@ import { authService } from "../../services/firebase/AuthService.js";
 export class StaffListPage {
     constructor() {
         this.staffList = [];
+        this.displayList = [];
         this.unitMap = {};
         this.currentUser = null;
         this.editModal = null;
@@ -62,10 +63,10 @@ export class StaffListPage {
                             <table class="table table-hover align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>單位</th>
-                                        <th style="cursor:pointer" onclick="window.routerPage.sort('staffId')">編號 <i class="fas fa-sort text-muted small"></i></th>
-                                        <th style="cursor:pointer" onclick="window.routerPage.sort('name')">姓名 <i class="fas fa-sort text-muted small"></i></th>
-                                        <th>職級</th>
+                                        ${this.renderSortableHeader('單位', 'unitId')}
+                                        ${this.renderSortableHeader('編號', 'staffId')}
+                                        ${this.renderSortableHeader('姓名', 'name')}
+                                        ${this.renderSortableHeader('職級', 'rank')}
                                         <th>組別</th>
                                         <th>Email</th>
                                         <th>角色</th>
@@ -83,6 +84,15 @@ export class StaffListPage {
                 ${this.renderModal(isAdmin)}
             </div>
         `;
+    }
+
+    renderSortableHeader(label, key) {
+        const isActive = this.sortConfig.key === key;
+        const icon = isActive 
+            ? (this.sortConfig.direction === 'asc' ? '<i class="fas fa-sort-up"></i>' : '<i class="fas fa-sort-down"></i>')
+            : '<i class="fas fa-sort text-muted opacity-25"></i>';
+        
+        return `<th class="sortable-th" style="cursor:pointer; user-select:none;" onclick="window.routerPage.handleSort('${key}')">${label} ${icon}</th>`;
     }
 
     renderModal(isAdmin) {
@@ -172,6 +182,10 @@ export class StaffListPage {
 
     async afterRender() {
         if(!this.currentUser) return;
+        
+        // 綁定 window.routerPage，讓 HTML onclick 可以呼叫 class 方法
+        window.routerPage = this;
+
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
         const unitSelect = document.getElementById('unit-filter');
         
@@ -197,21 +211,97 @@ export class StaffListPage {
                 if(target) list = await userService.getUsersByUnit(target);
             }
             this.staffList = list;
-            this.renderTable(list);
+            this.applySortAndFilter();
         } catch(e) {
             console.error(e);
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">載入失敗</td></tr>';
         }
     }
 
-    renderTable(list) {
+    handleSort(key) {
+        if (this.sortConfig.key === key) {
+            this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortConfig.key = key;
+            this.sortConfig.direction = 'asc';
+        }
+        // 更新 Header Icon
+        this.updateHeaderIcons();
+        this.applySortAndFilter();
+    }
+
+    updateHeaderIcons() {
+        document.querySelectorAll('.sortable-th').forEach(th => {
+            const onclickVal = th.getAttribute('onclick');
+            if(!onclickVal) return;
+            const keyMatch = onclickVal.match(/'([^']+)'/);
+            if (!keyMatch) return;
+            const key = keyMatch[1];
+            
+            const iconContainer = th.querySelector('i');
+            if (iconContainer) iconContainer.className = 'fas fa-sort text-muted small'; // reset
+
+            if (this.sortConfig.key === key) {
+                if (iconContainer) {
+                    iconContainer.className = this.sortConfig.direction === 'asc' 
+                        ? 'fas fa-sort-up' 
+                        : 'fas fa-sort-down';
+                    iconContainer.classList.remove('text-muted');
+                }
+            }
+        });
+    }
+
+    applySortAndFilter() {
+        const keyword = document.getElementById('keyword-search').value.toLowerCase();
+        
+        let filtered = this.staffList;
+        if (keyword) {
+            filtered = this.staffList.filter(u => 
+                (u.name && u.name.toLowerCase().includes(keyword)) ||
+                (u.staffId && u.staffId.includes(keyword)) ||
+                (u.email && u.email.toLowerCase().includes(keyword))
+            );
+        }
+
+        const key = this.sortConfig.key;
+        const dir = this.sortConfig.direction === 'asc' ? 1 : -1;
+
+        filtered.sort((a, b) => {
+            let valA = a[key] || '';
+            let valB = b[key] || '';
+            
+            if (key === 'unitId') {
+                valA = this.unitMap[valA] || valA;
+                valB = this.unitMap[valB] || valB;
+            }
+
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+            
+            if (!isNaN(numA) && !isNaN(numB) && String(numA) === String(valA)) {
+                return (numA - numB) * dir;
+            }
+            
+            valA = valA.toString().toLowerCase();
+            valB = valB.toString().toLowerCase();
+            if (valA < valB) return -1 * dir;
+            if (valA > valB) return 1 * dir;
+            return 0;
+        });
+
+        this.displayList = filtered;
+        this.renderTable();
+    }
+
+    renderTable() {
         const tbody = document.getElementById('staff-tbody');
-        if(!list || list.length === 0) {
+        if(this.displayList.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">無資料</td></tr>';
             return;
         }
         
-        tbody.innerHTML = list.map(u => `
+        tbody.innerHTML = this.displayList.map(u => `
             <tr>
                 <td>${this.unitMap[u.unitId] || u.unitId}</td>
                 <td>${u.staffId || '-'}</td>
@@ -226,7 +316,6 @@ export class StaffListPage {
                 </td>
             </tr>
         `).join('');
-        window.routerPage = this;
     }
 
     getRoleLabel(role) {
@@ -268,35 +357,60 @@ export class StaffListPage {
 
     async handleSave() {
         const uid = document.getElementById('edit-uid').value;
+        const isManager = document.getElementById('edit-is-manager').checked;
+        const isScheduler = document.getElementById('edit-is-scheduler').checked;
+        
+        let newRole = 'user';
+        if(isManager) newRole = 'unit_manager';
+        else if(isScheduler) newRole = 'unit_scheduler';
+
         const data = {
             name: document.getElementById('edit-name').value,
             unitId: document.getElementById('edit-unit').value,
             staffId: document.getElementById('edit-staffId').value,
             rank: document.getElementById('edit-level').value,
             group: document.getElementById('edit-group').value,
-            // 簡化示範，完整邏輯需包含 Role 判斷與 Constraints
+            role: newRole,
+            permissions: {
+                canManageUnit: isManager,
+                canEditSchedule: isScheduler || isManager,
+                canViewSchedule: true
+            },
+            constraints: {
+                isPregnant: document.getElementById('edit-isPregnant').checked,
+                canBatch: document.getElementById('edit-canBatch').checked
+            }
         };
         
-        if(uid) {
-            await userService.updateUser(uid, data);
-            alert("✅ 修改成功");
-        } else {
-            // 新增邏輯需實作
-            alert("新增功能開發中 (需整合 Auth Create)");
+        const btn = document.getElementById('btn-save');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            if(uid) {
+                await userService.updateUser(uid, data);
+                alert("✅ 修改成功");
+            } else {
+                // 新增邏輯: 需要 password
+                // 這裡暫時無法實作完整 createStaff (需密碼)，建議只允許更新或提供預設密碼
+                const email = document.getElementById('edit-email').value;
+                const res = await userService.createStaff({ ...data, email }, "123456"); // 預設密碼
+                if(res.success) alert("✅ 新增成功 (預設密碼: 123456)");
+                else alert("新增失敗: " + res.error);
+            }
+            this.editModal.hide();
+            this.loadData();
+        } catch(e) {
+            alert("錯誤: " + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '儲存';
         }
-        this.editModal.hide();
-        this.loadData();
     }
 
     filterData(keyword) {
-        if(!keyword) return this.renderTable(this.staffList);
-        const k = keyword.toLowerCase();
-        const filtered = this.staffList.filter(u => 
-            u.name.includes(k) || u.staffId.includes(k) || u.email.includes(k)
-        );
-        this.renderTable(filtered);
+        this.applySortAndFilter();
     }
     
-    sort(key) { /* 排序邏輯略，保持簡潔 */ }
-    async deleteStaff(uid) { if(confirm("刪除？")) { await userService.deleteStaff(uid); this.loadData(); } }
+    async deleteStaff(uid) { if(confirm("確定刪除此人員？")) { await userService.deleteStaff(uid); this.loadData(); } }
 }
