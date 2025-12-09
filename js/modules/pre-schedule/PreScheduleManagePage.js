@@ -4,6 +4,11 @@ import { userService } from "../../services/firebase/UserService.js";
 import { authService } from "../../services/firebase/AuthService.js";
 
 export class PreScheduleManagePage {
+    // ... (constructor & render method 同上，省略以節省篇幅，請保留原有的 render，重點是下面的 renderGroupInputs) ...
+    // 請直接使用上一則回覆的 render()，這裡只列出有變動的 Helper Method
+
+    // ... (中間省略，請保留原有的 render, afterRender, loadList, openModal 等) ...
+
     constructor() {
         this.targetUnitId = null;
         this.preSchedules = [];
@@ -82,7 +87,7 @@ export class PreScheduleManagePage {
                                     <div class="d-flex justify-content-between align-items-center mb-3">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" id="chk-use-defaults" checked>
-                                            <label class="form-check-label small" for="chk-use-defaults">設為預設值 (起:今日 / 迄:15日)</label>
+                                            <label class="form-check-label small" for="chk-use-defaults">設為預設值 (迄日為當月15日)</label>
                                         </div>
                                         <button type="button" class="btn btn-sm btn-outline-info" id="btn-import-last">
                                             <i class="fas fa-history"></i> 帶入上月設定
@@ -124,14 +129,9 @@ export class PreScheduleManagePage {
                                             <label class="small fw-bold text-success">每日保留人數</label>
                                             <input type="number" id="edit-reserved" class="form-control form-control-sm" value="0" min="0">
                                         </div>
-                                        <div class="col-md-3">
-                                            <label class="small fw-bold text-primary">每日可預班人數 (自動)</label>
-                                            <input type="number" id="edit-dailyMax" class="form-control form-control-sm bg-light" readonly>
-                                            <div class="form-text small" id="calc-info" style="font-size:0.7rem; white-space:nowrap;">載入中...</div>
                                         </div>
-                                    </div>
 
-                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 各組人力限制 (Min/Max)</h6>
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 每日各班人力限制 (Min/Max)</h6>
                                     <div id="group-limits-container" class="mb-3">
                                         </div>
 
@@ -180,8 +180,8 @@ export class PreScheduleManagePage {
         unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
         document.getElementById('btn-add').addEventListener('click', () => this.openModal(null));
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
-        
         document.getElementById('btn-search-staff').addEventListener('click', () => this.searchStaff());
+        
         document.getElementById('staff-search').addEventListener('keypress', (e) => {
             if(e.key === 'Enter') { e.preventDefault(); this.searchStaff(); }
         });
@@ -194,9 +194,6 @@ export class PreScheduleManagePage {
         document.getElementById('edit-month').addEventListener('change', () => {
             if(document.getElementById('chk-use-defaults').checked) this.setDefaultDates();
         });
-
-        // 綁定自動計算事件
-        document.getElementById('edit-reserved').addEventListener('input', () => this.calculateDailyLimit());
 
         if (unitSelect.options.length > 0 && unitSelect.value) {
             this.loadList(unitSelect.value);
@@ -242,8 +239,8 @@ export class PreScheduleManagePage {
     setDefaultDates() {
         const monthStr = document.getElementById('edit-month').value;
         if (!monthStr) return;
-        
         const [y, m] = monthStr.split('-').map(Number);
+        
         const today = new Date().toISOString().split('T')[0];
         const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0];
         
@@ -312,7 +309,6 @@ export class PreScheduleManagePage {
         }
 
         this.renderStaffList(groups);
-        this.calculateDailyLimit(); // 計算初始值
         this.modal.show();
     }
 
@@ -323,14 +319,18 @@ export class PreScheduleManagePage {
             return;
         }
         
+        // 修正後的表頭
         container.innerHTML = `
             <div class="table-responsive">
                 <table class="table table-bordered table-sm text-center mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
                             <th>組別</th>
-                            <th>Min D</th><th>Min E</th><th>Min N</th>
-                            <th>Max E</th><th>Max N</th>
+                            <th>每班至少</th>
+                            <th>小夜至少</th>
+                            <th>大夜至少</th>
+                            <th>小夜最多</th>
+                            <th>大夜最多</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -349,34 +349,6 @@ export class PreScheduleManagePage {
                     </tbody>
                 </table>
             </div>`;
-    }
-
-    // 核心修正：正確的計算公式
-    calculateDailyLimit() {
-        const totalStaff = this.selectedStaff.length;
-        const reserved = parseInt(document.getElementById('edit-reserved').value) || 0;
-        
-        // 1. 取得排班規則中的每日需求 (Global Rule Settings)
-        // 注意：UnitService.getUnitById 取回的是整個物件，staffRequirements 在裡面
-        const req = this.unitData.staffRequirements || { D:{}, E:{}, N:{} };
-        const days = [0,1,2,3,4,5,6];
-        let maxReq = 0;
-        
-        // 找出所有日子中，需求量最大的一天 (最保守估計)
-        days.forEach(d => {
-            const dVal = (req.D && req.D[d]) || 0;
-            const eVal = (req.E && req.E[d]) || 0;
-            const nVal = (req.N && req.N[d]) || 0;
-            const total = dVal + eVal + nVal;
-            if (total > maxReq) maxReq = total;
-        });
-
-        const dailyMax = totalStaff - maxReq - reserved;
-        document.getElementById('edit-dailyMax').value = dailyMax > 0 ? dailyMax : 0;
-        
-        // 更新提示文字
-        const info = document.getElementById('calc-info');
-        if(info) info.textContent = `(總${totalStaff} - 需${maxReq} - 留${reserved})`;
     }
 
     renderStaffList(groups) {
@@ -405,12 +377,7 @@ export class PreScheduleManagePage {
     }
 
     updateStaffGroup(idx, val) { this.selectedStaff[idx].tempGroup = val; }
-    
-    removeStaff(idx) { 
-        this.selectedStaff.splice(idx, 1); 
-        this.renderStaffList(this.unitData.groups || []); 
-        this.calculateDailyLimit(); // 人數變動，重算
-    }
+    removeStaff(idx) { this.selectedStaff.splice(idx, 1); this.renderStaffList(this.unitData.groups || []); }
 
     async searchStaff() {
         const keyword = document.getElementById('staff-search').value.trim();
@@ -446,7 +413,6 @@ export class PreScheduleManagePage {
         document.getElementById('search-results-dropdown').style.display = 'none';
         document.getElementById('staff-search').value = '';
         this.renderStaffList(this.unitData.groups || []);
-        this.calculateDailyLimit(); // 人數變動，重算
     }
 
     async importLastMonthSettings() {
@@ -458,7 +424,8 @@ export class PreScheduleManagePage {
         if (prevM === 0) { prevM = 12; prevY -= 1; }
 
         const lastSchedule = await PreScheduleService.getPreSchedule(this.targetUnitId, prevY, prevM);
-        if (!lastSchedule) { alert("⚠️ 找不到上個月的預班表"); return; }
+        
+        if (!lastSchedule) { alert("⚠️ 找不到上個月的預班表，無法帶入。"); return; }
 
         const s = lastSchedule.settings || {};
         document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
@@ -487,7 +454,6 @@ export class PreScheduleManagePage {
                 row.querySelector('.g-max-n').value = v.maxN ?? '';
             }
         });
-        this.calculateDailyLimit();
         alert("✅ 設定已帶入");
     }
 
@@ -523,7 +489,6 @@ export class PreScheduleManagePage {
                 maxOffDays: parseInt(document.getElementById('edit-maxOff').value),
                 maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
                 reservedStaff: parseInt(document.getElementById('edit-reserved').value) || 0,
-                dailyMaxOff: parseInt(document.getElementById('edit-dailyMax').value) || 0,
                 showOtherNames: document.getElementById('edit-showNames').checked,
                 groupLimits: groupLimits
             },
