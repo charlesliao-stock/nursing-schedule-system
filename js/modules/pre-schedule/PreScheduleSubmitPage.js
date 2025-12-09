@@ -5,13 +5,21 @@ import { UnitService } from "../../services/firebase/UnitService.js";
 
 export class PreScheduleSubmitPage {
     constructor() {
+        const today = new Date();
+        let targetMonth = today.getMonth() + 1 + 1; 
+        let targetYear = today.getFullYear();
+        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
+
+        this.year = targetYear;
+        this.month = targetMonth;
         this.currentUser = null;
         this.currentUnit = null; 
+        this.unitStaffMap = {}; // UID -> Name 對照表
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
         this.unitAggregate = {}; 
-        this.unitNames = {}; // 日期 -> 預班者姓名陣列
+        this.unitNames = {}; // 日期 -> 姓名陣列
         this.isReadOnly = false; 
     }
 
@@ -63,7 +71,7 @@ export class PreScheduleSubmitPage {
                                     <div class="small">
                                         <span class="badge bg-white text-dark border me-1">白: 可選</span>
                                         <span class="badge bg-danger text-white me-1">紅: 已選OFF</span>
-                                        <span class="badge bg-white border text-danger" style="border-color:red!important">紅框: 已滿</span>
+                                        <span class="badge bg-white border text-danger" style="border-color:red!important">紅框: 超額</span>
                                     </div>
                                 </div>
                                 <div class="card-body"><div id="calendar-grid" class="calendar-grid"></div></div>
@@ -85,7 +93,7 @@ export class PreScheduleSubmitPage {
                                         </li>
                                         <li class="list-group-item d-flex justify-content-between px-0 bg-light rounded p-2 mt-1">
                                             <span class="fw-bold">每日限額</span>
-                                            <span class="badge bg-secondary rounded-pill" id="limit-daily">0</span>
+                                            <span class="badge bg-secondary rounded-pill" id="limit-daily-desc">依人力浮動</span>
                                         </li>
                                     </ul>
                                     
@@ -116,9 +124,12 @@ export class PreScheduleSubmitPage {
                         display: flex; flex-direction: column; justify-content: space-between;
                     }
                     .calendar-cell:hover { background-color: #f8f9fc; border-color: #4e73df; transform: translateY(-2px); }
-                    .calendar-cell.weekend { background-color: #fff0f5; } /* 粉紅底 */
-                    .calendar-cell.selected-off { background-color: #fff3cd; border: 2px solid #ffc107; color: #856404; } /* 淡橘底 */
-                    .calendar-cell.over-limit { border: 2px solid #dc3545; } /* 紅框 */
+                    /* 粉紅底 (假日) */
+                    .calendar-cell.weekend { background-color: #fff0f5; } 
+                    /* 淡橘底 (選取) */
+                    .calendar-cell.selected-off { background-color: #fff3cd; border: 2px solid #ffc107; color: #856404; }
+                    /* 紅框 (超額) */
+                    .calendar-cell.over-limit { border: 2px solid #dc3545 !important; } 
                     .calendar-cell.disabled { opacity: 0.7; cursor: default; }
                     .day-number { font-weight: 800; font-size: 1.1rem; color: #5a5c69; }
                     .day-number.weekend-text { color: #e74a3b; }
@@ -169,6 +180,11 @@ export class PreScheduleSubmitPage {
         if (!this.currentUnit || this.currentUnit.unitId !== unitId) {
             this.currentUnit = await UnitService.getUnitById(unitId);
         }
+
+        // 預先載入單位人員名單 (建立 UID -> Name 映射)
+        const staffList = await userService.getUsersByUnit(unitId);
+        this.unitStaffMap = {};
+        staffList.forEach(s => this.unitStaffMap[s.uid] = s.name);
 
         try {
             this.preSchedulesList = await PreScheduleService.getPreSchedulesList(unitId);
@@ -238,7 +254,6 @@ export class PreScheduleSubmitPage {
 
         document.getElementById('limit-total').textContent = settings.maxOffDays;
         document.getElementById('limit-holiday').textContent = settings.maxHoliday || 0;
-        document.getElementById('limit-daily').textContent = settings.dailyMaxOff || '不限';
         
         document.getElementById('wish-notes').value = mySub.notes || '';
         document.getElementById('wish-notes').disabled = isReadOnly;
@@ -271,13 +286,16 @@ export class PreScheduleSubmitPage {
         this.unitNames = {};
         if (!submissions) return;
         
-        Object.values(submissions).forEach(sub => {
+        Object.entries(submissions).forEach(([uid, sub]) => {
             if (sub.wishes) {
+                // 如果 submissions 內沒有 name (舊資料)，則去 unitStaffMap 查
+                const name = sub.name || this.unitStaffMap[uid] || '未知';
+                
                 Object.entries(sub.wishes).forEach(([day, wish]) => {
                     if (wish === 'OFF') {
                         this.unitAggregate[day] = (this.unitAggregate[day] || 0) + 1;
                         if (!this.unitNames[day]) this.unitNames[day] = [];
-                        this.unitNames[day].push(sub.name);
+                        this.unitNames[day].push(name);
                     }
                 });
             }
@@ -292,17 +310,27 @@ export class PreScheduleSubmitPage {
         const { year, month } = this.currentSchedule;
         const daysInMonth = new Date(year, month, 0).getDate();
         const firstDay = new Date(year, month - 1, 1).getDay();
-        const dailyMax = this.currentSchedule.settings.dailyMaxOff || 999;
+        
+        // 取得設定參數
+        const totalStaff = this.currentSchedule.staffIds ? this.currentSchedule.staffIds.length : 0;
+        const reserved = this.currentSchedule.settings.reservedStaff || 0;
+        const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}};
         const showNames = this.currentSchedule.settings.showOtherNames;
 
         for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell" style="cursor:default; background:#f8f9fc;"></div>`;
 
         for(let d=1; d<=daysInMonth; d++) {
-            const currentWeekDay = new Date(year, month - 1, d).getDay();
+            const currentWeekDay = new Date(year, month - 1, d).getDay(); // 0-6
             const isWeekend = (currentWeekDay === 0 || currentWeekDay === 6);
             const wish = this.myWishes[d];
             const agg = this.unitAggregate[d] || 0;
-            const isOverLimit = agg >= dailyMax;
+
+            // 計算當日限額：總人數 - (該日Min需求總和) - 保留
+            const reqTotal = (reqMatrix.D?.[currentWeekDay]||0) + (reqMatrix.E?.[currentWeekDay]||0) + (reqMatrix.N?.[currentWeekDay]||0);
+            let dailyLimit = totalStaff - reqTotal - reserved;
+            if(dailyLimit < 0) dailyLimit = 0;
+
+            const isOverLimit = agg > dailyLimit;
             
             const cell = document.createElement('div');
             let classes = 'calendar-cell';
@@ -314,16 +342,18 @@ export class PreScheduleSubmitPage {
             cell.className = classes;
             if (!this.isReadOnly) cell.onclick = () => this.toggleDate(d, isWeekend);
 
-            // Tooltip names
+            // Tooltip 顯示姓名
             if (showNames && this.unitNames[d]) {
                 cell.title = `已預班: ${this.unitNames[d].join(', ')}`;
+            } else {
+                cell.title = `限額: ${dailyLimit} 人`;
             }
 
             cell.innerHTML = `
                 <div class="day-number ${isWeekend ? 'weekend-text' : ''}">${d}</div>
                 ${wish ? '<span class="wish-badge">OFF</span>' : ''}
                 <div class="agg-info ${isOverLimit ? 'text-danger fw-bold' : ''}">
-                    <i class="fas fa-users"></i> ${agg}/${dailyMax}
+                    <i class="fas fa-users"></i> ${agg}/${dailyLimit}
                 </div>
             `;
             grid.appendChild(cell);
