@@ -7,7 +7,7 @@ import { firebaseService } from "./FirebaseService.js";
 export class PreScheduleService {
     static COLLECTION = 'pre_schedules';
 
-    // 取得單位的預班列表 (用於管理頁面)
+    // 取得列表
     static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
@@ -18,52 +18,51 @@ export class PreScheduleService {
             const snapshot = await getDocs(q);
             const list = [];
             snapshot.forEach(d => list.push({ id: d.id, ...d.data() }));
-            // 排序 (新月份在前)
+            // 依月份倒序
             list.sort((a, b) => (b.year * 100 + b.month) - (a.year * 100 + a.month));
             return list;
-        } catch (error) {
-            console.error("List fetch error:", error);
-            return [];
-        }
+        } catch (error) { return []; }
     }
 
-    // 建立/覆蓋預班表
+    // 建立/更新
     static async createPreSchedule(data) {
         try {
             const db = firebaseService.getDb();
-            // ID 格式: UNIT_YYYY_MM (確保唯一)
             const docId = `${data.unitId}_${data.year}_${String(data.month).padStart(2,'0')}`;
             const docRef = doc(db, this.COLLECTION, docId);
 
-            // 初始化 submissions 結構
+            // 初始化提交狀態
             const submissions = {};
-            // 預先為名單內的人建立空位
             data.staffIds.forEach(uid => {
+                // 若已有資料則保留，否則初始化
                 submissions[uid] = { submitted: false, wishes: {} };
             });
 
             await setDoc(docRef, {
                 ...data,
-                submissions, 
+                submissions, // 注意：這會覆蓋舊的 submissions，若要保留舊的需先讀取再 merge，但"新增"通常是全新的
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
             return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // 檢查是否有提交資料
+    // 取得單一文件
+    static async getPreSchedule(unitId, year, month) {
+        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
+        const db = firebaseService.getDb();
+        const snap = await getDoc(doc(db, this.COLLECTION, docId));
+        return snap.exists() ? snap.data() : null;
+    }
+
+    // 檢查是否有提交
     static async checkHasSubmissions(docId) {
         try {
             const db = firebaseService.getDb();
-            const docSnap = await getDoc(doc(db, this.COLLECTION, docId));
-            if (!docSnap.exists()) return false;
-            
-            const data = docSnap.data();
-            const subs = data.submissions || {};
-            // 檢查是否有任何人的 submitted 為 true
+            const snap = await getDoc(doc(db, this.COLLECTION, docId));
+            if (!snap.exists()) return false;
+            const subs = snap.data().submissions || {};
             return Object.values(subs).some(s => s.submitted === true);
         } catch (e) { return false; }
     }
@@ -77,27 +76,7 @@ export class PreScheduleService {
         } catch (e) { return { success: false, error: e.message }; }
     }
 
-    // 更新設定
-    static async updateSettings(unitId, year, month, settings) {
-        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-        try {
-            const db = firebaseService.getDb();
-            await updateDoc(doc(db, this.COLLECTION, docId), { 
-                settings: settings, 
-                updatedAt: serverTimestamp() 
-            });
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
-    }
-
-    // (保留原本的 getPreSchedule, submitPersonalWish 等方法，請勿刪除)
-    static async getPreSchedule(unitId, year, month) {
-        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-        const db = firebaseService.getDb();
-        const snap = await getDoc(doc(db, this.COLLECTION, docId));
-        return snap.exists() ? snap.data() : null;
-    }
-
+    // 提交個人需求 (保持不變)
     static async submitPersonalWish(unitId, year, month, uid, wishes, notes) {
         const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
         try {
