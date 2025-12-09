@@ -7,9 +7,8 @@ export class PreScheduleManagePage {
     constructor() {
         this.targetUnitId = null;
         this.preSchedules = [];
-        this.unitData = null;
-        this.unitStaff = []; // 本單位人員
-        this.selectedStaff = []; // 最終參與預班的人員清單
+        this.unitData = null;     // 單位基本資料 (含 groups)
+        this.selectedStaff = [];  // 暫存參與名單 (含臨時組別)
         this.modal = null;
     }
 
@@ -17,13 +16,13 @@ export class PreScheduleManagePage {
         const user = authService.getProfile();
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
         
+        // 準備單位選項
         let unitOptions = '<option value="">載入中...</option>';
         if (isAdmin) {
             const units = await UnitService.getAllUnits();
             unitOptions = `<option value="">請選擇單位...</option>` + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
         } else {
             const units = await UnitService.getUnitsByManager(user.uid);
-            // Fallback
             if(units.length === 0 && user.unitId) {
                 const u = await UnitService.getUnitById(user.unitId);
                 if(u) units.push(u);
@@ -39,10 +38,12 @@ export class PreScheduleManagePage {
                 </div>
 
                 <div class="card shadow-sm mb-4 border-left-primary">
-                    <div class="card-body py-2 d-flex align-items-center gap-2">
+                    <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
                         <label class="fw-bold mb-0 text-nowrap">選擇單位：</label>
                         <select id="unit-select" class="form-select w-auto">${unitOptions}</select>
+                        
                         <div class="vr mx-2"></div>
+                        
                         <button id="btn-add" class="btn btn-primary w-auto text-nowrap">
                             <i class="fas fa-plus"></i> 新增預班表
                         </button>
@@ -71,79 +72,98 @@ export class PreScheduleManagePage {
                 </div>
 
                 <div class="modal fade" id="pre-modal" tabindex="-1">
-                    <div class="modal-dialog modal-lg">
-                        <div class="modal-content">
-                            <div class="modal-header">
+                    <div class="modal-dialog modal-lg"> <div class="modal-content">
+                            <div class="modal-header bg-light">
                                 <h5 class="modal-title fw-bold" id="modal-title">新增預班表</h5>
                                 <button class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
                                 <form id="pre-form">
-                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2">基本設定</h6>
-                                    <div class="row g-3 mb-3">
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">預班月份</label>
-                                            <input type="month" id="edit-month" class="form-control" required>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">開放日期 (起)</label>
-                                            <input type="date" id="edit-open" class="form-control" required>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">截止日期 (迄)</label>
-                                            <input type="date" id="edit-close" class="form-control" required>
-                                        </div>
-                                    </div>
-
-                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4">休假限制</h6>
-                                    <div class="row g-3 mb-3">
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">每人可預班天數 (含假日)</label>
-                                            <input type="number" id="edit-maxOff" class="form-control" value="8" min="0">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">其中假日可預班天數</label>
-                                            <input type="number" id="edit-maxHoliday" class="form-control" value="2" min="0">
-                                        </div>
-                                    </div>
-
-                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4">人力限制</h6>
-                                    <div class="row g-3 mb-3">
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">每日小夜 (E) 上限</label>
-                                            <input type="number" id="edit-maxE" class="form-control" value="3">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">每日大夜 (N) 上限</label>
-                                            <input type="number" id="edit-maxN" class="form-control" value="2">
-                                        </div>
-                                    </div>
                                     
-                                    <div id="group-limits-container" class="bg-light p-3 rounded mb-3">
-                                        <label class="form-label fw-bold mb-2">各組每日最少上班人數：</label>
-                                        <div id="group-inputs" class="row g-2">
-                                            <div class="text-muted small">載入中...</div>
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="chk-use-defaults" checked>
+                                            <label class="form-check-label small" for="chk-use-defaults">使用預設日期 (今日起 ~ 當月15日)</label>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-info" id="btn-import-last">
+                                            <i class="fas fa-history"></i> 帶入上月設定
+                                        </button>
+                                    </div>
+
+                                    <div class="card mb-3 border-0 bg-light">
+                                        <div class="card-body py-2">
+                                            <div class="row g-2 align-items-center">
+                                                <div class="col-md-4">
+                                                    <label class="small fw-bold">預班月份</label>
+                                                    <input type="month" id="edit-month" class="form-control form-control-sm" required>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="small fw-bold">開放日期 (起)</label>
+                                                    <input type="date" id="edit-open" class="form-control form-control-sm" required>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="small fw-bold">截止日期 (迄)</label>
+                                                    <input type="date" id="edit-close" class="form-control form-control-sm" required>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <h6 class="text-primary fw-bold mb-3 border-bottom pb-2 mt-4 d-flex justify-content-between">
-                                        <span>參與人員名單</span>
-                                        <span class="badge bg-secondary" id="staff-count">0 人</span>
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-sliders-h"></i> 限制參數</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">每人可預休(含假)</label>
+                                            <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">其中假日可預休</label>
+                                            <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">小夜(E) 上限</label>
+                                            <input type="number" id="edit-maxE" class="form-control form-control-sm" placeholder="不限">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">大夜(N) 上限</label>
+                                            <input type="number" id="edit-maxN" class="form-control form-control-sm" placeholder="不限">
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="small fw-bold text-dark">各組每日最少上班人數 (Min Staff)</label>
+                                        <div id="group-limits-container" class="d-flex flex-wrap gap-3 p-2 border rounded bg-white">
+                                            <span class="text-muted small">請先選擇單位以載入組別...</span>
+                                        </div>
+                                    </div>
+
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
+                                        <span><i class="fas fa-users"></i> 參與人員與組別</span>
+                                        <div class="input-group input-group-sm w-auto">
+                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋外部人員...">
+                                            <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-plus"></i></button>
+                                        </div>
                                     </h6>
                                     
-                                    <div class="input-group mb-2">
-                                        <input type="text" id="staff-search" class="form-control" placeholder="搜尋並加入外部人員 (姓名/Email)...">
-                                        <button type="button" class="btn btn-outline-primary" id="btn-search-staff">加入</button>
+                                    <div class="table-responsive border rounded" style="max-height: 250px;">
+                                        <table class="table table-sm table-hover align-middle mb-0 text-center">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th class="text-start ps-3">姓名</th>
+                                                    <th>職級</th>
+                                                    <th>本次分組</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="staff-list-tbody"></tbody>
+                                        </table>
                                     </div>
+                                    <div class="text-end small text-muted mt-1">共 <span id="staff-count">0</span> 人</div>
 
-                                    <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
-                                        <div id="staff-list-container"></div>
-                                    </div>
                                 </form>
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary w-auto" data-bs-dismiss="modal">取消</button>
-                                <button type="button" id="btn-save" class="btn btn-primary w-auto">建立預班</button>
+                                <button type="button" id="btn-save" class="btn btn-primary w-auto">建立預班表</button>
                             </div>
                         </div>
                     </div>
@@ -163,9 +183,10 @@ export class PreScheduleManagePage {
         document.getElementById('btn-add').addEventListener('click', () => this.openModal());
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
         
-        // 搜尋人員按鈕
         document.getElementById('btn-search-staff').addEventListener('click', () => this.searchAndAddStaff());
+        document.getElementById('btn-import-last').addEventListener('click', () => this.importLastMonthSettings());
 
+        // 預設載入列表
         if (unitSelect.options.length > 0 && unitSelect.value) {
             this.loadList(unitSelect.value);
         }
@@ -178,7 +199,6 @@ export class PreScheduleManagePage {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><span class="spinner-border spinner-border-sm"></span></td></tr>';
 
         try {
-            // 取得該單位的預班表列表
             this.preSchedules = await PreScheduleService.getPreSchedulesList(uid);
             
             if (this.preSchedules.length === 0) {
@@ -188,16 +208,16 @@ export class PreScheduleManagePage {
 
             tbody.innerHTML = this.preSchedules.map(p => {
                 const statusBadge = this.getStatusBadge(p.status, p.settings?.openDate, p.settings?.closeDate);
-                const participantCount = p.staffIds ? p.staffIds.length : (Object.keys(p.submissions || {}).length || 0);
+                // 計算人數 (相容舊資料結構)
+                const count = p.staffIds ? p.staffIds.length : (Object.keys(p.submissions || {}).length);
                 
                 return `
                     <tr>
                         <td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td>
-                        <td>${p.settings?.openDate} ~ ${p.settings?.closeDate}</td>
-                        <td><span class="badge bg-light text-dark border">${participantCount} 人</span></td>
+                        <td><small>${p.settings?.openDate} ~ ${p.settings?.closeDate}</small></td>
+                        <td><span class="badge bg-light text-dark border">${count} 人</span></td>
                         <td>${statusBadge}</td>
                         <td class="text-end pe-3">
-                            <button class="btn btn-sm btn-outline-primary me-1" onclick="alert('編輯功能請直接在預班管理介面操作')"><i class="fas fa-edit"></i></button>
                             <button class="btn btn-sm btn-outline-danger" onclick="window.routerPage.deletePreSchedule('${p.id}')"><i class="fas fa-trash"></i></button>
                         </td>
                     </tr>
@@ -223,18 +243,26 @@ export class PreScheduleManagePage {
         
         document.getElementById('pre-form').reset();
         
-        // 設定預設月份 (下個月)
-        const nextMonth = new Date();
-        nextMonth.setMonth(nextMonth.getMonth() + 1);
-        document.getElementById('edit-month').value = nextMonth.toISOString().slice(0, 7);
+        // 1. 設定日期預設值
+        const today = new Date();
+        const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        const y = nextMonthDate.getFullYear();
+        const m = nextMonthDate.getMonth() + 1;
         
-        // 預設日期
-        const y = nextMonth.getFullYear();
-        const m = nextMonth.getMonth() + 1;
-        document.getElementById('edit-open').value = `${y}-${String(m).padStart(2,'0')}-01`;
-        document.getElementById('edit-close').value = `${y}-${String(m).padStart(2,'0')}-05`;
+        document.getElementById('edit-month').value = `${y}-${String(m).padStart(2,'0')}`;
+        
+        // 預設: 建立日(今天) ~ 當月15日
+        // 注意: 若 "當月15日" 已經過了，邏輯可能要調整，但依照需求：
+        const endDay = new Date(today.getFullYear(), today.getMonth(), 15);
+        // 若今天已經超過15號，截止日可能要設為下個月15號？這裡先照需求「當月15日」
+        // 但為了 UX，若今天 > 15號，預設截止日改為下個月15號比較合理。
+        // 這裡實作：截止日 = 下個月的 15 號 (配合預班月份)
+        const closeDate = new Date(y, m - 1, 15); 
+        
+        document.getElementById('edit-open').value = today.toISOString().split('T')[0];
+        document.getElementById('edit-close').value = closeDate.toISOString().split('T')[0];
 
-        // 載入單位資料 (組別、人員)
+        // 2. 載入單位資料與人員
         try {
             const [unit, staff] = await Promise.all([
                 UnitService.getUnitById(this.targetUnitId),
@@ -242,26 +270,18 @@ export class PreScheduleManagePage {
             ]);
             
             this.unitData = unit;
-            this.unitStaff = staff; // 原始名單
-            this.selectedStaff = [...staff]; // 預設全員參加
+            
+            // 轉換人員格式，加入 tempGroup 屬性
+            this.selectedStaff = staff.map(s => ({
+                uid: s.uid,
+                name: s.name,
+                rank: s.rank,
+                group: s.group || '', // 原始組別
+                tempGroup: s.group || '' // 本次預班組別 (預設同原始)
+            }));
 
-            // 1. 渲染組別限制輸入框
-            const groupContainer = document.getElementById('group-inputs');
-            if (unit.groups && unit.groups.length > 0) {
-                groupContainer.innerHTML = unit.groups.map(g => `
-                    <div class="col-md-6 d-flex align-items-center">
-                        <label class="me-2 mb-0" style="min-width:80px;">${g}組：</label>
-                        <input type="number" class="form-control form-control-sm group-min-input" data-group="${g}" value="1" min="0">
-                        <span class="ms-1 small text-muted">人</span>
-                    </div>
-                `).join('');
-            } else {
-                groupContainer.innerHTML = '<div class="text-muted small">此單位未設定組別</div>';
-            }
-
-            // 2. 渲染人員名單
+            this.renderGroupInputs();
             this.renderStaffList();
-
             this.modal.show();
 
         } catch (e) {
@@ -270,21 +290,57 @@ export class PreScheduleManagePage {
         }
     }
 
-    renderStaffList() {
-        const container = document.getElementById('staff-list-container');
-        document.getElementById('staff-count').textContent = `${this.selectedStaff.length} 人`;
+    // 渲染各組最低人力輸入框
+    renderGroupInputs() {
+        const container = document.getElementById('group-limits-container');
+        const groups = this.unitData.groups || [];
         
-        container.innerHTML = this.selectedStaff.map((u, idx) => `
-            <div class="d-flex justify-content-between align-items-center border-bottom py-1">
-                <div>
-                    <span class="fw-bold">${u.name}</span> 
-                    <small class="text-muted">(${u.group || '未分組'})</small>
-                </div>
-                <button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})">
-                    <i class="fas fa-times"></i>
-                </button>
+        if (groups.length === 0) {
+            container.innerHTML = '<span class="text-muted small">此單位未設定組別，無須設定組別限制。</span>';
+            return;
+        }
+
+        container.innerHTML = groups.map(g => `
+            <div class="d-flex align-items-center bg-light border rounded px-2 py-1">
+                <label class="mb-0 small fw-bold me-2">${g}組:</label>
+                <input type="number" class="form-control form-control-sm group-min-input text-center p-0" 
+                       data-group="${g}" value="0" min="0" style="width: 40px;">
+                <span class="ms-1 small text-muted">人</span>
             </div>
         `).join('');
+    }
+
+    // 渲染人員列表 (含組別下拉選單)
+    renderStaffList() {
+        const tbody = document.getElementById('staff-list-tbody');
+        document.getElementById('staff-count').textContent = this.selectedStaff.length;
+        
+        // 準備組別選項
+        const groups = this.unitData.groups || [];
+        const groupOptions = `<option value="">(無)</option>` + 
+                             groups.map(g => `<option value="${g}">${g}</option>`).join('');
+
+        tbody.innerHTML = this.selectedStaff.map((u, idx) => `
+            <tr>
+                <td class="text-start ps-3 fw-bold">${u.name}</td>
+                <td><span class="badge bg-light text-dark border">${u.rank || '-'}</span></td>
+                <td>
+                    <select class="form-select form-select-sm py-0 staff-group-select" 
+                            onchange="window.routerPage.updateStaffGroup(${idx}, this.value)">
+                        ${groupOptions.replace(`value="${u.tempGroup}"`, `value="${u.tempGroup}" selected`)}
+                    </select>
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    updateStaffGroup(idx, newGroup) {
+        this.selectedStaff[idx].tempGroup = newGroup;
     }
 
     removeStaff(idx) {
@@ -299,15 +355,51 @@ export class PreScheduleManagePage {
         const results = await userService.searchUsers(keyword);
         if (results.length === 0) { alert("找不到使用者"); return; }
         
-        // 簡單取第一個 (實務上可做選單)
         const user = results[0];
+        if (this.selectedStaff.find(s => s.uid === user.uid)) { alert("已在名單中"); return; }
         
-        // 檢查是否已在名單
-        if (this.selectedStaff.find(s => s.uid === user.uid)) { alert("此人已在名單中"); return; }
+        // 加入名單 (預設無組別)
+        this.selectedStaff.push({
+            uid: user.uid,
+            name: user.name,
+            rank: user.rank,
+            group: user.group || '',
+            tempGroup: '' // 外部人員預設無組別
+        });
         
-        this.selectedStaff.push(user);
         this.renderStaffList();
         document.getElementById('staff-search').value = '';
+    }
+
+    // 帶入上月設定
+    async importLastMonthSettings() {
+        const currentMonthStr = document.getElementById('edit-month').value;
+        const [y, m] = currentMonthStr.split('-').map(Number);
+        
+        // 計算上個月
+        let prevY = y, prevM = m - 1;
+        if (prevM === 0) { prevM = 12; prevY -= 1; }
+
+        const lastSchedule = await PreScheduleService.getPreSchedule(this.targetUnitId, prevY, prevM);
+        
+        if (!lastSchedule) { alert("找不到上個月的預班表"); return; }
+
+        const s = lastSchedule.settings || {};
+        
+        // 填入限制
+        document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
+        document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2;
+        document.getElementById('edit-maxE').value = s.maxE || '';
+        document.getElementById('edit-maxN').value = s.maxN || '';
+
+        // 填入各組低限
+        const groupMins = s.groupMin || {};
+        document.querySelectorAll('.group-min-input').forEach(input => {
+            const g = input.dataset.group;
+            if (groupMins[g] !== undefined) input.value = groupMins[g];
+        });
+
+        alert("✅ 已帶入上月參數設定 (人員名單未變更)");
     }
 
     async savePreSchedule() {
@@ -315,59 +407,57 @@ export class PreScheduleManagePage {
         btn.disabled = true;
         btn.innerHTML = '建立中...';
 
-        const monthStr = document.getElementById('edit-month').value; // YYYY-MM
+        const monthStr = document.getElementById('edit-month').value;
         const [year, month] = monthStr.split('-').map(Number);
 
         // 收集組別限制
         const groupConstraints = {};
         document.querySelectorAll('.group-min-input').forEach(input => {
-            groupConstraints[input.dataset.group] = parseInt(input.value) || 0;
+            const val = input.value === '' ? -1 : parseInt(input.value); // -1 or 0 means no limit? 需求說是預設不限，這裡假設 0 為不限或最小0
+            groupConstraints[input.dataset.group] = val;
+        });
+
+        // 整理人員名單 (包含本次的組別設定)
+        // 需存入 DB 的結構: staffIds (array), staffSettings (map: uid -> { group: 'A' })
+        const staffSettings = {};
+        this.selectedStaff.forEach(s => {
+            staffSettings[s.uid] = { group: s.tempGroup };
         });
 
         const data = {
             unitId: this.targetUnitId,
-            year,
-            month,
+            year, month,
             settings: {
                 openDate: document.getElementById('edit-open').value,
                 closeDate: document.getElementById('edit-close').value,
                 maxOffDays: parseInt(document.getElementById('edit-maxOff').value),
                 maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
-                maxE: parseInt(document.getElementById('edit-maxE').value),
-                maxN: parseInt(document.getElementById('edit-maxN').value),
+                maxE: document.getElementById('edit-maxE').value ? parseInt(document.getElementById('edit-maxE').value) : null,
+                maxN: document.getElementById('edit-maxN').value ? parseInt(document.getElementById('edit-maxN').value) : null,
                 groupMin: groupConstraints
             },
-            staffIds: this.selectedStaff.map(s => s.uid), // 只存 ID
+            staffIds: this.selectedStaff.map(s => s.uid),
+            staffSettings: staffSettings, // 新增：儲存本次的人員組別
             status: 'open'
         };
 
-        try {
-            const res = await PreScheduleService.createPreSchedule(data);
-            if (res.success) {
-                alert("✅ 預班表建立成功");
-                this.modal.hide();
-                this.loadList(this.targetUnitId);
-            } else {
-                alert("建立失敗: " + res.error);
-            }
-        } catch (e) {
-            console.error(e);
-            alert("系統錯誤");
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = '建立預班';
+        const res = await PreScheduleService.createPreSchedule(data);
+        if (res.success) {
+            alert("✅ 建立成功");
+            this.modal.hide();
+            this.loadList(this.targetUnitId);
+        } else {
+            alert("建立失敗: " + res.error);
         }
+        btn.disabled = false;
+        btn.innerHTML = '建立預班表';
     }
 
     async deletePreSchedule(id) {
-        // 檢查是否有人提交
         const hasSubmissions = await PreScheduleService.checkHasSubmissions(id);
-        
         let msg = "確定要刪除此預班表嗎？";
-        if (hasSubmissions) {
-            msg = "⚠️ 警告：已經有人員提交預班需求！\n刪除將會遺失所有已提交的資料。\n\n確定要繼續刪除嗎？";
-        }
-
+        if (hasSubmissions) msg = "⚠️ 警告：已有提交資料！刪除將遺失所有紀錄。\n\n確定刪除？";
+        
         if (confirm(msg)) {
             await PreScheduleService.deletePreSchedule(id);
             this.loadList(this.targetUnitId);
