@@ -7,6 +7,56 @@ import { firebaseService } from "./FirebaseService.js";
 export class PreScheduleService {
     static COLLECTION = 'pre_schedules';
 
+    // 檢查是否存在
+    static async checkPreScheduleExists(unitId, year, month) {
+        try {
+            const db = firebaseService.getDb();
+            const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
+            const docRef = doc(db, this.COLLECTION, docId);
+            const snap = await getDoc(docRef);
+            return snap.exists();
+        } catch (e) { return false; }
+    }
+
+    // 建立
+    static async createPreSchedule(data) {
+        try {
+            const db = firebaseService.getDb();
+            const docId = `${data.unitId}_${data.year}_${String(data.month).padStart(2,'0')}`;
+            const docRef = doc(db, this.COLLECTION, docId);
+
+            const submissions = {};
+            data.staffIds.forEach(uid => {
+                submissions[uid] = { submitted: false, wishes: {} };
+            });
+
+            await setDoc(docRef, {
+                ...data,
+                submissions,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+            return { success: true };
+        } catch (error) { return { success: false, error: error.message }; }
+    }
+
+    // 更新設定 (保留 submissions)
+    static async updatePreScheduleSettings(docId, data) {
+        try {
+            const db = firebaseService.getDb();
+            const docRef = doc(db, this.COLLECTION, docId);
+            
+            await updateDoc(docRef, {
+                settings: data.settings,
+                staffIds: data.staffIds,
+                staffSettings: data.staffSettings,
+                updatedAt: serverTimestamp()
+            });
+            return { success: true };
+        } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    // 列表查詢
     static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
@@ -19,46 +69,7 @@ export class PreScheduleService {
         } catch (error) { return []; }
     }
 
-    // 建立新表 (會初始化 submissions)
-    static async createPreSchedule(data) {
-        try {
-            const db = firebaseService.getDb();
-            const docId = `${data.unitId}_${data.year}_${String(data.month).padStart(2,'0')}`;
-            const docRef = doc(db, this.COLLECTION, docId);
-
-            // 初始化提交狀態
-            const submissions = {};
-            data.staffIds.forEach(uid => {
-                submissions[uid] = { submitted: false, wishes: {} };
-            });
-
-            await setDoc(docRef, {
-                ...data,
-                submissions, 
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
-
-    // ✅ 新增：更新設定 (不覆蓋提交資料)
-    static async updatePreScheduleSettings(docId, data) {
-        try {
-            const db = firebaseService.getDb();
-            const docRef = doc(db, this.COLLECTION, docId);
-            
-            // 只更新 settings, staffIds, staffSettings
-            await updateDoc(docRef, {
-                settings: data.settings,
-                staffIds: data.staffIds,
-                staffSettings: data.staffSettings,
-                updatedAt: serverTimestamp()
-            });
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
-    }
-
+    // 其他方法保持不變 (delete, checkHasSubmissions, getPreSchedule...)
     static async checkHasSubmissions(docId) {
         try {
             const db = firebaseService.getDb();
