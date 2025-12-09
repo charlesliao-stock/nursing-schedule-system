@@ -116,7 +116,7 @@ export class PreScheduleManagePage {
                                         </div>
                                     </div>
 
-                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 各組人力限制 (Min/Max)</h6>
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 各班各組人力限制 (Min/Max)</h6>
                                     <div id="group-limits-container" class="mb-3">
                                         </div>
 
@@ -323,11 +323,11 @@ export class PreScheduleManagePage {
                     <thead class="table-light">
                         <tr>
                             <th>組別</th>
-                            <th title="最少白班人數">Min D</th>
-                            <th title="最少小夜人數">Min E</th>
-                            <th title="最少大夜人數">Min N</th>
-                            <th title="最多小夜人數">Max E</th>
-                            <th title="最多大夜人數">Max N</th>
+                            <th title="最班至少">最班至少</th>
+                            <th title="小夜至少">小夜至少</th>
+                            <th title="大夜至少">大夜至少</th>
+                            <th title="小夜最多">小夜最多</th>
+                            <th title="大夜最多">大夜最多</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -335,7 +335,7 @@ export class PreScheduleManagePage {
                             const v = values[g] || {};
                             return `
                             <tr>
-                                <td class="fw-bold bg-light">${g}組</td>
+                                <td class="fw-bold bg-light">${g}</td>
                                 <td><input type="number" class="form-control form-control-sm text-center g-min-d" data-group="${g}" value="${v.minD??0}" min="0"></td>
                                 <td><input type="number" class="form-control form-control-sm text-center g-min-e" data-group="${g}" value="${v.minE??0}" min="0"></td>
                                 <td><input type="number" class="form-control form-control-sm text-center g-min-n" data-group="${g}" value="${v.minN??0}" min="0"></td>
