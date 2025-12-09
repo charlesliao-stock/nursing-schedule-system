@@ -103,16 +103,31 @@ export class PreScheduleManagePage {
                                             <input type="date" id="edit-close" class="form-control form-control-sm" required>
                                         </div>
                                         <div class="col-md-3">
-                                            <div class="row g-1">
-                                                <div class="col-6">
-                                                    <label class="small fw-bold" title="預班上限 (含假日)">預班上限</label>
-                                                    <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
-                                                </div>
-                                                <div class="col-6">
-                                                    <label class="small fw-bold text-danger">假日上限</label>
-                                                    <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
-                                                </div>
+                                            <div class="form-check form-switch mt-4">
+                                                <input class="form-check-input" type="checkbox" id="edit-showNames">
+                                                <label class="form-check-label small fw-bold" for="edit-showNames">顯示預班者姓名</label>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-sliders-h"></i> 限制參數</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold" title="每人總預班天數">預班上限 (含假)</label>
+                                            <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold text-danger">假日上限</label>
+                                            <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold text-success">每日保留人數</label>
+                                            <input type="number" id="edit-reserved" class="form-control form-control-sm" value="0" min="0">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold text-primary">每日可預班人數 (自動)</label>
+                                            <input type="number" id="edit-dailyMax" class="form-control form-control-sm bg-light" readonly>
+                                            <div class="form-text small" id="calc-info" style="font-size:0.7rem; white-space:nowrap;">載入中...</div>
                                         </div>
                                     </div>
 
@@ -123,7 +138,7 @@ export class PreScheduleManagePage {
                                     <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
                                         <span><i class="fas fa-user-check"></i> 參與人員 (<span id="staff-count">0</span>)</span>
                                         <div class="input-group input-group-sm w-auto">
-                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋外部人員...">
+                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋姓名或職編...">
                                             <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-search"></i></button>
                                         </div>
                                     </h6>
@@ -180,6 +195,9 @@ export class PreScheduleManagePage {
             if(document.getElementById('chk-use-defaults').checked) this.setDefaultDates();
         });
 
+        // 綁定自動計算事件
+        document.getElementById('edit-reserved').addEventListener('input', () => this.calculateDailyLimit());
+
         if (unitSelect.options.length > 0 && unitSelect.value) {
             this.loadList(unitSelect.value);
         }
@@ -227,7 +245,6 @@ export class PreScheduleManagePage {
         
         const [y, m] = monthStr.split('-').map(Number);
         const today = new Date().toISOString().split('T')[0];
-        // 截止日：設定為該預班月份的 15 號
         const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0];
         
         document.getElementById('edit-open').value = today;
@@ -239,8 +256,6 @@ export class PreScheduleManagePage {
         
         document.getElementById('pre-form').reset();
         document.getElementById('search-results-dropdown').innerHTML = '';
-        document.getElementById('search-results-dropdown').style.display = 'none';
-        
         this.isEditMode = (index !== null);
         
         try {
@@ -261,7 +276,9 @@ export class PreScheduleManagePage {
             document.getElementById('edit-open').value = s.openDate || '';
             document.getElementById('edit-close').value = s.closeDate || '';
             document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
-            document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2; 
+            document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2;
+            document.getElementById('edit-reserved').value = s.reservedStaff || 0;
+            document.getElementById('edit-showNames').checked = !!s.showOtherNames;
             document.getElementById('chk-use-defaults').checked = false;
 
             const currentUnitStaff = await userService.getUsersByUnit(this.targetUnitId);
@@ -295,6 +312,7 @@ export class PreScheduleManagePage {
         }
 
         this.renderStaffList(groups);
+        this.calculateDailyLimit(); // 計算初始值
         this.modal.show();
     }
 
@@ -311,8 +329,8 @@ export class PreScheduleManagePage {
                     <thead class="table-light">
                         <tr>
                             <th>組別</th>
-                            <th title="最少白班">Min D</th><th title="最少小夜">Min E</th><th title="最少大夜">Min N</th>
-                            <th title="最多小夜">Max E</th><th title="最多大夜">Max N</th>
+                            <th>Min D</th><th>Min E</th><th>Min N</th>
+                            <th>Max E</th><th>Max N</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -331,6 +349,34 @@ export class PreScheduleManagePage {
                     </tbody>
                 </table>
             </div>`;
+    }
+
+    // 核心修正：正確的計算公式
+    calculateDailyLimit() {
+        const totalStaff = this.selectedStaff.length;
+        const reserved = parseInt(document.getElementById('edit-reserved').value) || 0;
+        
+        // 1. 取得排班規則中的每日需求 (Global Rule Settings)
+        // 注意：UnitService.getUnitById 取回的是整個物件，staffRequirements 在裡面
+        const req = this.unitData.staffRequirements || { D:{}, E:{}, N:{} };
+        const days = [0,1,2,3,4,5,6];
+        let maxReq = 0;
+        
+        // 找出所有日子中，需求量最大的一天 (最保守估計)
+        days.forEach(d => {
+            const dVal = (req.D && req.D[d]) || 0;
+            const eVal = (req.E && req.E[d]) || 0;
+            const nVal = (req.N && req.N[d]) || 0;
+            const total = dVal + eVal + nVal;
+            if (total > maxReq) maxReq = total;
+        });
+
+        const dailyMax = totalStaff - maxReq - reserved;
+        document.getElementById('edit-dailyMax').value = dailyMax > 0 ? dailyMax : 0;
+        
+        // 更新提示文字
+        const info = document.getElementById('calc-info');
+        if(info) info.textContent = `(總${totalStaff} - 需${maxReq} - 留${reserved})`;
     }
 
     renderStaffList(groups) {
@@ -359,7 +405,12 @@ export class PreScheduleManagePage {
     }
 
     updateStaffGroup(idx, val) { this.selectedStaff[idx].tempGroup = val; }
-    removeStaff(idx) { this.selectedStaff.splice(idx, 1); this.renderStaffList(this.unitData.groups || []); }
+    
+    removeStaff(idx) { 
+        this.selectedStaff.splice(idx, 1); 
+        this.renderStaffList(this.unitData.groups || []); 
+        this.calculateDailyLimit(); // 人數變動，重算
+    }
 
     async searchStaff() {
         const keyword = document.getElementById('staff-search').value.trim();
@@ -395,9 +446,9 @@ export class PreScheduleManagePage {
         document.getElementById('search-results-dropdown').style.display = 'none';
         document.getElementById('staff-search').value = '';
         this.renderStaffList(this.unitData.groups || []);
+        this.calculateDailyLimit(); // 人數變動，重算
     }
 
-    // 🌟 重點修正：帶入上月設定 (相容新舊資料結構)
     async importLastMonthSettings() {
         const currentMonthStr = document.getElementById('edit-month').value;
         if (!currentMonthStr) { alert("請先選擇預班月份"); return; }
@@ -407,35 +458,26 @@ export class PreScheduleManagePage {
         if (prevM === 0) { prevM = 12; prevY -= 1; }
 
         const lastSchedule = await PreScheduleService.getPreSchedule(this.targetUnitId, prevY, prevM);
-        
-        if (!lastSchedule) { alert("⚠️ 找不到上個月的預班表，無法帶入。"); return; }
+        if (!lastSchedule) { alert("⚠️ 找不到上個月的預班表"); return; }
 
         const s = lastSchedule.settings || {};
         document.getElementById('edit-maxOff').value = s.maxOffDays || 8;
         document.getElementById('edit-maxHoliday').value = s.maxHoliday || 2;
+        document.getElementById('edit-reserved').value = s.reservedStaff || 0;
+        if(s.showOtherNames !== undefined) document.getElementById('edit-showNames').checked = s.showOtherNames;
         
-        // 處理組別限制 (相容舊資料)
         const gl = s.groupLimits || {};
         const groups = this.unitData.groups || [];
-        const oldGroupMin = s.groupMin || {}; // 舊版資料結構 (如果有的話)
+        // 相容舊資料
+        const oldGroupMin = s.groupMin || {};
         const oldMaxE = s.maxE;
         const oldMaxN = s.maxN;
 
         groups.forEach(g => {
-            // 嘗試取得新版結構，若無則嘗試舊版，最後預設為 0 或空
             let v = gl[g];
-            
-            // 相容性處理：如果沒有新版結構，嘗試用舊版全域或單一值填充
             if (!v) {
-                v = {
-                    minD: oldGroupMin[g] || 0,
-                    minE: 0,
-                    minN: 0,
-                    maxE: oldMaxE || '',
-                    maxN: oldMaxN || ''
-                };
+                v = { minD: oldGroupMin[g] || 0, minE: 0, minN: 0, maxE: oldMaxE || '', maxN: oldMaxN || '' };
             }
-
             const row = document.querySelector(`.g-min-d[data-group="${g}"]`)?.closest('tr');
             if(row) {
                 row.querySelector('.g-min-d').value = v.minD ?? 0;
@@ -445,7 +487,8 @@ export class PreScheduleManagePage {
                 row.querySelector('.g-max-n').value = v.maxN ?? '';
             }
         });
-        alert("✅ 已帶入上月設定！");
+        this.calculateDailyLimit();
+        alert("✅ 設定已帶入");
     }
 
     async savePreSchedule() {
@@ -479,6 +522,9 @@ export class PreScheduleManagePage {
                 closeDate: document.getElementById('edit-close').value,
                 maxOffDays: parseInt(document.getElementById('edit-maxOff').value),
                 maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
+                reservedStaff: parseInt(document.getElementById('edit-reserved').value) || 0,
+                dailyMaxOff: parseInt(document.getElementById('edit-dailyMax').value) || 0,
+                showOtherNames: document.getElementById('edit-showNames').checked,
                 groupLimits: groupLimits
             },
             staffIds: this.selectedStaff.map(s => s.uid),
