@@ -11,6 +11,7 @@ export class MainLayout {
         }
         this.realRole = this.user.originalRole || this.user.role; 
         this.currentRole = this.user.role;
+        this.autoHideTimer = null;
     }
 
     getMenus(role) {
