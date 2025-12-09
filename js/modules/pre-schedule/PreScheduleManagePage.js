@@ -187,7 +187,7 @@ export class PreScheduleManagePage {
             }
 
             tbody.innerHTML = this.preSchedules.map(p => {
-                const statusBadge = this.getStatusBadge(p.status, p.openDate, p.closeDate);
+                const statusBadge = this.getStatusBadge(p.status, p.settings?.openDate, p.settings?.closeDate);
                 const participantCount = p.staffIds ? p.staffIds.length : (Object.keys(p.submissions || {}).length || 0);
                 
                 return `
