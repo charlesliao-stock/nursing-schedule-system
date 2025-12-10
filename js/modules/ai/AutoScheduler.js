@@ -43,6 +43,7 @@ export class AutoScheduler {
         const staffReq = unitSettings.staffRequirements || { D: {}, E: {}, N: {} };
         const shiftDefs = unitSettings.settings?.shifts || [];
 
+
         // ----------------------------------------------------
         // Step 1: 鎖定預班 (Wishes) 並初始化統計
         // ----------------------------------------------------
@@ -51,7 +52,9 @@ export class AutoScheduler {
                 if (sub.wishes && assignments[uid]) {
                     Object.entries(sub.wishes).forEach(([d, wish]) => {
                         const day = parseInt(d);
-                        if (wish === 'OFF') {
+                        
+                        // ✅ 修正點：支援 M_OFF
+                        if (wish === 'OFF' || wish === 'M_OFF') {
                             assignments[uid][day] = 'OFF';
                         } else {
                             // 預填班別也要算入
@@ -62,6 +65,7 @@ export class AutoScheduler {
             });
             logs.push("✅ 已鎖定預班需求");
         }
+// ... (後續代碼不變，請保留完整的 Class)
 
         // ----------------------------------------------------
         // Step 2: 逐日排班 (Day 1 -> Day 30)
