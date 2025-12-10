@@ -4,17 +4,13 @@ import { userService } from "../../services/firebase/UserService.js";
 import { authService } from "../../services/firebase/AuthService.js";
 
 export class PreScheduleManagePage {
-    // ... (constructor & render method 同上，省略以節省篇幅，請保留原有的 render，重點是下面的 renderGroupInputs) ...
-    // 請直接使用上一則回覆的 render()，這裡只列出有變動的 Helper Method
-
-    // ... (中間省略，請保留原有的 render, afterRender, loadList, openModal 等) ...
-
     constructor() {
         this.targetUnitId = null;
         this.preSchedules = [];
         this.unitData = null;
         this.selectedStaff = [];
         this.modal = null;
+        this.searchModal = null; // ✅ 新增搜尋 Modal
         this.isEditMode = false;
         this.editingScheduleId = null;
     }
@@ -129,22 +125,18 @@ export class PreScheduleManagePage {
                                             <label class="small fw-bold text-success">每日保留人數</label>
                                             <input type="number" id="edit-reserved" class="form-control form-control-sm" value="0" min="0">
                                         </div>
-                                        </div>
+                                    </div>
 
                                     <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 每日各班人力限制 (Min/Max)</h6>
-                                    <div id="group-limits-container" class="mb-3">
-                                        </div>
+                                    <div id="group-limits-container" class="mb-3"></div>
 
                                     <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
                                         <span><i class="fas fa-user-check"></i> 參與人員 (<span id="staff-count">0</span>)</span>
-                                        <div class="input-group input-group-sm w-auto">
-                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋姓名或職編...">
-                                            <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-search"></i></button>
-                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-open-search">
+                                            <i class="fas fa-plus"></i> 新增人員
+                                        </button>
                                     </h6>
                                     
-                                    <div id="search-results-dropdown" class="list-group position-absolute w-50 shadow" style="z-index: 1060; display: none; right: 20px;"></div>
-
                                     <div class="table-responsive border rounded" style="max-height: 300px; overflow-y: auto;">
                                         <table class="table table-sm table-hover align-middle mb-0 text-center small">
                                             <thead class="table-light sticky-top">
@@ -152,7 +144,8 @@ export class PreScheduleManagePage {
                                                     <th class="text-start ps-3">姓名</th>
                                                     <th>職編</th>
                                                     <th>職級</th>
-                                                    <th width="150">預班組別</th>
+                                                    <th>狀態</th>
+                                                    <th width="120">預班組別</th>
                                                     <th>操作</th>
                                                 </tr>
                                             </thead>
@@ -168,21 +161,51 @@ export class PreScheduleManagePage {
                         </div>
                     </div>
                 </div>
+
+                <div class="modal fade" id="search-modal" tabindex="-1" style="z-index: 1060;">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">搜尋並加入人員</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="input-group mb-3">
+                                    <input type="text" id="staff-search-input" class="form-control" placeholder="輸入姓名或員工編號...">
+                                    <button class="btn btn-secondary" type="button" id="btn-do-search"><i class="fas fa-search"></i></button>
+                                </div>
+                                <div class="list-group" id="search-results-list" style="max-height: 300px; overflow-y: auto;">
+                                    <div class="text-center text-muted p-3">請輸入關鍵字搜尋</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         `;
     }
 
     async afterRender() {
         this.modal = new bootstrap.Modal(document.getElementById('pre-modal'));
+        this.searchModal = new bootstrap.Modal(document.getElementById('search-modal'));
+        
         const unitSelect = document.getElementById('unit-select');
         window.routerPage = this;
 
         unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
         document.getElementById('btn-add').addEventListener('click', () => this.openModal(null));
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
-        document.getElementById('btn-search-staff').addEventListener('click', () => this.searchStaff());
         
-        document.getElementById('staff-search').addEventListener('keypress', (e) => {
+        // 搜尋 Modal 綁定
+        document.getElementById('btn-open-search').addEventListener('click', () => {
+            document.getElementById('staff-search-input').value = '';
+            document.getElementById('search-results-list').innerHTML = '<div class="text-center text-muted p-3">請輸入關鍵字搜尋</div>';
+            this.searchModal.show();
+        });
+        
+        document.getElementById('btn-do-search').addEventListener('click', () => this.searchStaff());
+        document.getElementById('staff-search-input').addEventListener('keypress', (e) => {
             if(e.key === 'Enter') { e.preventDefault(); this.searchStaff(); }
         });
 
@@ -252,7 +275,6 @@ export class PreScheduleManagePage {
         if (!this.targetUnitId) { alert("請先選擇單位"); return; }
         
         document.getElementById('pre-form').reset();
-        document.getElementById('search-results-dropdown').innerHTML = '';
         this.isEditMode = (index !== null);
         
         try {
@@ -278,12 +300,19 @@ export class PreScheduleManagePage {
             document.getElementById('edit-showNames').checked = !!s.showOtherNames;
             document.getElementById('chk-use-defaults').checked = false;
 
+            // 重新讀取最新的使用者資料 (以獲取最新的懷孕/包班狀態)
             const currentUnitStaff = await userService.getUsersByUnit(this.targetUnitId);
             const savedStaffIds = data.staffIds || [];
             const savedSettings = data.staffSettings || {};
 
+            // 合併現有設定與最新資料
             this.selectedStaff = currentUnitStaff.filter(u => savedStaffIds.includes(u.uid)).map(s => ({
-                uid: s.uid, name: s.name, rank: s.rank, staffId: s.staffId,
+                uid: s.uid, 
+                name: s.name, 
+                rank: s.rank, 
+                staffId: s.staffId,
+                isPregnant: s.constraints?.isPregnant, // 讀取 constraints
+                canBatch: s.constraints?.canBatch,
                 tempGroup: savedSettings[s.uid]?.group || s.group || ''
             }));
             
@@ -303,7 +332,12 @@ export class PreScheduleManagePage {
             
             const staff = await userService.getUsersByUnit(this.targetUnitId);
             this.selectedStaff = staff.map(s => ({ 
-                uid: s.uid, name: s.name, rank: s.rank, staffId: s.staffId, 
+                uid: s.uid, 
+                name: s.name, 
+                rank: s.rank, 
+                staffId: s.staffId, 
+                isPregnant: s.constraints?.isPregnant,
+                canBatch: s.constraints?.canBatch,
                 tempGroup: s.group || '' 
             }));
         }
@@ -319,7 +353,6 @@ export class PreScheduleManagePage {
             return;
         }
         
-        // 修正後的表頭
         container.innerHTML = `
             <div class="table-responsive">
                 <table class="table table-bordered table-sm text-center mb-0 align-middle">
@@ -362,14 +395,18 @@ export class PreScheduleManagePage {
                 <td><small>${u.staffId || '-'}</small></td>
                 <td><span class="badge bg-light text-dark border">${u.rank || '-'}</span></td>
                 <td>
+                    ${u.isPregnant ? '<span class="badge bg-danger">孕</span>' : ''}
+                    ${u.canBatch ? '<span class="badge bg-success">包</span>' : ''}
+                </td>
+                <td>
                     <select class="form-select form-select-sm py-0 staff-group-select" 
                             onchange="window.routerPage.updateStaffGroup(${idx}, this.value)">
                         ${groupOpts.replace(`value="${u.tempGroup}"`, `value="${u.tempGroup}" selected`)}
                     </select>
                 </td>
                 <td>
-                    <button type="button" class="btn btn-sm text-danger" onclick="window.routerPage.removeStaff(${idx})">
-                        <i class="fas fa-times"></i>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.routerPage.removeStaff(${idx})">
+                        <i class="fas fa-trash-alt"></i>
                     </button>
                 </td>
             </tr>
@@ -380,18 +417,16 @@ export class PreScheduleManagePage {
     removeStaff(idx) { this.selectedStaff.splice(idx, 1); this.renderStaffList(this.unitData.groups || []); }
 
     async searchStaff() {
-        const keyword = document.getElementById('staff-search').value.trim();
-        const container = document.getElementById('search-results-dropdown');
+        const keyword = document.getElementById('staff-search-input').value.trim();
+        const container = document.getElementById('search-results-list');
         if (!keyword) return;
 
-        container.style.display = 'block';
-        container.innerHTML = '<div class="list-group-item text-center"><span class="spinner-border spinner-border-sm"></span> 搜尋中...</div>';
+        container.innerHTML = '<div class="text-center p-3"><span class="spinner-border spinner-border-sm"></span> 搜尋中...</div>';
 
         try {
             const results = await userService.searchUsers(keyword);
             if (results.length === 0) {
-                container.innerHTML = '<div class="list-group-item text-muted text-center">無結果</div>';
-                setTimeout(() => container.style.display = 'none', 1500);
+                container.innerHTML = '<div class="text-center text-muted p-3">無結果</div>';
                 return;
             }
 
@@ -399,23 +434,33 @@ export class PreScheduleManagePage {
                 const isAdded = this.selectedStaff.some(s => s.uid === u.uid);
                 return `
                     <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${isAdded ? 'disabled bg-light' : ''}"
-                        onclick="window.routerPage.addStaffFromSearch('${u.uid}', '${u.name}', '${u.rank||''}', '${u.staffId||''}', '${u.group||''}')">
-                        <div><strong>${u.name}</strong> <small class="text-muted">(${u.staffId || ''})</small></div>
+                        onclick="window.routerPage.addStaffFromSearch('${u.uid}', '${u.name}', '${u.rank||''}', '${u.staffId||''}', '${u.group||''}', ${u.constraints?.isPregnant}, ${u.constraints?.canBatch})">
+                        <div>
+                            <strong>${u.name}</strong> <small class="text-muted">(${u.staffId || ''})</small><br>
+                            <small class="text-muted">${u.unitId === this.targetUnitId ? '本單位' : '其他單位'}</small>
+                        </div>
                         ${isAdded ? '<span class="badge bg-secondary">已加入</span>' : '<span class="badge bg-primary"><i class="fas fa-plus"></i></span>'}
                     </button>
                 `;
             }).join('');
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error(e); container.innerHTML = '<div class="text-danger p-3">搜尋失敗</div>'; }
     }
 
-    addStaffFromSearch(uid, name, rank, staffId, group) {
-        this.selectedStaff.push({ uid, name, rank, staffId, tempGroup: group });
-        document.getElementById('search-results-dropdown').style.display = 'none';
-        document.getElementById('staff-search').value = '';
+    addStaffFromSearch(uid, name, rank, staffId, group, isPregnant, canBatch) {
+        this.selectedStaff.push({ 
+            uid, name, rank, staffId, 
+            tempGroup: group,
+            isPregnant: !!isPregnant,
+            canBatch: !!canBatch
+        });
+        // 關閉搜尋 Modal
+        this.searchModal.hide();
+        // 重繪列表
         this.renderStaffList(this.unitData.groups || []);
     }
 
     async importLastMonthSettings() {
+        // ... (保持原樣)
         const currentMonthStr = document.getElementById('edit-month').value;
         if (!currentMonthStr) { alert("請先選擇預班月份"); return; }
         
