@@ -5,6 +5,7 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { BasicAlgorithm } from "../ai/BasicAlgorithm.js";
 import { RuleEngine } from "../ai/RuleEngine.js";
 import { authService } from "../../services/firebase/AuthService.js";
+import { AutoScheduler } from "../ai/AutoScheduler.js"; // ✅ 新增：引入自動排班引擎
 
 export class SchedulePage {
     constructor() {
@@ -15,7 +16,6 @@ export class SchedulePage {
             unitSettings: null, 
             staffList: [],
             scheduleData: null,
-            rules: null, 
             daysInMonth: 0,
             activeMenu: null 
         };
@@ -74,13 +74,19 @@ export class SchedulePage {
                     </div>
 
                     <div style="margin-left:auto; display:flex; gap:10px;">
-                        <button id="btn-validate" class="btn-secondary" style="background:#e11d48; color:white; display:none;">
+                        <button id="btn-auto-schedule" class="btn-secondary" style="background:#6366f1; color:white; display:none; border:none;">
+                            <i class="fas fa-robot"></i> 智慧排班
+                        </button>
+
+                        <button id="btn-validate" class="btn-secondary" style="background:#e11d48; color:white; display:none; border:none;">
                             <i class="fas fa-check-circle"></i> 規則檢查
                         </button>
-                        <button id="btn-auto-fill" class="btn-secondary" style="background:#8b5cf6; color:white; display:none;">
-                            <i class="fas fa-magic"></i> AI 填充 OFF
+                        
+                        <button id="btn-auto-fill" class="btn-secondary" style="background:#8b5cf6; color:white; display:none; border:none;">
+                            <i class="fas fa-eraser"></i> 填充 OFF
                         </button>
-                        <button id="btn-publish" class="btn-primary" style="background-color:#10b981; display:none;">
+                        
+                        <button id="btn-publish" class="btn-primary" style="background-color:#10b981; display:none; border:none;">
                             <i class="fas fa-paper-plane"></i> 發布班表
                         </button>
                     </div>
@@ -116,6 +122,8 @@ export class SchedulePage {
             await this.loadData();
         });
 
+        // 綁定功能按鈕
+        document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runAutoSchedule());
         document.getElementById('btn-auto-fill').addEventListener('click', () => this.runAutoFillOff());
         
         document.getElementById('btn-validate').addEventListener('click', () => {
@@ -150,7 +158,6 @@ export class SchedulePage {
         // 如果單位選單有值 (單位管理者)，自動觸發載入
         if (unitSelect.value) {
             this.state.currentUnitId = unitSelect.value;
-            // 延遲一下確保 DOM 穩定
             setTimeout(() => {
                  const btn = document.getElementById('btn-load-schedule');
                  if(btn) btn.click();
@@ -198,11 +205,11 @@ export class SchedulePage {
                 ScheduleService.getSchedule(this.state.currentUnitId, this.state.year, this.state.month)
             ]);
 
-            this.state.unitSettings = unit;
+            this.state.unitSettings = unit; // 這裡包含 rules 與 staffRequirements
             this.state.staffList = staffList;
             
             if (!schedule) {
-                // 若無班表，建立空物件 (暫不寫入 DB，等使用者操作)
+                // 若無班表，建立空物件
                 const staffIds = staffList.map(s => s.id);
                 this.state.scheduleData = {
                     unitId: this.state.currentUnitId,
@@ -219,6 +226,7 @@ export class SchedulePage {
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
             
             // 顯示功能按鈕
+            document.getElementById('btn-auto-schedule').style.display = 'inline-block'; // AI 按鈕
             document.getElementById('btn-auto-fill').style.display = 'inline-block';
             document.getElementById('btn-validate').style.display = 'inline-block';
             document.getElementById('btn-publish').style.display = 'inline-block';
@@ -240,7 +248,7 @@ export class SchedulePage {
         const shiftDefs = unitSettings?.settings?.shifts || [];
         
         // 執行驗證 (使用簡單規則或從 Settings 讀取)
-        const rules = { minStaff: {}, constraints: {} }; 
+        const rules = unitSettings?.rules || { constraints: {} }; 
         const validation = RuleEngine.validateAll(scheduleData, daysInMonth, staffList, unitSettings, rules);
         const { staffReport, coverageErrors } = validation;
 
@@ -368,8 +376,66 @@ export class SchedulePage {
         }
     }
 
+    // ✅ 新增：呼叫 AutoScheduler
+    async runAutoSchedule() {
+        if (!this.state.scheduleData) return;
+        if (!confirm("即將開始智慧排班。\n\n注意：系統將根據「排班規則」、「人力需求」與「員工預班」自動演算。\n(已填入的格子將視為鎖定，不被更動)")) return;
+
+        const loading = document.getElementById('loading-indicator');
+        if(loading) loading.style.display = 'block';
+
+        try {
+            // 1. 準備資料
+            const currentData = this.state.scheduleData;
+            const staffList = this.state.staffList;
+            const unitSettings = this.state.unitSettings; 
+            
+            // 讀取最新的預班資料 (確保預休正確)
+            const preSchedule = await PreScheduleService.getPreSchedule(
+                this.state.currentUnitId, this.state.year, this.state.month
+            );
+
+            // 2. 執行 AI 運算 (AutoScheduler)
+            const result = AutoScheduler.run(
+                currentData, 
+                staffList, 
+                unitSettings, 
+                preSchedule
+            );
+
+            // 3. 更新狀態
+            this.state.scheduleData.assignments = result.assignments;
+
+            // 4. 重新渲染
+            this.renderGrid();
+
+            // 5. 自動儲存結果
+            await ScheduleService.updateAllAssignments(
+                this.state.currentUnitId,
+                this.state.year,
+                this.state.month,
+                result.assignments
+            );
+
+            // 6. 顯示結果摘要
+            if (result.logs.length > 0) {
+                console.warn(result.logs);
+                alert(`排班完成，但仍有部分人力缺口 (詳見 Console)。\n\n${result.logs.slice(0, 5).join('\n')}...`);
+            } else {
+                alert("✅ 智慧排班完成！所有需求皆已滿足，且符合公平性原則。");
+            }
+
+        } catch (error) {
+            console.error("排班失敗:", error);
+            alert("演算法執行錯誤: " + error.message);
+        } finally {
+            if(loading) loading.style.display = 'none';
+        }
+    }
+
+    // 保留舊的簡單填充功能
     async runAutoFillOff() {
-        if (!confirm("確定要將所有空白格子填入 OFF？")) return;
+        if (!confirm("確定要將所有剩餘空白格子填入 OFF？")) return;
         const { updatedAssignments, count } = BasicAlgorithm.fillEmptyWithOff(
             this.state.scheduleData,
             this.state.daysInMonth,
