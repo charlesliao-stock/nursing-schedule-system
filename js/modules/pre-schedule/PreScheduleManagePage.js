@@ -8,15 +8,16 @@ export class PreScheduleManagePage {
         this.targetUnitId = null;
         this.preSchedules = [];
         this.unitData = null;
-        this.selectedStaff = []; 
+        this.selectedStaff = []; // 設定用：參與人員名單
         
-        // 審核用
+        // 審核用變數
         this.reviewStaffList = []; 
         this.currentReviewId = null; 
         
-        this.modal = null;
-        this.searchModal = null;
-        this.reviewModal = null;
+        // Modals
+        this.modal = null;       // 設定 Modal
+        this.searchModal = null; // 搜尋人員 Modal
+        this.reviewModal = null; // 審核總表 Modal
 
         this.isEditMode = false;
         this.editingScheduleId = null;
@@ -121,7 +122,7 @@ export class PreScheduleManagePage {
                                     <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-sliders-h"></i> 限制參數</h6>
                                     <div class="row g-3 mb-3">
                                         <div class="col-md-3">
-                                            <label class="small fw-bold">預班上限 (含假)</label>
+                                            <label class="small fw-bold" title="每人總預班天數">預班上限 (含假)</label>
                                             <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
                                         </div>
                                         <div class="col-md-3">
@@ -315,31 +316,27 @@ export class PreScheduleManagePage {
     }
 
     // ============================================================
-    //  ✅ 審核總表邏輯 (支援顏色區分)
+    //  審核總表邏輯
     // ============================================================
     async openReview(scheduleId) {
         this.currentReviewId = scheduleId;
         const schedule = this.preSchedules.find(s => s.id === scheduleId);
         if (!schedule) return;
 
-        // 1. 準備資料
         const year = schedule.year;
         const month = schedule.month;
         const daysInMonth = new Date(year, month, 0).getDate();
         const settings = schedule.settings || {};
         const submissions = schedule.submissions || {}; 
         
-        // 讀取人員
         const allStaff = await userService.getUsersByUnit(this.targetUnitId);
         
-        // Filter & Sort
         this.reviewStaffList = allStaff.filter(s => schedule.staffIds.includes(s.uid));
         this.reviewStaffList.sort((a, b) => {
             const roleScore = (r) => (r === 'HN' ? 2 : (r === 'AHN' ? 1 : 0));
             return roleScore(b.rank) - roleScore(a.rank) || a.staffId.localeCompare(b.staffId);
         });
 
-        // 2. 表頭
         let theadHtml = '<tr><th class="sticky-col bg-light" style="min-width:180px; left:0; z-index:1030;">人員 / 日期</th>';
         for(let d=1; d<=daysInMonth; d++) {
             const date = new Date(year, month-1, d);
@@ -349,7 +346,6 @@ export class PreScheduleManagePage {
         theadHtml += '</tr>';
         document.getElementById('review-thead').innerHTML = theadHtml;
 
-        // 3. 內容 (支援雙色)
         const tbody = document.getElementById('review-tbody');
         let tbodyHtml = '';
         const dailyOffCounts = new Array(daysInMonth + 1).fill(0);
@@ -367,7 +363,7 @@ export class PreScheduleManagePage {
                 </td>`;
             
             for(let d=1; d<=daysInMonth; d++) {
-                const val = wishes[d]; // 'OFF' or 'M_OFF' or undefined
+                const val = wishes[d]; // 'OFF' | 'M_OFF'
                 const isOff = val === 'OFF' || val === 'M_OFF';
                 
                 if(isOff) dailyOffCounts[d]++;
@@ -375,13 +371,12 @@ export class PreScheduleManagePage {
                 let cellStyle = 'cursor:pointer;';
                 let label = '';
 
-                // ✅ 顏色判斷邏輯
                 if (val === 'OFF') {
-                    cellStyle += 'background-color: #fd7e14; color: white;'; // 橘色 (使用者)
+                    cellStyle += 'background-color: #fd7e14; color: white;'; // 橘色
                     label = 'OFF';
                 } else if (val === 'M_OFF') {
-                    cellStyle += 'background-color: #6f42c1; color: white;'; // 紫色 (管理者)
-                    label = 'OFF'; // 顯示文字還是 OFF，但顏色不同
+                    cellStyle += 'background-color: #6f42c1; color: white;'; // 紫色
+                    label = 'OFF';
                 }
 
                 rowHtml += `<td class="review-cell" 
@@ -395,7 +390,7 @@ export class PreScheduleManagePage {
             tbodyHtml += rowHtml;
         });
 
-        // 4. 底部超額統計
+        // 底部超額統計 (簡單公式: 總-保留 * 40%)
         const limit = Math.ceil((this.reviewStaffList.length - (settings.reservedStaff||0)) * 0.4); 
 
         let footerHtml = '<tr class="fw-bold bg-light"><td class="sticky-col bg-light border-end" style="left:0;">每日休假總數</td>';
@@ -410,7 +405,6 @@ export class PreScheduleManagePage {
         this.reviewModal.show();
     }
 
-    // ✅ 點擊切換邏輯
     toggleReviewCell(uid, day) {
         const schedule = this.preSchedules.find(s => s.id === this.currentReviewId);
         if(!schedule.submissions) schedule.submissions = {};
@@ -418,25 +412,48 @@ export class PreScheduleManagePage {
         
         const wishes = schedule.submissions[uid].wishes || {};
         
-        // 邏輯：有值 (無論橘紫) -> 清除；無值 -> 紫色
+        // 加入時檢查是否超額 (但不阻擋)
+        if (!wishes[day]) {
+            let currentOffCount = 0;
+            Object.values(schedule.submissions).forEach(sub => {
+                if (sub.wishes && (sub.wishes[day] === 'OFF' || sub.wishes[day] === 'M_OFF')) {
+                    currentOffCount++;
+                }
+            });
+            const settings = schedule.settings || {};
+            const limit = Math.ceil((this.reviewStaffList.length - (settings.reservedStaff||0)) * 0.4); 
+
+            if (currentOffCount >= limit) {
+                this.showToastWarning(`注意：${day}日已達建議上限，仍強制加入。`);
+            }
+        }
+
         if (wishes[day]) {
             delete wishes[day];
         } else {
-            wishes[day] = 'M_OFF'; // 管理者強制加入，使用專屬代碼
+            wishes[day] = 'M_OFF'; // 管理者強制
         }
         schedule.submissions[uid].wishes = wishes;
 
-        // UI 更新
         const cell = document.getElementById(`cell-${uid}-${day}`);
         if (wishes[day] === 'M_OFF') {
-            cell.style.backgroundColor = '#6f42c1'; // 紫色
+            cell.style.backgroundColor = '#6f42c1';
             cell.style.color = 'white';
             cell.innerText = 'OFF';
         } else {
-            cell.style.backgroundColor = ''; // 清除背景
+            cell.style.backgroundColor = '';
             cell.style.color = '';
             cell.innerText = '';
         }
+    }
+
+    showToastWarning(msg) {
+        const toast = document.createElement('div');
+        toast.className = 'position-fixed top-0 start-50 translate-middle-x mt-5 badge bg-warning text-dark shadow p-3 fs-6';
+        toast.style.zIndex = 2050;
+        toast.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${msg}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2500);
     }
 
     async saveReview() {
@@ -449,9 +466,15 @@ export class PreScheduleManagePage {
         
         try {
             await PreScheduleService.updateSubmissions(this.currentReviewId, schedule.submissions);
-            alert("✅ 審核結果已儲存");
+            
             this.reviewModal.hide();
             this.loadList(this.targetUnitId);
+
+            // 儲存後詢問跳轉
+            if (confirm("✅ 審核結果已儲存。\n\n是否立即前往「排班作業」開始排班？")) {
+                window.location.hash = `/schedule/edit?unitId=${this.targetUnitId}&year=${schedule.year}&month=${schedule.month}`;
+            }
+
         } catch(e) {
             console.error(e);
             alert("儲存失敗: " + e.message);
@@ -461,7 +484,9 @@ export class PreScheduleManagePage {
         }
     }
 
+    // Modal 與其他方法保持不變，但為了完整性在此提供 (省略重複部分請參考上一版)
     async openModal(index = null) {
+        // ... (同上一版 openModal)
         if (!this.targetUnitId) { alert("請先選擇單位"); return; }
         
         document.getElementById('pre-form').reset();
