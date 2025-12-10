@@ -17,15 +17,7 @@ export class PreScheduleService {
             return snap.exists();
         } catch (e) { return false; }
     }
-// js/services/firebase/PreScheduleService.js
-static async updateSubmissions(docId, submissions) {
-    const db = firebaseService.getDb();
-    await updateDoc(doc(db, this.COLLECTION, docId), {
-        submissions: submissions,
-        updatedAt: serverTimestamp()
-    });
-    return { success: true };
-}
+
     // 建立 (初始化 submissions)
     static async createPreSchedule(data) {
         try {
@@ -35,7 +27,7 @@ static async updateSubmissions(docId, submissions) {
 
             const submissions = {};
             data.staffIds.forEach(uid => {
-                submissions[uid] = { submitted: false, wishes: {} };
+                submissions[uid] = { submitted: false, wishes: {}, preferences: {} };
             });
 
             await setDoc(docRef, {
@@ -64,7 +56,7 @@ static async updateSubmissions(docId, submissions) {
         } catch (e) { return { success: false, error: e.message }; }
     }
 
-    // ✅ 新增：更新提交內容 (用於管理者審核修改)
+    // 更新提交內容 (管理者審核用)
     static async updateSubmissions(docId, submissions) {
         try {
             const db = firebaseService.getDb();
@@ -81,7 +73,7 @@ static async updateSubmissions(docId, submissions) {
         }
     }
 
-    // ✅ 新增：更新狀態 (用於發布/關閉)
+    // 更新狀態 (發布/關閉)
     static async updateStatus(unitId, year, month, status) {
         try {
             const db = firebaseService.getDb();
@@ -133,7 +125,8 @@ static async updateSubmissions(docId, submissions) {
         return snap.exists() ? snap.data() : null;
     }
 
-    static async submitPersonalWish(unitId, year, month, uid, wishes, notes) {
+    // ✅ 更新：新增 preferences 參數
+    static async submitPersonalWish(unitId, year, month, uid, wishes, notes, preferences = {}) {
         const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
         try {
             const db = firebaseService.getDb();
@@ -141,6 +134,7 @@ static async updateSubmissions(docId, submissions) {
             await updateDoc(doc(db, this.COLLECTION, docId), {
                 [`${updatePath}.wishes`]: wishes,
                 [`${updatePath}.notes`]: notes,
+                [`${updatePath}.preferences`]: preferences, // 新增偏好
                 [`${updatePath}.submitted`]: true,
                 [`${updatePath}.submittedAt`]: serverTimestamp()
             });
