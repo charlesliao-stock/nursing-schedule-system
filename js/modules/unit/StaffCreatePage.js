@@ -55,23 +55,27 @@ export class StaffCreatePage {
 
                             <h5 class="text-primary mb-3">排班限制參數</h5>
                             <div class="row bg-light p-3 rounded mb-3 mx-0">
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label fw-bold">連續上班天數上限</label>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label fw-bold">連上天數上限</label>
                                     <input type="number" class="form-control" id="maxConsecutive" value="6" min="1" max="12">
-                                    <div class="form-text">預設 6 天</div>
                                 </div>
-                                <div class="col-md-4 mb-3 d-flex align-items-center">
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label fw-bold">連夜天數上限</label>
+                                    <input type="number" class="form-control" id="maxConsecutiveNights" value="4" min="1" max="10">
+                                    <div class="form-text small">E/N 班連續上限</div>
+                                </div>
+                                <div class="col-md-3 mb-3 d-flex align-items-center">
                                     <div class="form-check form-switch">
                                         <input class="form-check-input" type="checkbox" id="canBatch">
                                         <label class="form-check-label fw-bold" for="canBatch">是否可以包班</label>
                                     </div>
                                 </div>
-                                <div class="col-md-4 mb-3 d-flex align-items-center">
+                                <div class="col-md-3 mb-3 d-flex align-items-center">
                                     <div class="form-check form-switch">
                                         <input class="form-check-input" type="checkbox" id="isPregnant">
                                         <label class="form-check-label fw-bold text-danger" for="isPregnant">懷孕狀態</label>
                                     </div>
-                                    <span class="ms-2 badge bg-warning text-dark">不排 > 22:00</span>
+                                    <span class="ms-2 badge bg-warning text-dark small">不排夜</span>
                                 </div>
                             </div>
 
@@ -130,7 +134,6 @@ export class StaffCreatePage {
         const managerCheck = document.getElementById('role-manager');
         const schedulerCheck = document.getElementById('role-scheduler');
 
-        // 連動邏輯
         managerCheck.addEventListener('change', (e) => {
             if (e.target.checked) schedulerCheck.checked = true;
         });
@@ -151,19 +154,14 @@ export class StaffCreatePage {
                 email: document.getElementById('email').value.trim(),
                 isManager: managerCheck.checked,
                 isScheduler: schedulerCheck.checked,
-                // ✨ 新增：收集限制參數
+                // ✅ 更新：收集新的限制參數
                 constraints: {
                     maxConsecutive: parseInt(document.getElementById('maxConsecutive').value) || 6,
+                    maxConsecutiveNights: parseInt(document.getElementById('maxConsecutiveNights').value) || 4, // 新增
                     canBatch: document.getElementById('canBatch').checked,
                     isPregnant: document.getElementById('isPregnant').checked
                 }
             };
-            
-            // 將 constraints 合併進 staffData 傳給 UserService
-            // 注意：UserService.createStaff 需要微調以接收 constraints (或直接把 staffData 整個存進去)
-            // 在目前的 UserService 實作中，我們需要把 constraints 放在 user 物件中
-            // 由於 UserService.createStaff 是接收 staffData 物件，我們只需確認 UserService 有把額外欄位寫入即可
-            // (我們剛更新的 UserService 已經會把 ...staffData 寫入，所以這裡擴充 staffData 即可生效)
 
             const password = document.getElementById('password').value.trim();
 
@@ -175,13 +173,6 @@ export class StaffCreatePage {
             }
 
             try {
-                // 這裡我們稍微修改傳遞方式，確保 UserService 能處理
-                // 目前 UserService.createStaff 內部是手動解構欄位，我們需要去 UserService 把 constraints 加進去
-                // 或者，我們直接利用 JS 的動態特性，在這裡修改 UserService 呼叫 (假設 Service 已更新)
-                
-                // 為了確保資料正確寫入，建議您檢查 UserService.js 的 createStaff 方法
-                // 確保它有寫入 `constraints: staffData.constraints` 
-                
                 const result = await userService.createStaff(staffData, password);
                 
                 if (result.success) {
