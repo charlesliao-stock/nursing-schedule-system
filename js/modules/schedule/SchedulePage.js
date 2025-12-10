@@ -5,7 +5,7 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { BasicAlgorithm } from "../ai/BasicAlgorithm.js";
 import { RuleEngine } from "../ai/RuleEngine.js";
 import { authService } from "../../services/firebase/AuthService.js";
-import { AutoScheduler } from "../ai/AutoScheduler.js"; // ✅ 新增：引入自動排班引擎
+import { AutoScheduler } from "../ai/AutoScheduler.js"; // ✅ 引入 AI 引擎
 
 export class SchedulePage {
     constructor() {
@@ -25,7 +25,7 @@ export class SchedulePage {
 
     async render() {
         const user = authService.getProfile();
-        const isSystemAdmin = user.role === 'system_admin';
+        const isSystemAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
         const myUnitId = user.unitId;
 
         const units = await UnitService.getAllUnits();
@@ -77,6 +77,10 @@ export class SchedulePage {
                         <button id="btn-auto-schedule" class="btn-secondary" style="background:#6366f1; color:white; display:none; border:none;">
                             <i class="fas fa-robot"></i> 智慧排班
                         </button>
+                        
+                        <button id="btn-show-stats" class="btn-secondary" style="background:#3b82f6; color:white; display:none; border:none;">
+                            <i class="fas fa-chart-pie"></i> 評分統計
+                        </button>
 
                         <button id="btn-validate" class="btn-secondary" style="background:#e11d48; color:white; display:none; border:none;">
                             <i class="fas fa-check-circle"></i> 規則檢查
@@ -124,6 +128,7 @@ export class SchedulePage {
 
         // 綁定功能按鈕
         document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runAutoSchedule());
+        document.getElementById('btn-show-stats').addEventListener('click', () => this.showStatistics());
         document.getElementById('btn-auto-fill').addEventListener('click', () => this.runAutoFillOff());
         
         document.getElementById('btn-validate').addEventListener('click', () => {
@@ -227,6 +232,7 @@ export class SchedulePage {
             
             // 顯示功能按鈕
             document.getElementById('btn-auto-schedule').style.display = 'inline-block'; // AI 按鈕
+            document.getElementById('btn-show-stats').style.display = 'inline-block';    // 統計按鈕
             document.getElementById('btn-auto-fill').style.display = 'inline-block';
             document.getElementById('btn-validate').style.display = 'inline-block';
             document.getElementById('btn-publish').style.display = 'inline-block';
@@ -376,7 +382,7 @@ export class SchedulePage {
         }
     }
 
-    // ✅ 新增：呼叫 AutoScheduler
+    // ✅ AI 智慧排班
     async runAutoSchedule() {
         if (!this.state.scheduleData) return;
         if (!confirm("即將開始智慧排班。\n\n注意：系統將根據「排班規則」、「人力需求」與「員工預班」自動演算。\n(已填入的格子將視為鎖定，不被更動)")) return;
@@ -417,12 +423,12 @@ export class SchedulePage {
                 result.assignments
             );
 
-            // 6. 顯示結果摘要
+            // 6. 顯示結果摘要 & 統計
+            this.showStatistics(); // 自動跳出評分
+
             if (result.logs.length > 0) {
                 console.warn(result.logs);
-                alert(`排班完成，但仍有部分人力缺口 (詳見 Console)。\n\n${result.logs.slice(0, 5).join('\n')}...`);
-            } else {
-                alert("✅ 智慧排班完成！所有需求皆已滿足，且符合公平性原則。");
+                // 這裡選擇不跳 Alert 騷擾使用者，因為已經自動跳出 Stats Modal
             }
 
         } catch (error) {
@@ -431,6 +437,107 @@ export class SchedulePage {
         } finally {
             if(loading) loading.style.display = 'none';
         }
+    }
+
+    // ✅ 排班評分統計 (新功能)
+    showStatistics() {
+        if (!this.state.scheduleData || !this.state.scheduleData.assignments) return;
+
+        const assignments = this.state.scheduleData.assignments;
+        const staffList = this.state.staffList;
+        const stats = [];
+
+        // 計算每位員工的統計
+        staffList.forEach(s => {
+            let total = 0, night = 0, holiday = 0;
+            const shifts = assignments[s.id] || {};
+            
+            Object.entries(shifts).forEach(([day, code]) => {
+                if (code && code !== 'OFF') {
+                    total++;
+                    if (code === 'E' || code === 'N') night++;
+                    // 簡易假日判斷
+                    const date = new Date(this.state.year, this.state.month - 1, parseInt(day));
+                    if (date.getDay() === 0 || date.getDay() === 6) holiday++;
+                }
+            });
+            stats.push({ name: s.name, total, night, holiday });
+        });
+
+        // 計算標準差 (Standard Deviation)
+        const calcSD = (arr, key) => {
+            const vals = arr.map(i => i[key]);
+            const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
+            const sqDiff = vals.map(v => Math.pow(v - mean, 2));
+            const avgSqDiff = sqDiff.reduce((a,b)=>a+b,0) / vals.length;
+            return Math.sqrt(avgSqDiff).toFixed(2);
+        };
+
+        const sdTotal = calcSD(stats, 'total');
+        const sdNight = calcSD(stats, 'night');
+
+        // 生成 HTML 報表
+        const html = `
+            <div class="alert alert-info small mb-3">
+                <i class="fas fa-info-circle"></i> <strong>標準差 (SD)</strong> 數值越低，代表排班越平均（越公平）。
+            </div>
+            <div class="row mb-3">
+                <div class="col-6">
+                    <div class="card bg-light border-primary">
+                        <div class="card-body text-center py-2">
+                            <h6 class="text-primary mb-0">總班數標準差</h6>
+                            <h3 class="fw-bold mb-0">${sdTotal}</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card bg-light border-warning">
+                        <div class="card-body text-center py-2">
+                            <h6 class="text-warning mb-0">夜班數標準差</h6>
+                            <h3 class="fw-bold mb-0">${sdNight}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height:350px;">
+                <table class="table table-sm table-striped text-center align-middle">
+                    <thead class="table-dark sticky-top"><tr><th>姓名</th><th>總班</th><th>夜班</th><th>假日</th></tr></thead>
+                    <tbody>
+                        ${stats.map(s => `<tr><td class="fw-bold">${s.name}</td><td>${s.total}</td><td>${s.night}</td><td>${s.holiday}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        this.openStatsModal("排班公平性分析", html);
+    }
+
+    openStatsModal(title, content) {
+        let modalEl = document.getElementById('stats-modal');
+        // 動態建立 Modal DOM
+        if(!modalEl) {
+            document.body.insertAdjacentHTML('beforeend', `
+                <div class="modal fade" id="stats-modal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">${title}</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">${content}</div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`);
+            modalEl = document.getElementById('stats-modal');
+        } else {
+            modalEl.querySelector('.modal-title').innerText = title;
+            modalEl.querySelector('.modal-body').innerHTML = content;
+        }
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
     }
 
     // 保留舊的簡單填充功能
