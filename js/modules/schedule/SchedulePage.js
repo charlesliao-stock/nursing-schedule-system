@@ -2,172 +2,116 @@ import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
-import { BasicAlgorithm } from "../ai/BasicAlgorithm.js";
 import { RuleEngine } from "../ai/RuleEngine.js";
 import { authService } from "../../services/firebase/AuthService.js";
-import { AutoScheduler } from "../ai/AutoScheduler.js"; // ✅ 引入 AI 引擎
+import { AutoScheduler } from "../ai/AutoScheduler.js";
 
 export class SchedulePage {
     constructor() {
         this.state = {
             currentUnitId: null,
-            year: new Date().getFullYear(),
-            month: new Date().getMonth() + 1,
+            year: null,
+            month: null,
             unitSettings: null, 
             staffList: [],
             scheduleData: null,
             daysInMonth: 0,
             activeMenu: null 
         };
-        // 綁定 this，確保在 removeEventListener 時能正確參照
+        this.versionsModal = null; 
+        this.generatedVersions = [];
         this.handleGlobalClick = this.handleGlobalClick.bind(this);
     }
 
     async render() {
-        const user = authService.getProfile();
-        const isSystemAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
-        const myUnitId = user.unitId;
+        const params = new URLSearchParams(window.location.hash.split('?')[1]);
+        this.state.currentUnitId = params.get('unitId');
+        this.state.year = parseInt(params.get('year'));
+        this.state.month = parseInt(params.get('month'));
 
-        const units = await UnitService.getAllUnits();
-        let unitOptions = '';
-        
-        if (isSystemAdmin) {
-            unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-        } else {
-            const myUnit = units.find(u => u.unitId === myUnitId);
-            if (myUnit) {
-                unitOptions = `<option value="${myUnit.unitId}" selected>${myUnit.unitName}</option>`;
-                this.state.currentUnitId = myUnit.unitId;
-            }
-        }
-
-        const monthVal = `${this.state.year}-${String(this.state.month).padStart(2, '0')}`;
+        if(!this.state.currentUnitId) return `<div class="alert alert-danger m-4">無效的參數，請從列表頁進入。</div>`;
 
         return `
             <div class="schedule-container">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <h2 style="margin:0;">排班管理平台</h2>
-                        <span id="schedule-status-badge" class="badge bg-secondary">未載入</span>
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.location.hash='/schedule/list'"><i class="fas fa-arrow-left"></i> 回列表</button>
+                        <span class="h4 align-middle fw-bold text-gray-800">
+                            ${this.state.year}年 ${this.state.month}月 排班作業
+                        </span>
+                        <span id="schedule-status-badge" class="badge bg-secondary ms-2">載入中</span>
                     </div>
-                    <div id="loading-indicator" style="display:none; color: var(--primary-color); font-weight:bold;">
-                        <i class="fas fa-spinner fa-spin"></i> 處理中...
-                    </div>
+                    <div id="loading-indicator" style="display:none;" class="text-primary fw-bold"><i class="fas fa-spinner fa-spin"></i> 處理中...</div>
                 </div>
                 
-                <div class="schedule-toolbar">
-                    <div style="display:flex; gap: 10px; align-items:center;">
-                        <label>單位：</label>
-                        <select id="schedule-unit-select" style="padding:6px; border-radius:4px; border:1px solid #ccc;" ${!isSystemAdmin ? 'disabled' : ''}>
-                            ${isSystemAdmin ? '<option value="">請選擇...</option>' : ''}
-                            ${unitOptions}
-                        </select>
-                        
-                        <label>月份：</label>
-                        <input type="month" id="schedule-month-picker" 
-                               value="${monthVal}"
-                               style="padding:5px; border-radius:4px; border:1px solid #ccc;">
-                        
-                        <button id="btn-load-schedule" class="btn-primary">
-                            <i class="fas fa-search"></i> 查詢
+                <div class="schedule-toolbar d-flex justify-content-between mb-3">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary btn-sm shadow-sm" onclick="window.location.hash='/unit/settings/rules'">
+                            <i class="fas fa-cog"></i> 排班規則
+                        </button>
+                        <button id="btn-clear" class="btn btn-outline-danger btn-sm shadow-sm">
+                            <i class="fas fa-eraser"></i> 清除排班 (保留預班)
                         </button>
                     </div>
 
-                    <div style="margin-left:auto; display:flex; gap:10px;">
-                        <button id="btn-auto-schedule" class="btn-secondary" style="background:#6366f1; color:white; display:none; border:none;">
-                            <i class="fas fa-robot"></i> 智慧排班
+                    <div class="d-flex gap-2">
+                        <button id="btn-auto-schedule" class="btn btn-primary shadow-sm" style="background-color: #6366f1; border:none;">
+                            <i class="fas fa-magic"></i> 智慧排班 (AI)
                         </button>
                         
-                        <button id="btn-show-stats" class="btn-secondary" style="background:#3b82f6; color:white; display:none; border:none;">
-                            <i class="fas fa-chart-pie"></i> 評分統計
+                        <button id="btn-show-stats" class="btn btn-info text-white shadow-sm btn-sm">
+                            <i class="fas fa-chart-bar"></i> 評分
+                        </button>
+                        
+                        <button id="btn-validate" class="btn btn-secondary shadow-sm btn-sm">
+                            <i class="fas fa-check-circle"></i> 檢查
                         </button>
 
-                        <button id="btn-validate" class="btn-secondary" style="background:#e11d48; color:white; display:none; border:none;">
-                            <i class="fas fa-check-circle"></i> 規則檢查
-                        </button>
-                        
-                        <button id="btn-auto-fill" class="btn-secondary" style="background:#8b5cf6; color:white; display:none; border:none;">
-                            <i class="fas fa-eraser"></i> 填充 OFF
-                        </button>
-                        
-                        <button id="btn-publish" class="btn-primary" style="background-color:#10b981; display:none; border:none;">
-                            <i class="fas fa-paper-plane"></i> 發布班表
+                        <button id="btn-publish" class="btn btn-success shadow-sm btn-sm">
+                            <i class="fas fa-paper-plane"></i> 發布
                         </button>
                     </div>
                 </div>
 
-                <div id="schedule-grid-container" class="schedule-grid-wrapper">
-                    <div style="text-align:center; padding:50px; color:#666;">
-                        <i class="fas fa-calendar-alt fa-3x" style="color:#ccc; margin-bottom:10px;"></i><br>
-                        請選擇單位與月份以開始排班
+                <div id="schedule-grid-container" class="schedule-grid-wrapper border rounded"></div>
+
+                <div class="modal fade" id="versions-modal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-gradient-primary text-white" style="background: linear-gradient(45deg, #6366f1, #8b5cf6);">
+                                <h5 class="modal-title"><i class="fas fa-robot"></i> AI 排班結果選擇</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="text-muted small">系統已生成 3 種排班方案，請選擇一個最適合的版本套用。</p>
+                                <div class="row" id="versions-container"></div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                
-                <div id="rule-info-bar" style="margin-top:10px; padding:10px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:0.9em; display:none;">
-                    <strong>系統訊息：</strong>
-                    <span id="rule-desc">準備就緒</span>
                 </div>
             </div>
         `;
     }
 
     async afterRender() {
-        const unitSelect = document.getElementById('schedule-unit-select');
-        const monthPicker = document.getElementById('schedule-month-picker');
+        this.versionsModal = new bootstrap.Modal(document.getElementById('versions-modal'));
         
-        document.getElementById('btn-load-schedule').addEventListener('click', async () => {
-            this.state.currentUnitId = unitSelect.value;
-            const dateVal = monthPicker.value;
-            if (!this.state.currentUnitId || !dateVal) { alert("請選擇單位與月份"); return; }
-            
-            const [y, m] = dateVal.split('-');
-            this.state.year = parseInt(y);
-            this.state.month = parseInt(m);
-            await this.loadData();
-        });
-
-        // 綁定功能按鈕
-        document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runAutoSchedule());
+        // 綁定按鈕
+        document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runMultiVersionAI());
+        document.getElementById('btn-clear').addEventListener('click', () => this.clearSchedule());
         document.getElementById('btn-show-stats').addEventListener('click', () => this.showStatistics());
-        document.getElementById('btn-auto-fill').addEventListener('click', () => this.runAutoFillOff());
         
         document.getElementById('btn-validate').addEventListener('click', () => {
             this.renderGrid();
             alert("驗證完成，違規項目已標示紅框。");
         });
 
-        // 發布/撤回按鈕邏輯
-        const btnPublish = document.getElementById('btn-publish');
-        if(btnPublish) {
-             btnPublish.addEventListener('click', async () => {
-                 if(!this.state.scheduleData) return;
-                 const currentStatus = this.state.scheduleData.status;
-                 const newStatus = currentStatus === 'published' ? 'draft' : 'published';
-                 const actionText = newStatus === 'published' ? '發布' : '撤回';
-                 
-                 if(confirm(`確定要 ${actionText} 此班表嗎？`)) {
-                     const res = await ScheduleService.updateStatus(this.state.currentUnitId, this.state.year, this.state.month, newStatus);
-                     if(res) {
-                         this.state.scheduleData.status = newStatus;
-                         this.updateStatusBadge();
-                         alert(`班表已${actionText}`);
-                     }
-                 }
-             });
-        }
+        document.getElementById('btn-publish').addEventListener('click', () => this.togglePublish());
 
-        // 全域點擊監聽 (用於關閉選單)
         document.removeEventListener('click', this.handleGlobalClick); 
         document.addEventListener('click', this.handleGlobalClick);
 
-        // 如果單位選單有值 (單位管理者)，自動觸發載入
-        if (unitSelect.value) {
-            this.state.currentUnitId = unitSelect.value;
-            setTimeout(() => {
-                 const btn = document.getElementById('btn-load-schedule');
-                 if(btn) btn.click();
-            }, 500); 
-        }
+        await this.loadData();
     }
 
     handleGlobalClick(e) {
@@ -184,37 +128,24 @@ export class SchedulePage {
     }
 
     async loadData() {
-        if (!this.state.currentUnitId) return alert('請選擇單位');
         const container = document.getElementById('schedule-grid-container');
         const loading = document.getElementById('loading-indicator');
         if(loading) loading.style.display = 'block';
         container.innerHTML = '<div class="text-center p-5">資料載入中...</div>';
 
         try {
-            // 1. 檢查預班狀態
-            const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, this.state.year, this.state.month);
-            if (preSchedule && preSchedule.status === 'open') {
-                if (confirm(`目前 ${this.state.month} 月還在預班開放期間。\n是否要提早關閉預班並開始排班？`)) {
-                    await PreScheduleService.updateStatus(this.state.currentUnitId, this.state.year, this.state.month, 'closed');
-                } else {
-                    container.innerHTML = '<div class="text-center p-5">已取消排班 (預班進行中)</div>';
-                    if(loading) loading.style.display = 'none';
-                    return;
-                }
-            }
-
-            // 2. 並行載入資料
+            // 平行載入
             const [unit, staffList, schedule] = await Promise.all([
                 UnitService.getUnitById(this.state.currentUnitId),
                 userService.getUnitStaff(this.state.currentUnitId),
                 ScheduleService.getSchedule(this.state.currentUnitId, this.state.year, this.state.month)
             ]);
 
-            this.state.unitSettings = unit; // 這裡包含 rules 與 staffRequirements
+            this.state.unitSettings = unit;
             this.state.staffList = staffList;
             
             if (!schedule) {
-                // 若無班表，建立空物件
+                // 初始化空班表
                 const staffIds = staffList.map(s => s.id);
                 this.state.scheduleData = {
                     unitId: this.state.currentUnitId,
@@ -229,20 +160,12 @@ export class SchedulePage {
             }
             
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
-            
-            // 顯示功能按鈕
-            document.getElementById('btn-auto-schedule').style.display = 'inline-block'; // AI 按鈕
-            document.getElementById('btn-show-stats').style.display = 'inline-block';    // 統計按鈕
-            document.getElementById('btn-auto-fill').style.display = 'inline-block';
-            document.getElementById('btn-validate').style.display = 'inline-block';
-            document.getElementById('btn-publish').style.display = 'inline-block';
-
             this.renderGrid();
             this.updateStatusBadge();
 
         } catch (error) {
             console.error(error);
-            container.innerHTML = `<div style="color:red; padding:20px;">載入失敗: ${error.message}</div>`;
+            container.innerHTML = `<div class="alert alert-danger m-3">載入失敗: ${error.message}</div>`;
         } finally {
             if(loading) loading.style.display = 'none';
         }
@@ -253,30 +176,27 @@ export class SchedulePage {
         const { year, month, daysInMonth, staffList, scheduleData, unitSettings } = this.state;
         const shiftDefs = unitSettings?.settings?.shifts || [];
         
-        // 執行驗證 (使用簡單規則或從 Settings 讀取)
         const rules = unitSettings?.rules || { constraints: {} }; 
         const validation = RuleEngine.validateAll(scheduleData, daysInMonth, staffList, unitSettings, rules);
         const { staffReport, coverageErrors } = validation;
 
-        // 準備 Shift Map
         const shiftMap = {};
         shiftDefs.forEach(s => shiftMap[s.code] = s);
         shiftMap['OFF'] = { color: '#e5e7eb', name: '休' };
+        shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' }; // 紫色顯示
 
-        // 繪製表頭
         let headerHtml = '<thead><tr><th class="sticky-col bg-light" style="min-width:120px; z-index:20;">人員 / 日期</th>';
         for (let d = 1; d <= daysInMonth; d++) {
             const dateObj = new Date(year, month - 1, d);
             const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
             const weekStr = ['日','一','二','三','四','五','六'][dateObj.getDay()];
             let thClass = isWeekend ? 'text-danger' : '';
-            if (coverageErrors && coverageErrors[d]) thClass += ' bg-warning'; // 缺人警示
+            if (coverageErrors && coverageErrors[d]) thClass += ' bg-warning'; 
             
             headerHtml += `<th class="${thClass}" style="min-width:40px;">${d}<br><span style="font-size:0.8em">${weekStr}</span></th>`;
         }
         headerHtml += '</tr></thead>';
 
-        // 繪製內容
         let bodyHtml = '<tbody>';
         staffList.forEach(staff => {
             const assignments = scheduleData.assignments[staff.id] || {};
@@ -290,9 +210,14 @@ export class SchedulePage {
 
             for (let d = 1; d <= daysInMonth; d++) {
                 const code = assignments[d] || '';
-                const style = (code && shiftMap[code]) ? `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}` : '';
+                // 顏色處理
+                let style = '';
+                if(code === 'M_OFF') {
+                    style = 'background-color:#6f42c1; color:white;';
+                } else if (code && shiftMap[code]) {
+                    style = `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}`;
+                }
                 
-                // 違規紅框
                 const errorMsg = staffErrors[d];
                 const borderStyle = errorMsg ? 'border: 2px solid red !important;' : '';
                 const title = errorMsg ? `title="${errorMsg}"` : '';
@@ -303,7 +228,7 @@ export class SchedulePage {
                         data-day="${d}" 
                         style="cursor:pointer; ${style}; ${borderStyle}"
                         ${title}>
-                        ${code}
+                        ${code === 'M_OFF' ? 'OFF' : code}
                     </td>`;
             }
             bodyHtml += '</tr>';
@@ -312,7 +237,6 @@ export class SchedulePage {
 
         container.innerHTML = `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
 
-        // 綁定儲存格點擊事件
         const cells = container.querySelectorAll('.shift-cell');
         cells.forEach(cell => {
             cell.addEventListener('click', (e) => {
@@ -350,7 +274,6 @@ export class SchedulePage {
         const rect = targetCell.getBoundingClientRect();
         menu.style.top = `${rect.bottom + window.scrollY}px`;
         menu.style.left = `${rect.left + window.scrollX}px`;
-        
         document.body.appendChild(menu);
         this.state.activeMenu = menu;
     }
@@ -365,7 +288,7 @@ export class SchedulePage {
         }
         this.state.scheduleData.assignments[staffId][day] = shiftCode;
 
-        this.renderGrid();
+        this.renderGrid(); // Optimistic Update
 
         try {
             await ScheduleService.updateShift(
@@ -382,182 +305,163 @@ export class SchedulePage {
         }
     }
 
-    // ✅ AI 智慧排班
-    async runAutoSchedule() {
-        if (!this.state.scheduleData) return;
-        if (!confirm("即將開始智慧排班。\n\n注意：系統將根據「排班規則」、「人力需求」與「員工預班」自動演算。\n(已填入的格子將視為鎖定，不被更動)")) return;
+    // =========================================================
+    //  多版本 AI 排班 (Req 6)
+    // =========================================================
+    async runMultiVersionAI() {
+        if (!confirm("確定執行智慧排班？\n這將計算 3 個版本供您選擇。")) return;
 
         const loading = document.getElementById('loading-indicator');
-        if(loading) loading.style.display = 'block';
+        loading.style.display = 'block';
 
         try {
-            // 1. 準備資料
             const currentData = this.state.scheduleData;
             const staffList = this.state.staffList;
             const unitSettings = this.state.unitSettings; 
-            
-            // 讀取最新的預班資料 (確保預休正確)
             const preSchedule = await PreScheduleService.getPreSchedule(
                 this.state.currentUnitId, this.state.year, this.state.month
             );
 
-            // 2. 執行 AI 運算 (AutoScheduler)
-            const result = AutoScheduler.run(
-                currentData, 
-                staffList, 
-                unitSettings, 
-                preSchedule
-            );
+            this.generatedVersions = [];
 
-            // 3. 更新狀態
-            this.state.scheduleData.assignments = result.assignments;
-
-            // 4. 重新渲染
-            this.renderGrid();
-
-            // 5. 自動儲存結果
-            await ScheduleService.updateAllAssignments(
-                this.state.currentUnitId,
-                this.state.year,
-                this.state.month,
-                result.assignments
-            );
-
-            // 6. 顯示結果摘要 & 統計
-            this.showStatistics(); // 自動跳出評分
-
-            if (result.logs.length > 0) {
-                console.warn(result.logs);
-                // 這裡選擇不跳 Alert 騷擾使用者，因為已經自動跳出 Stats Modal
+            for (let i = 1; i <= 3; i++) {
+                const result = AutoScheduler.run(currentData, staffList, unitSettings, preSchedule);
+                const stats = this.calculateStats(result.assignments);
+                
+                this.generatedVersions.push({
+                    id: i,
+                    assignments: result.assignments,
+                    logs: result.logs,
+                    stats: stats 
+                });
             }
 
-        } catch (error) {
-            console.error("排班失敗:", error);
-            alert("演算法執行錯誤: " + error.message);
+            this.renderVersionsModal();
+            this.versionsModal.show();
+
+        } catch (e) {
+            console.error(e);
+            alert("演算失敗: " + e.message);
         } finally {
-            if(loading) loading.style.display = 'none';
+            loading.style.display = 'none';
         }
     }
 
-    // ✅ 排班評分統計 (新功能)
-    showStatistics() {
-        if (!this.state.scheduleData || !this.state.scheduleData.assignments) return;
-
-        const assignments = this.state.scheduleData.assignments;
-        const staffList = this.state.staffList;
-        const stats = [];
-
-        // 計算每位員工的統計
-        staffList.forEach(s => {
-            let total = 0, night = 0, holiday = 0;
+    calculateStats(assignments) {
+        const counts = this.state.staffList.map(s => {
+            let total = 0, night = 0;
             const shifts = assignments[s.id] || {};
-            
-            Object.entries(shifts).forEach(([day, code]) => {
-                if (code && code !== 'OFF') {
+            Object.values(shifts).forEach(code => {
+                if(code && code !== 'OFF' && code !== 'M_OFF') {
                     total++;
-                    if (code === 'E' || code === 'N') night++;
-                    // 簡易假日判斷
-                    const date = new Date(this.state.year, this.state.month - 1, parseInt(day));
-                    if (date.getDay() === 0 || date.getDay() === 6) holiday++;
+                    if(code === 'N' || code === 'E') night++;
                 }
             });
-            stats.push({ name: s.name, total, night, holiday });
+            return { total, night };
         });
-
-        // 計算標準差 (Standard Deviation)
-        const calcSD = (arr, key) => {
-            const vals = arr.map(i => i[key]);
-            const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
-            const sqDiff = vals.map(v => Math.pow(v - mean, 2));
-            const avgSqDiff = sqDiff.reduce((a,b)=>a+b,0) / vals.length;
-            return Math.sqrt(avgSqDiff).toFixed(2);
+        
+        const sd = (arr) => {
+            const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+            return Math.sqrt(arr.map(x=>Math.pow(x-m,2)).reduce((a,b)=>a+b,0)/arr.length).toFixed(2);
         };
-
-        const sdTotal = calcSD(stats, 'total');
-        const sdNight = calcSD(stats, 'night');
-
-        // 生成 HTML 報表
-        const html = `
-            <div class="alert alert-info small mb-3">
-                <i class="fas fa-info-circle"></i> <strong>標準差 (SD)</strong> 數值越低，代表排班越平均（越公平）。
-            </div>
-            <div class="row mb-3">
-                <div class="col-6">
-                    <div class="card bg-light border-primary">
-                        <div class="card-body text-center py-2">
-                            <h6 class="text-primary mb-0">總班數標準差</h6>
-                            <h3 class="fw-bold mb-0">${sdTotal}</h3>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6">
-                    <div class="card bg-light border-warning">
-                        <div class="card-body text-center py-2">
-                            <h6 class="text-warning mb-0">夜班數標準差</h6>
-                            <h3 class="fw-bold mb-0">${sdNight}</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="table-responsive" style="max-height:350px;">
-                <table class="table table-sm table-striped text-center align-middle">
-                    <thead class="table-dark sticky-top"><tr><th>姓名</th><th>總班</th><th>夜班</th><th>假日</th></tr></thead>
-                    <tbody>
-                        ${stats.map(s => `<tr><td class="fw-bold">${s.name}</td><td>${s.total}</td><td>${s.night}</td><td>${s.holiday}</td></tr>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        this.openStatsModal("排班公平性分析", html);
+        
+        return {
+            sdTotal: sd(counts.map(c=>c.total)),
+            sdNight: sd(counts.map(c=>c.night))
+        };
     }
 
-    openStatsModal(title, content) {
-        let modalEl = document.getElementById('stats-modal');
-        // 動態建立 Modal DOM
-        if(!modalEl) {
-            document.body.insertAdjacentHTML('beforeend', `
-                <div class="modal fade" id="stats-modal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header bg-primary text-white">
-                                <h5 class="modal-title">${title}</h5>
-                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">${content}</div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
-                            </div>
-                        </div>
+    renderVersionsModal() {
+        const container = document.getElementById('versions-container');
+        container.innerHTML = this.generatedVersions.map(v => `
+            <div class="col-md-4">
+                <div class="card h-100 border-primary version-card hover-shadow">
+                    <div class="card-header bg-light fw-bold text-center">版本 ${v.id}</div>
+                    <div class="card-body">
+                        <ul class="list-unstyled small mb-3">
+                            <li class="d-flex justify-content-between">
+                                <span>總班數標準差:</span> <strong class="text-primary">${v.stats.sdTotal}</strong>
+                            </li>
+                            <li class="d-flex justify-content-between">
+                                <span>夜班標準差:</span> <strong class="text-warning">${v.stats.sdNight}</strong>
+                            </li>
+                            <li class="d-flex justify-content-between mt-2">
+                                <span>未滿警告:</span> <span class="badge ${v.logs.length>0?'bg-danger':'bg-success'}">${v.logs.length}</span>
+                            </li>
+                        </ul>
+                        <button class="btn btn-outline-primary w-100" onclick="window.routerPage.applyVersion(${v.id-1})">
+                            套用此版本
+                        </button>
                     </div>
-                </div>`);
-            modalEl = document.getElementById('stats-modal');
-        } else {
-            modalEl.querySelector('.modal-title').innerText = title;
-            modalEl.querySelector('.modal-body').innerHTML = content;
-        }
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
+                </div>
+            </div>
+        `).join('');
+        window.routerPage = this;
     }
 
-    // 保留舊的簡單填充功能
-    async runAutoFillOff() {
-        if (!confirm("確定要將所有剩餘空白格子填入 OFF？")) return;
-        const { updatedAssignments, count } = BasicAlgorithm.fillEmptyWithOff(
-            this.state.scheduleData,
-            this.state.daysInMonth,
-            this.state.staffList
-        );
-        this.state.scheduleData.assignments = updatedAssignments;
-        this.renderGrid();
+    async applyVersion(index) {
+        const selected = this.generatedVersions[index];
+        this.state.scheduleData.assignments = selected.assignments;
         
         await ScheduleService.updateAllAssignments(
-            this.state.currentUnitId, 
-            this.state.year, 
-            this.state.month, 
-            updatedAssignments
+            this.state.currentUnitId, this.state.year, this.state.month, selected.assignments
         );
-        alert(`已填充 ${count} 格 OFF`);
+        
+        this.versionsModal.hide();
+        this.renderGrid();
+        
+        if (selected.logs.length > 0) {
+            alert(`已套用版本 ${selected.id}。\n注意：有 ${selected.logs.length} 處人力不足，請手動調整。`);
+        } else {
+            alert(`✅ 已成功套用版本 ${selected.id}。`);
+        }
+    }
+
+    async clearSchedule() {
+        if(!confirm("確定清除？\n這將刪除所有已排的班別，只保留「預班(OFF/M_OFF)」。")) return;
+        
+        const assignments = this.state.scheduleData.assignments;
+        let count = 0;
+        
+        Object.keys(assignments).forEach(uid => {
+            Object.keys(assignments[uid]).forEach(day => {
+                const code = assignments[uid][day];
+                // ✅ 保留 OFF 與 M_OFF
+                if (code && code !== 'OFF' && code !== 'M_OFF') {
+                    delete assignments[uid][day];
+                    count++;
+                }
+            });
+        });
+
+        await ScheduleService.updateAllAssignments(
+            this.state.currentUnitId, this.state.year, this.state.month, assignments
+        );
+        
+        this.renderGrid();
+        alert(`已清除 ${count} 格班別，保留預班設定。`);
+    }
+
+    showStatistics() {
+        const stats = this.calculateStats(this.state.scheduleData.assignments);
+        alert(`當前評分：\n總班數 SD: ${stats.sdTotal}\n夜班 SD: ${stats.sdNight}`);
+        // 也可以用 Modal 顯示更詳細的
+    }
+
+    async togglePublish() {
+        if(!this.state.scheduleData) return;
+        const currentStatus = this.state.scheduleData.status;
+        const newStatus = currentStatus === 'published' ? 'draft' : 'published';
+        const actionText = newStatus === 'published' ? '發布' : '撤回';
+        
+        if(confirm(`確定要 ${actionText} 此班表嗎？`)) {
+            const res = await ScheduleService.updateStatus(this.state.currentUnitId, this.state.year, this.state.month, newStatus);
+            if(res) {
+                this.state.scheduleData.status = newStatus;
+                this.updateStatusBadge();
+                alert(`班表已${actionText}`);
+            }
+        }
     }
 
     updateStatusBadge() {
@@ -567,18 +471,18 @@ export class SchedulePage {
         
         const status = this.state.scheduleData.status;
         if (status === 'published') {
-            badge.className = 'badge bg-success';
-            badge.textContent = '已發布 (Published)';
+            badge.className = 'badge bg-success ms-2';
+            badge.textContent = '已發布';
             if(btn) {
                 btn.textContent = '撤回班表';
-                btn.classList.replace('btn-primary', 'btn-warning');
+                btn.classList.replace('btn-success', 'btn-warning');
             }
         } else {
-            badge.className = 'badge bg-secondary';
-            badge.textContent = '草稿 (Draft)';
+            badge.className = 'badge bg-warning text-dark ms-2';
+            badge.textContent = '草稿';
             if(btn) {
                 btn.textContent = '發布班表';
-                btn.classList.replace('btn-warning', 'btn-primary');
+                btn.classList.replace('btn-warning', 'btn-success');
             }
         }
     }
