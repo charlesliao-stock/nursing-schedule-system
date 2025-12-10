@@ -14,12 +14,13 @@ export class PreScheduleSubmitPage {
         this.month = targetMonth;
         this.currentUser = null;
         this.currentUnit = null; 
-        this.unitStaffMap = {}; // UID -> Name 對照表
+        this.unitStaffMap = {}; 
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
+        this.myPreferences = {}; // ✅ 儲存偏好
         this.unitAggregate = {}; 
-        this.unitNames = {}; // 日期 -> 姓名陣列
+        this.unitNames = {}; 
         this.isReadOnly = false; 
     }
 
@@ -28,373 +29,340 @@ export class PreScheduleSubmitPage {
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-edit"></i> 提交預班</h3>
-                    <p class="text-muted small mb-0">檢視可用的預班表，並在開放時間內提交您的休假需求。</p>
+                    <p class="text-muted small mb-0">檢視可用的預班表，並在開放時間內提交您的休假需求與偏好。</p>
                 </div>
 
                 <div id="filter-section" class="card shadow-sm mb-4 border-left-primary">
-                    <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
-                        <div id="admin-unit-selector" style="display:none;" class="d-flex align-items-center">
-                            <label class="fw-bold mb-0 text-nowrap me-2 text-danger">管理員模式：</label>
-                            <select id="unit-select" class="form-select form-select-sm w-auto fw-bold"></select>
-                        </div>
-                        <div id="user-unit-info" class="fw-bold text-primary">
-                            <span class="spinner-border spinner-border-sm"></span> 載入中...
-                        </div>
+                    <div class="card-body py-2 d-flex align-items-center gap-3">
+                        <label class="fw-bold">預班月份：</label>
+                        <select id="schedule-select" class="form-select w-auto">
+                            <option value="">載入中...</option>
+                        </select>
+                        <button id="btn-load" class="btn btn-primary">讀取</button>
                     </div>
                 </div>
 
-                <div id="list-view" class="card shadow">
-                    <div class="card-header py-3 bg-white">
-                        <h6 class="m-0 font-weight-bold text-primary">預班表清單</h6>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead class="table-light"><tr><th>預班月份</th><th>單位</th><th>開放期間</th><th>狀態</th><th class="text-end pe-4">操作</th></tr></thead>
-                                <tbody id="schedule-list-tbody"><tr><td colspan="5" class="text-center py-5 text-muted">載入中...</td></tr></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="detail-view" style="display:none;">
-                    <div class="d-flex align-items-center mb-3">
-                        <button class="btn btn-outline-secondary btn-sm me-3" id="btn-back"><i class="fas fa-arrow-left"></i> 返回</button>
-                        <h4 class="m-0 fw-bold text-gray-800" id="detail-title"></h4>
+                <div id="main-content" style="display:none;">
+                    <div class="alert alert-info py-2 small">
+                        <i class="fas fa-info-circle"></i> 
+                        開放時間：<strong id="open-date"></strong> ~ <strong id="close-date"></strong> 
+                        (上限: <span id="limit-off"></span>天)
                     </div>
 
                     <div class="row">
                         <div class="col-lg-8">
                             <div class="card shadow mb-4">
                                 <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
-                                    <h6 class="m-0 fw-bold text-primary">班表日曆</h6>
-                                    <div class="small">
-                                        <span class="badge bg-white text-dark border me-1">白: 可選</span>
-                                        <span class="badge bg-danger text-white me-1">紅: 已選OFF</span>
-                                        <span class="badge bg-white border text-danger" style="border-color:red!important">紅框: 超額</span>
+                                    <h6 class="m-0 font-weight-bold text-primary">畫休月曆</h6>
+                                    <div>
+                                        <span id="count-total" class="badge rounded-pill bg-primary fs-6">0</span>
+                                        <span class="text-muted small">/ <span id="limit-display">8</span></span>
+                                        <span class="ms-2 small text-danger">(假日: <span id="count-holiday">0</span>)</span>
                                     </div>
                                 </div>
-                                <div class="card-body"><div id="calendar-grid" class="calendar-grid"></div></div>
+                                <div class="card-body p-0">
+                                    <div id="calendar-container" class="calendar-grid"></div>
+                                </div>
                             </div>
                         </div>
 
                         <div class="col-lg-4">
-                            <div class="card shadow mb-4 sticky-top" style="top: 80px; z-index: 10;">
-                                <div class="card-header py-3 bg-primary text-white"><h6 class="m-0 fw-bold">提交確認</h6></div>
+                            <div class="card shadow mb-4 border-left-info">
+                                <div class="card-header py-3 bg-white">
+                                    <h6 class="m-0 font-weight-bold text-info"><i class="fas fa-sliders-h"></i> 排班偏好設定</h6>
+                                </div>
                                 <div class="card-body">
-                                    <ul class="list-group list-group-flush mb-3">
-                                        <li class="list-group-item d-flex justify-content-between px-0">
-                                            <span>預班總數 <small class="text-muted">(上限 <span id="limit-total">0</span>)</small></span>
-                                            <span class="badge bg-primary rounded-pill fs-6" id="count-total">0</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between px-0">
-                                            <span>假日預休 <small class="text-muted">(上限 <span id="limit-holiday">0</span>)</small></span>
-                                            <span class="badge bg-info rounded-pill fs-6" id="count-holiday">0</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between px-0 bg-light rounded p-2 mt-1">
-                                            <span class="fw-bold">每日限額</span>
-                                            <span class="badge bg-secondary rounded-pill" id="limit-daily-desc">依人力浮動</span>
-                                        </li>
-                                    </ul>
                                     
-                                    <div class="mb-3">
-                                        <label class="form-label small fw-bold text-secondary">備註說明</label>
-                                        <textarea id="wish-notes" class="form-control" rows="3"></textarea>
-                                    </div>
-                                    
-                                    <div class="d-grid gap-2">
-                                        <button id="btn-submit" class="btn btn-success btn-lg shadow-sm">提交預班</button>
-                                        <div id="readonly-msg" class="alert alert-secondary text-center small mb-0" style="display:none;">
-                                            <i class="fas fa-lock"></i> 目前無法提交
+                                    <div id="batch-pref-section" class="mb-3" style="display:none;">
+                                        <label class="fw-bold d-block mb-2">包班意願 (連續夜班)</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <input type="radio" class="btn-check" name="batchPref" id="batch-none" value="" checked>
+                                            <label class="btn btn-outline-secondary" for="batch-none">無</label>
+
+                                            <input type="radio" class="btn-check" name="batchPref" id="batch-e" value="E">
+                                            <label class="btn btn-outline-warning text-dark" for="batch-e">小夜包班</label>
+
+                                            <input type="radio" class="btn-check" name="batchPref" id="batch-n" value="N">
+                                            <label class="btn btn-outline-dark" for="batch-n">大夜包班</label>
                                         </div>
                                     </div>
-                                    <div class="mt-3 text-center"><small id="last-submit-time" class="text-muted d-block"></small></div>
+
+                                    <div class="mb-3">
+                                        <label class="fw-bold d-block mb-2">優先班別 (最多選 2 項)</label>
+                                        <div class="d-flex gap-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input pref-check" type="checkbox" value="D" id="pref-d">
+                                                <label class="form-check-label" for="pref-d">白班 (D)</label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input pref-check" type="checkbox" value="E" id="pref-e">
+                                                <label class="form-check-label" for="pref-e">小夜 (E)</label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input pref-check" type="checkbox" value="N" id="pref-n">
+                                                <label class="form-check-label" for="pref-n">大夜 (N)</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <hr>
+                                    <div class="form-group">
+                                        <label class="fw-bold">備註說明</label>
+                                        <textarea class="form-control" id="wish-notes" rows="3" placeholder="例如：這週想多上一點班..."></textarea>
+                                    </div>
                                 </div>
                             </div>
+
+                            <button id="btn-submit" class="btn btn-success btn-lg w-100 shadow">
+                                <i class="fas fa-paper-plane"></i> 提交預班
+                            </button>
                         </div>
                     </div>
                 </div>
-
-                <style>
-                    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-                    .calendar-header { text-align: center; font-weight: bold; color: #4e73df; padding-bottom: 5px; }
-                    .calendar-cell { 
-                        border: 1px solid #e3e6f0; border-radius: 8px; min-height: 80px; padding: 5px; 
-                        cursor: pointer; background: #fff; position: relative; transition: all 0.2s;
-                        display: flex; flex-direction: column; justify-content: space-between;
-                    }
-                    .calendar-cell:hover { background-color: #f8f9fc; border-color: #4e73df; transform: translateY(-2px); }
-                    /* 粉紅底 (假日) */
-                    .calendar-cell.weekend { background-color: #fff0f5; } 
-                    /* 淡橘底 (選取) */
-                    .calendar-cell.selected-off { background-color: #fff3cd; border: 2px solid #ffc107; color: #856404; }
-                    /* 紅框 (超額) */
-                    .calendar-cell.over-limit { border: 2px solid #dc3545 !important; } 
-                    .calendar-cell.disabled { opacity: 0.7; cursor: default; }
-                    .day-number { font-weight: 800; font-size: 1.1rem; color: #5a5c69; }
-                    .day-number.weekend-text { color: #e74a3b; }
-                    .wish-badge { 
-                        display: block; text-align: center; font-weight: bold; font-size: 1rem;
-                        background: rgba(255, 193, 7, 0.2); border-radius: 4px; padding: 2px 0;
-                    }
-                    .agg-info { text-align: right; font-size: 0.75rem; color: #858796; }
-                </style>
             </div>
         `;
     }
 
     async afterRender() {
-        const authUser = authService.getCurrentUser();
-        if (!authUser) { alert("請先登入"); return; }
+        this.currentUser = authService.getProfile();
+        if(!this.currentUser) return;
 
-        this.currentUser = await userService.getUserData(authUser.uid);
-        const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
+        // 1. 處理「優先班別」只能選 2 個的邏輯
+        const prefChecks = document.querySelectorAll('.pref-check');
+        prefChecks.forEach(chk => {
+            chk.addEventListener('change', () => {
+                const checked = document.querySelectorAll('.pref-check:checked');
+                if (checked.length > 2) {
+                    chk.checked = false; // 取消當前勾選
+                    alert("優先班別最多只能選擇 2 項");
+                }
+            });
+        });
 
-        if (isAdmin) {
-            document.getElementById('admin-unit-selector').style.display = 'flex';
-            document.getElementById('user-unit-info').style.display = 'none';
-            const units = await UnitService.getAllUnits();
-            const select = document.getElementById('unit-select');
-            select.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-            select.addEventListener('change', (e) => this.loadList(e.target.value));
-            if(units.length > 0) this.loadList(units[0].unitId);
-        } else {
-            if (!this.currentUser.unitId) {
-                document.getElementById('user-unit-info').innerHTML = '<span class="text-danger">未綁定單位</span>';
-                return;
+        // 2. 載入資料
+        try {
+            const userFull = await userService.getUserData(this.currentUser.uid);
+            this.currentUser = userFull; // 更新為完整資料 (含 constraints)
+            this.currentUnit = await UnitService.getUnitById(this.currentUser.unitId);
+            
+            // 顯示/隱藏包班選項
+            const canBatch = this.currentUser.constraints?.canBatch;
+            if (canBatch) {
+                document.getElementById('batch-pref-section').style.display = 'block';
             }
-            const unit = await UnitService.getUnitById(this.currentUser.unitId);
-            this.currentUnit = unit;
-            document.getElementById('user-unit-info').innerHTML = `<i class="fas fa-hospital-user"></i> ${unit.unitName}`;
-            this.loadList(this.currentUser.unitId);
-        }
 
-        document.getElementById('btn-back').addEventListener('click', () => this.showListView());
+            const staff = await userService.getUnitStaff(this.currentUser.unitId);
+            staff.forEach(s => this.unitStaffMap[s.uid] = s.name);
+
+            this.loadList(this.currentUser.unitId);
+        } catch(e) { console.error(e); }
+
+        document.getElementById('btn-load').addEventListener('click', () => {
+            const val = document.getElementById('schedule-select').value;
+            if(val) this.loadScheduleData(val);
+        });
+
         document.getElementById('btn-submit').addEventListener('click', () => this.handleSubmit());
     }
 
     async loadList(unitId) {
-        const tbody = document.getElementById('schedule-list-tbody');
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">載入中...</td></tr>';
+        const list = await PreScheduleService.getPreSchedulesList(unitId);
+        this.preSchedulesList = list;
         
-        if (!this.currentUnit || this.currentUnit.unitId !== unitId) {
-            this.currentUnit = await UnitService.getUnitById(unitId);
+        const select = document.getElementById('schedule-select');
+        if (list.length === 0) {
+            select.innerHTML = '<option value="">無開放的預班</option>';
+            return;
         }
 
-        // 預先載入單位人員名單 (建立 UID -> Name 映射)
-        const staffList = await userService.getUsersByUnit(unitId);
-        this.unitStaffMap = {};
-        staffList.forEach(s => this.unitStaffMap[s.uid] = s.name);
+        select.innerHTML = list.map((s, index) => {
+            let label = `${s.year}-${String(s.month).padStart(2,'0')}`;
+            if(s.status === 'open') label += ' (開放中)';
+            else if(s.status === 'closed') label += ' (已截止)';
+            else label += ' (準備中)';
+            return `<option value="${index}">${label}</option>`;
+        }).join('');
 
-        try {
-            this.preSchedulesList = await PreScheduleService.getPreSchedulesList(unitId);
-            if (this.preSchedulesList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">此單位目前沒有預班表</td></tr>';
-                return;
-            }
-
-            const now = new Date().toISOString().split('T')[0];
-
-            tbody.innerHTML = this.preSchedulesList.map(p => {
-                const openDate = p.settings?.openDate || 'N/A';
-                const closeDate = p.settings?.closeDate || 'N/A';
-                let statusBadge = '';
-                let isExpired = false;
-
-                if (p.status === 'closed') {
-                    statusBadge = '<span class="badge bg-secondary">已關閉</span>'; isExpired = true;
-                } else if (now < openDate) {
-                    statusBadge = '<span class="badge bg-warning text-dark">未開放</span>'; isExpired = true;
-                } else if (now > closeDate) {
-                    statusBadge = '<span class="badge bg-secondary">已截止</span>'; isExpired = true;
-                } else {
-                    statusBadge = '<span class="badge bg-success">開放中</span>'; isExpired = false;
-                }
-
-                const btnText = isExpired ? '<i class="fas fa-eye"></i> 檢視' : '<i class="fas fa-edit"></i> 提交';
-                const btnClass = isExpired ? 'btn-outline-secondary' : 'btn-primary';
-
-                return `
-                    <tr>
-                        <td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td>
-                        <td>${this.currentUnit?.unitName || unitId}</td>
-                        <td><small>${openDate} ~ ${closeDate}</small></td>
-                        <td>${statusBadge}</td>
-                        <td class="text-end pe-4">
-                            <button class="btn btn-sm ${btnClass}" onclick="window.routerPage.openSchedule('${p.id}', ${isExpired})">
-                                ${btnText}
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-            window.routerPage = this;
-        } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">載入失敗</td></tr>'; }
+        // 自動選取第一個開放的
+        const openIdx = list.findIndex(s => s.status === 'open');
+        if(openIdx >= 0) {
+            select.selectedIndex = openIdx;
+            this.loadScheduleData(openIdx);
+        }
     }
 
-    showListView() {
-        document.getElementById('list-view').style.display = 'block';
-        document.getElementById('filter-section').style.display = 'block';
-        document.getElementById('detail-view').style.display = 'none';
-    }
-
-    openSchedule(docId, isReadOnly) {
-        this.currentSchedule = this.preSchedulesList.find(s => s.id === docId);
-        if (!this.currentSchedule) return;
-        this.isReadOnly = isReadOnly;
+    loadScheduleData(index) {
+        const schedule = this.preSchedulesList[index];
+        this.currentSchedule = schedule;
         
-        document.getElementById('list-view').style.display = 'none';
-        document.getElementById('filter-section').style.display = 'none';
-        document.getElementById('detail-view').style.display = 'block';
-        document.getElementById('detail-title').textContent = `${this.currentSchedule.year}年 ${this.currentSchedule.month}月 預班表`;
+        document.getElementById('main-content').style.display = 'block';
+        document.getElementById('open-date').textContent = schedule.settings.openDate;
+        document.getElementById('close-date').textContent = schedule.settings.closeDate;
+        document.getElementById('limit-off').textContent = schedule.settings.maxOffDays;
+        document.getElementById('limit-display').textContent = schedule.settings.maxOffDays;
 
-        const { settings, submissions } = this.currentSchedule;
-        const mySub = submissions && submissions[this.currentUser.uid] ? submissions[this.currentUser.uid] : {};
+        // 讀取我的提交
+        const mySub = (schedule.submissions && schedule.submissions[this.currentUser.uid]) || {};
         this.myWishes = mySub.wishes || {};
-
-        document.getElementById('limit-total').textContent = settings.maxOffDays;
-        document.getElementById('limit-holiday').textContent = settings.maxHoliday || 0;
-        
         document.getElementById('wish-notes').value = mySub.notes || '';
-        document.getElementById('wish-notes').disabled = isReadOnly;
 
-        const btnSubmit = document.getElementById('btn-submit');
-        const msgReadonly = document.getElementById('readonly-msg');
+        // ✅ 回填偏好設定
+        const myPref = mySub.preferences || {};
+        // 包班
+        if (myPref.batch) {
+            const radio = document.querySelector(`input[name="batchPref"][value="${myPref.batch}"]`);
+            if(radio) radio.checked = true;
+        } else {
+            document.getElementById('batch-none').checked = true;
+        }
+        // 優先班別
+        document.querySelectorAll('.pref-check').forEach(chk => chk.checked = false);
+        if (myPref.priorities && Array.isArray(myPref.priorities)) {
+            myPref.priorities.forEach(p => {
+                const chk = document.getElementById(`pref-${p.toLowerCase()}`);
+                if(chk) chk.checked = true;
+            });
+        }
+
+        // 計算每日統計
+        this.calculateAggregate(schedule);
+
+        // 唯讀判斷
+        const today = new Date().toISOString().split('T')[0];
+        this.isReadOnly = (schedule.status !== 'open' || today < schedule.settings.openDate || today > schedule.settings.closeDate);
         
-        if (isReadOnly) {
-            btnSubmit.style.display = 'none';
-            msgReadonly.style.display = 'block';
+        if (this.isReadOnly) {
+            document.getElementById('btn-submit').disabled = true;
+            document.getElementById('btn-submit').textContent = "唯讀模式 (非開放時間)";
+            document.getElementById('wish-notes').disabled = true;
+            document.querySelectorAll('input').forEach(i => i.disabled = true);
         } else {
-            btnSubmit.style.display = 'block';
-            msgReadonly.style.display = 'none';
+            document.getElementById('btn-submit').disabled = false;
+            document.getElementById('btn-submit').innerHTML = '<i class="fas fa-paper-plane"></i> 提交預班';
+            document.getElementById('wish-notes').disabled = false;
+            document.querySelectorAll('input').forEach(i => i.disabled = false);
         }
 
-        if (mySub.submittedAt) {
-            const date = mySub.submittedAt.toDate ? mySub.submittedAt.toDate() : new Date(mySub.submittedAt);
-            document.getElementById('last-submit-time').textContent = `上次提交: ${date.toLocaleString()}`;
-        } else {
-            document.getElementById('last-submit-time').textContent = '';
-        }
-
-        this.calculateAggregate(submissions);
         this.renderCalendar();
-        this.updateCounters();
+        this.updateCounts();
     }
 
-    calculateAggregate(submissions) {
+    calculateAggregate(schedule) {
         this.unitAggregate = {};
         this.unitNames = {};
-        if (!submissions) return;
-        
-        Object.entries(submissions).forEach(([uid, sub]) => {
-            if (sub.wishes) {
-                // 如果 submissions 內沒有 name (舊資料)，則去 unitStaffMap 查
-                const name = sub.name || this.unitStaffMap[uid] || '未知';
-                
-                Object.entries(sub.wishes).forEach(([day, wish]) => {
-                    if (wish === 'OFF') {
-                        this.unitAggregate[day] = (this.unitAggregate[day] || 0) + 1;
-                        if (!this.unitNames[day]) this.unitNames[day] = [];
+        if(!schedule.submissions) return;
+
+        Object.entries(schedule.submissions).forEach(([uid, sub]) => {
+            if(!sub.wishes) return;
+            Object.entries(sub.wishes).forEach(([day, type]) => {
+                if(type === 'OFF') {
+                    if(!this.unitAggregate[day]) this.unitAggregate[day] = 0;
+                    this.unitAggregate[day]++;
+                    
+                    if(schedule.settings.showOtherNames) {
+                        if(!this.unitNames[day]) this.unitNames[day] = [];
+                        const name = this.unitStaffMap[uid] || '未知';
                         this.unitNames[day].push(name);
                     }
-                });
-            }
+                }
+            });
         });
     }
 
     renderCalendar() {
-        const grid = document.getElementById('calendar-grid');
-        grid.innerHTML = '';
-        ['日','一','二','三','四','五','六'].forEach(w => grid.innerHTML += `<div class="calendar-header">${w}</div>`);
-
-        const { year, month } = this.currentSchedule;
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const firstDay = new Date(year, month - 1, 1).getDay();
+        const container = document.getElementById('calendar-container');
+        container.innerHTML = '';
         
-        // 取得設定參數
-        const totalStaff = this.currentSchedule.staffIds ? this.currentSchedule.staffIds.length : 0;
-        const reserved = this.currentSchedule.settings.reservedStaff || 0;
-        const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}};
-        const showNames = this.currentSchedule.settings.showOtherNames;
+        const daysInMonth = new Date(this.currentSchedule.year, this.currentSchedule.month, 0).getDate();
+        const firstDay = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, 1).getDay();
 
-        for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell" style="cursor:default; background:#f8f9fc;"></div>`;
+        // 星期表頭
+        const weeks = ['日','一','二','三','四','五','六'];
+        weeks.forEach(w => {
+            const div = document.createElement('div');
+            div.className = `calendar-header ${w==='日'||w==='六'?'text-danger':''}`;
+            div.textContent = w;
+            container.appendChild(div);
+        });
 
+        // 空白格
+        for(let i=0; i<firstDay; i++) {
+            container.appendChild(document.createElement('div'));
+        }
+
+        // 日期格
         for(let d=1; d<=daysInMonth; d++) {
-            const currentWeekDay = new Date(year, month - 1, d).getDay(); // 0-6
-            const isWeekend = (currentWeekDay === 0 || currentWeekDay === 6);
-            const wish = this.myWishes[d];
-            const agg = this.unitAggregate[d] || 0;
-
-            // 計算當日限額：總人數 - (該日Min需求總和) - 保留
-            const reqTotal = (reqMatrix.D?.[currentWeekDay]||0) + (reqMatrix.E?.[currentWeekDay]||0) + (reqMatrix.N?.[currentWeekDay]||0);
-            let dailyLimit = totalStaff - reqTotal - reserved;
-            if(dailyLimit < 0) dailyLimit = 0;
-
-            const isOverLimit = agg > dailyLimit;
-            
             const cell = document.createElement('div');
-            let classes = 'calendar-cell';
-            if (isWeekend) classes += ' weekend';
-            if (wish === 'OFF') classes += ' selected-off';
-            if (isOverLimit) classes += ' over-limit'; // 紅框
-            if (this.isReadOnly) classes += ' disabled';
+            cell.className = 'calendar-day';
             
-            cell.className = classes;
-            if (!this.isReadOnly) cell.onclick = () => this.toggleDate(d, isWeekend);
+            const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d);
+            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+            if(isWeekend) cell.classList.add('weekend');
 
-            // Tooltip 顯示姓名
-            if (showNames && this.unitNames[d]) {
-                cell.title = `已預班: ${this.unitNames[d].join(', ')}`;
+            // 檢查是否已選
+            const myType = this.myWishes[d];
+            if(myType === 'OFF') {
+                cell.classList.add('selected');
+                cell.innerHTML = `<div class="date-num">${d}</div><div class="shift-tag">OFF</div>`;
+            } else if (['白','小','大','x白','x小','x大'].includes(myType)) { // 支援其他預班
+                cell.classList.add('selected-shift'); 
+                cell.innerHTML = `<div class="date-num">${d}</div><div class="shift-tag" style="background:#666;">${myType}</div>`;
             } else {
-                cell.title = `限額: ${dailyLimit} 人`;
+                cell.innerHTML = `<div class="date-num">${d}</div>`;
             }
 
-            cell.innerHTML = `
-                <div class="day-number ${isWeekend ? 'weekend-text' : ''}">${d}</div>
-                ${wish ? '<span class="wish-badge">OFF</span>' : ''}
-                <div class="agg-info ${isOverLimit ? 'text-danger fw-bold' : ''}">
-                    <i class="fas fa-users"></i> ${agg}/${dailyLimit}
-                </div>
-            `;
-            grid.appendChild(cell);
+            // 顯示統計 (若有開啟)
+            if(this.unitAggregate[d]) {
+                const count = this.unitAggregate[d];
+                // 這裡可以加入 daily limit 檢查顯示紅框，此處略
+                const badge = document.createElement('div');
+                badge.className = 'agg-count';
+                badge.textContent = `${count}人休`;
+                if(this.currentSchedule.settings.showOtherNames && this.unitNames[d]) {
+                    badge.title = this.unitNames[d].join(', ');
+                }
+                cell.appendChild(badge);
+            }
+
+            if(!this.isReadOnly) {
+                cell.onclick = () => this.toggleDay(d, cell);
+            } else {
+                cell.classList.add('disabled');
+            }
+
+            container.appendChild(cell);
         }
     }
 
-    toggleDate(day, isWeekend) {
-        if (this.myWishes[day]) {
+    toggleDay(day, cell) {
+        if (this.myWishes[day] === 'OFF') {
             delete this.myWishes[day];
+            cell.classList.remove('selected');
+            cell.querySelector('.shift-tag')?.remove();
         } else {
-            const settings = this.currentSchedule.settings;
-            const maxOff = parseInt(settings.maxOffDays);
-            const maxHoliday = parseInt(settings.maxHoliday || 0);
-
-            // 1. 總數檢查
-            const currentTotal = Object.keys(this.myWishes).length;
-            if (currentTotal >= maxOff) { alert(`已達總預班上限 (${maxOff} 天)`); return; }
-
-            // 2. 假日檢查
-            if (isWeekend) {
-                let holidayCount = 0;
-                Object.keys(this.myWishes).forEach(d => {
-                    const wd = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d).getDay();
-                    if (wd === 0 || wd === 6) holidayCount++;
-                });
-                if (holidayCount >= maxHoliday) { alert(`已達假日預班上限 (${maxHoliday} 天)`); return; }
+            // 檢查上限
+            const currentOff = Object.values(this.myWishes).filter(v => v === 'OFF').length;
+            const maxOff = parseInt(this.currentSchedule.settings.maxOffDays);
+            
+            if (currentOff >= maxOff) {
+                alert("已達預班天數上限！");
+                return;
             }
-
             this.myWishes[day] = 'OFF';
+            cell.classList.add('selected');
+            if(!cell.querySelector('.shift-tag')) cell.innerHTML += `<div class="shift-tag">OFF</div>`;
         }
-        this.renderCalendar();
-        this.updateCounters();
+        this.updateCounts();
     }
 
-    updateCounters() {
-        const days = Object.keys(this.myWishes);
-        const total = days.length;
+    updateCounts() {
+        const total = Object.values(this.myWishes).filter(v => v === 'OFF').length;
         let holiday = 0;
-        days.forEach(d => {
-            const wd = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d).getDay();
-            if (wd === 0 || wd === 6) holiday++;
+        
+        Object.keys(this.myWishes).forEach(d => {
+            if(this.myWishes[d] !== 'OFF') return;
+            const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, parseInt(d));
+            if(date.getDay() === 0 || date.getDay() === 6) holiday++;
         });
 
         document.getElementById('count-total').textContent = total;
@@ -415,6 +383,16 @@ export class PreScheduleSubmitPage {
         btn.disabled = true;
         btn.innerHTML = '提交中...';
 
+        // ✅ 收集偏好
+        const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
+        const priorities = [];
+        document.querySelectorAll('.pref-check:checked').forEach(c => priorities.push(c.value));
+
+        const preferences = {
+            batch: batchPref,
+            priorities: priorities
+        };
+
         try {
             const res = await PreScheduleService.submitPersonalWish(
                 this.currentSchedule.unitId,
@@ -422,18 +400,20 @@ export class PreScheduleSubmitPage {
                 this.currentSchedule.month,
                 this.currentUser.uid,
                 this.myWishes,
-                document.getElementById('wish-notes').value
+                document.getElementById('wish-notes').value,
+                preferences // ✅ 傳入偏好
             );
 
             if (res.success) {
                 alert('✅ 提交成功！');
-                this.loadList(this.currentUnit.unitId);
-                this.showListView();
+                // 重新載入以確認狀態
+                this.loadScheduleData(this.preSchedulesList.indexOf(this.currentSchedule));
             } else {
                 throw new Error(res.error);
             }
         } catch (e) {
             alert("提交失敗: " + e.message);
+        } finally {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-paper-plane"></i> 提交預班';
         }
