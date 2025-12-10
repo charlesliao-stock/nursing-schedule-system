@@ -144,6 +144,16 @@ export class StaffListPage {
                                 <hr>
                                 <div class="mb-3">
                                     <label class="form-label fw-bold text-primary">排班參數</label>
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-6">
+                                            <label class="small text-muted">連上上限</label>
+                                            <input type="number" id="edit-maxConsecutive" class="form-control form-control-sm" min="1">
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="small text-muted">連夜上限</label>
+                                            <input type="number" id="edit-maxConsecutiveNights" class="form-control form-control-sm" min="1">
+                                        </div>
+                                    </div>
                                     <div class="d-flex gap-3">
                                         <div class="form-check">
                                             <input type="checkbox" id="edit-isPregnant" class="form-check-input">
@@ -183,7 +193,6 @@ export class StaffListPage {
     async afterRender() {
         if(!this.currentUser) return;
         
-        // 綁定 window.routerPage，讓 HTML onclick 可以呼叫 class 方法
         window.routerPage = this;
 
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
@@ -225,7 +234,6 @@ export class StaffListPage {
             this.sortConfig.key = key;
             this.sortConfig.direction = 'asc';
         }
-        // 更新 Header Icon
         this.updateHeaderIcons();
         this.applySortAndFilter();
     }
@@ -239,7 +247,7 @@ export class StaffListPage {
             const key = keyMatch[1];
             
             const iconContainer = th.querySelector('i');
-            if (iconContainer) iconContainer.className = 'fas fa-sort text-muted small'; // reset
+            if (iconContainer) iconContainer.className = 'fas fa-sort text-muted small';
 
             if (this.sortConfig.key === key) {
                 if (iconContainer) {
@@ -345,6 +353,10 @@ export class StaffListPage {
             document.getElementById('edit-group').value = u.group || '';
             document.getElementById('edit-isPregnant').checked = !!u.constraints?.isPregnant;
             document.getElementById('edit-canBatch').checked = !!u.constraints?.canBatch;
+            document.getElementById('edit-maxConsecutive').value = u.constraints?.maxConsecutive || 6;
+            // ✅ 新增
+            document.getElementById('edit-maxConsecutiveNights').value = u.constraints?.maxConsecutiveNights || 4;
+            
             document.getElementById('edit-is-manager').checked = u.role === 'unit_manager';
             document.getElementById('edit-is-scheduler').checked = u.role === 'unit_scheduler';
         } else {
@@ -378,7 +390,10 @@ export class StaffListPage {
             },
             constraints: {
                 isPregnant: document.getElementById('edit-isPregnant').checked,
-                canBatch: document.getElementById('edit-canBatch').checked
+                canBatch: document.getElementById('edit-canBatch').checked,
+                maxConsecutive: parseInt(document.getElementById('edit-maxConsecutive').value) || 6,
+                // ✅ 新增
+                maxConsecutiveNights: parseInt(document.getElementById('edit-maxConsecutiveNights').value) || 4
             }
         };
         
@@ -391,10 +406,8 @@ export class StaffListPage {
                 await userService.updateUser(uid, data);
                 alert("✅ 修改成功");
             } else {
-                // 新增邏輯: 需要 password
-                // 這裡暫時無法實作完整 createStaff (需密碼)，建議只允許更新或提供預設密碼
                 const email = document.getElementById('edit-email').value;
-                const res = await userService.createStaff({ ...data, email }, "123456"); // 預設密碼
+                const res = await userService.createStaff({ ...data, email }, "123456");
                 if(res.success) alert("✅ 新增成功 (預設密碼: 123456)");
                 else alert("新增失敗: " + res.error);
             }
