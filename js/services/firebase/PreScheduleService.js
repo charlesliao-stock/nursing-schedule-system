@@ -40,13 +40,12 @@ export class PreScheduleService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // ✅ 新增：更新設定 (不覆蓋 submissions)
+    // 更新設定 (不覆蓋 submissions)
     static async updatePreScheduleSettings(docId, data) {
         try {
             const db = firebaseService.getDb();
             const docRef = doc(db, this.COLLECTION, docId);
             
-            // 僅更新設定相關欄位
             await updateDoc(docRef, {
                 settings: data.settings,
                 staffIds: data.staffIds,
@@ -56,14 +55,39 @@ export class PreScheduleService {
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     }
-static async updateSubmissions(docId, submissions) {
-    const db = firebaseService.getDb();
-    await updateDoc(doc(db, this.COLLECTION, docId), {
-        submissions: submissions,
-        updatedAt: serverTimestamp()
-    });
-    return { success: true };
-}
+
+    // ✅ 新增：更新提交內容 (用於管理者審核修改)
+    static async updateSubmissions(docId, submissions) {
+        try {
+            const db = firebaseService.getDb();
+            const docRef = doc(db, this.COLLECTION, docId);
+            
+            await updateDoc(docRef, {
+                submissions: submissions,
+                updatedAt: serverTimestamp()
+            });
+            return { success: true };
+        } catch (e) { 
+            console.error("更新 Submissions 失敗:", e);
+            throw e; 
+        }
+    }
+
+    // ✅ 新增：更新狀態 (用於發布/關閉)
+    static async updateStatus(unitId, year, month, status) {
+        try {
+            const db = firebaseService.getDb();
+            const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
+            const docRef = doc(db, this.COLLECTION, docId);
+            
+            await updateDoc(docRef, {
+                status: status,
+                updatedAt: serverTimestamp()
+            });
+            return { success: true };
+        } catch (e) { return { success: false, error: e.message }; }
+    }
+
     static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
