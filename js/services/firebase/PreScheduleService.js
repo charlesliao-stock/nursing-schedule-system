@@ -125,7 +125,7 @@ export class PreScheduleService {
         return snap.exists() ? snap.data() : null;
     }
 
-    // ✅ 更新：新增 preferences 參數
+    // ✅ 新增 preferences 參數並寫入 DB
     static async submitPersonalWish(unitId, year, month, uid, wishes, notes, preferences = {}) {
         const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
         try {
@@ -134,7 +134,7 @@ export class PreScheduleService {
             await updateDoc(doc(db, this.COLLECTION, docId), {
                 [`${updatePath}.wishes`]: wishes,
                 [`${updatePath}.notes`]: notes,
-                [`${updatePath}.preferences`]: preferences, // 新增偏好
+                [`${updatePath}.preferences`]: preferences, // 寫入偏好
                 [`${updatePath}.submitted`]: true,
                 [`${updatePath}.submittedAt`]: serverTimestamp()
             });
