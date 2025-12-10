@@ -1,20 +1,18 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { UnitListPage } from "../modules/system/UnitListPage.js";
-import { UnitEditPage } from "../modules/system/UnitEditPage.js";
-// ✅ 新增：系統設定頁面 (解決 404 問題)
+import { UnitEditPage } from "../modules/system/UnitEditPage.js"; // 雖已整合進List，保留以防萬一
 import { SystemSettingsPage } from "../modules/system/SystemSettingsPage.js";
 
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
 import { RuleSettings } from "../modules/settings/RuleSettings.js";
-// ✅ 新增：組別設定頁面
 import { GroupSettingsPage } from "../modules/unit/GroupSettingsPage.js";
 
+// ✅ 排班相關更新
+import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js"; 
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
-// 若您還沒有 MySchedulePage，請保持註解或移除
-// import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
 import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
 import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
 
@@ -33,32 +31,31 @@ import { authService } from "../services/firebase/AuthService.js";
 
 class Router {
     constructor() {
-        // 定義路由表
-        // 注意：除了 loginPage 是實體外，其餘建議存 Class 參照，由 handleRoute 動態 new 出來
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
             
-            // Dashboard (由 handleRoute 動態判斷角色)
+            // Dashboard
             '/dashboard': 'DASHBOARD_HANDLER', 
 
-            // System (系統管理員)
+            // System
             '/system/units/list': UnitListPage,
             '/system/units/create': UnitCreatePage,
-            '/system/settings': SystemSettingsPage, // ✅ 系統設定
+            '/system/settings': SystemSettingsPage,
 
-            // Unit (單位管理)
+            // Unit
             '/unit/staff/list': StaffListPage,
             '/unit/staff/create': StaffCreatePage,
             '/unit/settings/shifts': ShiftSettingsPage,
             '/unit/settings/rules': RuleSettings,
-            '/unit/settings/groups': GroupSettingsPage, // ✅ 組別設定
+            '/unit/settings/groups': GroupSettingsPage,
 
-            // Schedule (排班相關)
-            '/schedule/manual': SchedulePage,
+            // ✅ Schedule (更新)
+            '/schedule/list': ScheduleListPage, // 排班作業入口 (清單)
+            '/schedule/edit': SchedulePage,     // 排班操作介面 (帶參數)
+            
             '/pre-schedule/manage': PreScheduleManagePage,
             '/pre-schedule/submit': PreScheduleSubmitPage,
-            // '/schedule/my': MySchedulePage,
 
             // Swap & Stats
             '/swaps/review': SwapReviewPage,
@@ -70,20 +67,19 @@ class Router {
         this.appElement = document.getElementById('app');
         this.currentLayout = null; 
 
-        // 綁定路由事件
         window.addEventListener('hashchange', () => this.handleRoute());
         window.addEventListener('load', () => this.handleRoute());
     }
 
     async handleRoute() {
         let path = window.location.hash.slice(1) || '/';
-        // 移除 query string (例如 ?id=123)
-        path = path.split('?')[0];
+        // 處理 Query String (如 /schedule/edit?id=123)
+        const purePath = path.split('?')[0]; 
         
-        if (path === '') path = '/';
+        if (purePath === '') path = '/';
         
-        // 1. 特殊處理登入頁 (不使用 MainLayout)
-        if (path === '/' || path === '/login') {
+        // 1. 登入頁特殊處理
+        if (purePath === '/' || purePath === '/login') {
             this.currentLayout = null;
             this.appElement.innerHTML = await loginPage.render();
             if (loginPage.afterRender) loginPage.afterRender();
@@ -99,7 +95,7 @@ class Router {
             return;
         }
 
-        // 3. 載入 Layout (若使用者切換，Layout 重繪)
+        // 3. 載入 Layout
         if (!this.currentLayout || (profile && this.currentLayout.user !== profile)) {
             const userToPass = profile || currentUser || { name: '載入中...', role: 'guest' };
             this.currentLayout = new MainLayout(userToPass);
@@ -108,28 +104,22 @@ class Router {
         }
 
         // 4. 路由解析
-        let PageClassOrInstance = this.routes[path];
+        let PageClassOrInstance = this.routes[purePath];
         let pageInstance = null;
 
-        // A. 處理 Dashboard 分流
-        if (path === '/dashboard' || PageClassOrInstance === 'DASHBOARD_HANDLER') {
+        if (purePath === '/dashboard' || PageClassOrInstance === 'DASHBOARD_HANDLER') {
             const role = currentUser.role;
             if (role === 'system_admin') pageInstance = new SystemAdminDashboard(currentUser);
             else if (role === 'unit_manager' || role === 'unit_scheduler') pageInstance = new UnitManagerDashboard(currentUser);
             else pageInstance = new UserDashboard(currentUser);
         }
-        // B. 處理動態路由 (例如編輯單位)
-        else if (path.startsWith('/system/units/edit/')) {
-            pageInstance = new UnitEditPage(); // 內部會自己抓 ID
+        else if (purePath.startsWith('/system/units/edit/')) {
+            pageInstance = new UnitEditPage();
         }
-        // C. 處理一般頁面
         else if (PageClassOrInstance) {
-            // 判斷是 Class 還是已存在的實體
             if (typeof PageClassOrInstance === 'function' && /^\s*class\s+/.test(PageClassOrInstance.toString())) {
-                // 如果是 Class，每次都 new 一個新的，確保狀態重置
                 pageInstance = new PageClassOrInstance();
             } else {
-                // 如果是實體 (例如 loginPage)，直接使用
                 pageInstance = PageClassOrInstance;
             }
         }
@@ -138,19 +128,16 @@ class Router {
         const viewContainer = document.getElementById('main-view');
 
         if (pageInstance && viewContainer) {
-            // 更新 Sidebar 的 Active 狀態
-            let menuPath = path;
-            if (path.startsWith('/system/units/edit/')) menuPath = '/system/units/list';
+            // 更新 Sidebar Active 狀態
+            let menuPath = purePath;
+            // 特殊映射：編輯頁對應到列表頁的選單
+            if (purePath === '/schedule/edit') menuPath = '/schedule/list';
             if (this.currentLayout) this.currentLayout.updateActiveMenu(menuPath);
 
             try {
-                // 注入 User 資訊給頁面使用
-                if (pageInstance) {
-                    pageInstance.user = currentUser;
-                }
+                if (pageInstance) pageInstance.user = currentUser;
 
                 let content;
-                // 支援非同步 Render
                 if (pageInstance.render.constructor.name === 'AsyncFunction') {
                     content = await pageInstance.render();
                 } else {
@@ -158,8 +145,6 @@ class Router {
                 }
                 
                 viewContainer.innerHTML = content;
-                
-                // 執行 DOM 載入後邏輯
                 if (pageInstance.afterRender) await pageInstance.afterRender();
 
             } catch (error) {
@@ -167,7 +152,6 @@ class Router {
                 viewContainer.innerHTML = `<div class="alert alert-danger m-4">頁面載入錯誤: ${error.message}</div>`;
             }
         } else {
-             // 404 處理
              if(viewContainer) viewContainer.innerHTML = `
                 <div class="text-center p-5 text-muted">
                     <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
