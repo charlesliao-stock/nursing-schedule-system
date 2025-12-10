@@ -56,7 +56,14 @@ export class PreScheduleService {
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     }
-
+static async updateSubmissions(docId, submissions) {
+    const db = firebaseService.getDb();
+    await updateDoc(doc(db, this.COLLECTION, docId), {
+        submissions: submissions,
+        updatedAt: serverTimestamp()
+    });
+    return { success: true };
+}
     static async getPreSchedulesList(unitId) {
         try {
             const db = firebaseService.getDb();
