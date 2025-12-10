@@ -17,7 +17,15 @@ export class PreScheduleService {
             return snap.exists();
         } catch (e) { return false; }
     }
-
+// js/services/firebase/PreScheduleService.js
+static async updateSubmissions(docId, submissions) {
+    const db = firebaseService.getDb();
+    await updateDoc(doc(db, this.COLLECTION, docId), {
+        submissions: submissions,
+        updatedAt: serverTimestamp()
+    });
+    return { success: true };
+}
     // 建立 (初始化 submissions)
     static async createPreSchedule(data) {
         try {
