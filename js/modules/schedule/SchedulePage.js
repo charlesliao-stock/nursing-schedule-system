@@ -56,7 +56,7 @@ export class SchedulePage {
 
                     <div class="d-flex gap-2">
                         <button id="btn-auto-schedule" class="btn btn-primary shadow-sm" style="background-color: #6366f1; border:none;">
-                            <i class="fas fa-magic"></i> 智慧排班 (AI)
+                            <i class="fas fa-magic"></i> 智慧排班 (多版本)
                         </button>
                         
                         <button id="btn-show-stats" class="btn btn-info text-white shadow-sm btn-sm">
@@ -76,15 +76,23 @@ export class SchedulePage {
                 <div id="schedule-grid-container" class="schedule-grid-wrapper border rounded"></div>
 
                 <div class="modal fade" id="versions-modal" tabindex="-1">
-                    <div class="modal-dialog modal-lg">
+                    <div class="modal-dialog modal-xl">
                         <div class="modal-content">
                             <div class="modal-header bg-gradient-primary text-white" style="background: linear-gradient(45deg, #6366f1, #8b5cf6);">
-                                <h5 class="modal-title"><i class="fas fa-robot"></i> AI 排班結果選擇</h5>
+                                <h5 class="modal-title"><i class="fas fa-robot"></i> AI 排班結果預覽與選擇</h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
-                            <div class="modal-body">
-                                <p class="text-muted small">系統已生成 3 種排班方案，請選擇一個最適合的版本套用。</p>
-                                <div class="row" id="versions-container"></div>
+                            <div class="modal-body p-0">
+                                <ul class="nav nav-tabs nav-fill bg-light" id="versionTabs" role="tablist">
+                                    <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#v1">版本 1</button></li>
+                                    <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#v2">版本 2</button></li>
+                                    <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#v3">版本 3</button></li>
+                                </ul>
+                                <div class="tab-content" id="versionTabsContent">
+                                    <div class="tab-pane fade show active" id="v1"></div>
+                                    <div class="tab-pane fade" id="v2"></div>
+                                    <div class="tab-pane fade" id="v3"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -96,7 +104,6 @@ export class SchedulePage {
     async afterRender() {
         this.versionsModal = new bootstrap.Modal(document.getElementById('versions-modal'));
         
-        // 綁定按鈕
         document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runMultiVersionAI());
         document.getElementById('btn-clear').addEventListener('click', () => this.clearSchedule());
         document.getElementById('btn-show-stats').addEventListener('click', () => this.showStatistics());
@@ -134,7 +141,6 @@ export class SchedulePage {
         container.innerHTML = '<div class="text-center p-5">資料載入中...</div>';
 
         try {
-            // 平行載入
             const [unit, staffList, schedule] = await Promise.all([
                 UnitService.getUnitById(this.state.currentUnitId),
                 userService.getUnitStaff(this.state.currentUnitId),
@@ -145,7 +151,6 @@ export class SchedulePage {
             this.state.staffList = staffList;
             
             if (!schedule) {
-                // 初始化空班表
                 const staffIds = staffList.map(s => s.id);
                 this.state.scheduleData = {
                     unitId: this.state.currentUnitId,
@@ -173,17 +178,36 @@ export class SchedulePage {
 
     renderGrid() {
         const container = document.getElementById('schedule-grid-container');
-        const { year, month, daysInMonth, staffList, scheduleData, unitSettings } = this.state;
+        // 主畫面渲染邏輯
+        container.innerHTML = this.generateTableHtml(this.state.scheduleData.assignments, true);
+        
+        // 綁定點擊事件 (僅主畫面需要)
+        const cells = container.querySelectorAll('.shift-cell');
+        const shiftDefs = this.state.unitSettings?.settings?.shifts || [];
+        cells.forEach(cell => {
+            cell.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openShiftMenu(e.currentTarget, shiftDefs);
+            });
+        });
+    }
+
+    // ✅ 抽取共用 Table 生成邏輯 (供主畫面與 Modal 預覽使用)
+    generateTableHtml(assignments, isInteractive) {
+        const { year, month, daysInMonth, staffList, unitSettings } = this.state;
         const shiftDefs = unitSettings?.settings?.shifts || [];
         
+        // 驗證規則 (僅為了顯示紅框)
         const rules = unitSettings?.rules || { constraints: {} }; 
-        const validation = RuleEngine.validateAll(scheduleData, daysInMonth, staffList, unitSettings, rules);
+        // 構造臨時的 scheduleData 物件供 RuleEngine 使用
+        const tempSchedule = { year, month, assignments };
+        const validation = RuleEngine.validateAll(tempSchedule, daysInMonth, staffList, unitSettings, rules);
         const { staffReport, coverageErrors } = validation;
 
         const shiftMap = {};
         shiftDefs.forEach(s => shiftMap[s.code] = s);
         shiftMap['OFF'] = { color: '#e5e7eb', name: '休' };
-        shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' }; // 紫色顯示
+        shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' }; 
 
         let headerHtml = '<thead><tr><th class="sticky-col bg-light" style="min-width:120px; z-index:20;">人員 / 日期</th>';
         for (let d = 1; d <= daysInMonth; d++) {
@@ -192,14 +216,13 @@ export class SchedulePage {
             const weekStr = ['日','一','二','三','四','五','六'][dateObj.getDay()];
             let thClass = isWeekend ? 'text-danger' : '';
             if (coverageErrors && coverageErrors[d]) thClass += ' bg-warning'; 
-            
             headerHtml += `<th class="${thClass}" style="min-width:40px;">${d}<br><span style="font-size:0.8em">${weekStr}</span></th>`;
         }
         headerHtml += '</tr></thead>';
 
         let bodyHtml = '<tbody>';
         staffList.forEach(staff => {
-            const assignments = scheduleData.assignments[staff.id] || {};
+            const staffAssignments = assignments[staff.id] || {};
             const staffErrors = staffReport[staff.id]?.errors || {};
 
             bodyHtml += `<tr>
@@ -209,8 +232,7 @@ export class SchedulePage {
                 </td>`;
 
             for (let d = 1; d <= daysInMonth; d++) {
-                const code = assignments[d] || '';
-                // 顏色處理
+                const code = staffAssignments[d] || '';
                 let style = '';
                 if(code === 'M_OFF') {
                     style = 'background-color:#6f42c1; color:white;';
@@ -221,12 +243,16 @@ export class SchedulePage {
                 const errorMsg = staffErrors[d];
                 const borderStyle = errorMsg ? 'border: 2px solid red !important;' : '';
                 const title = errorMsg ? `title="${errorMsg}"` : '';
+                
+                // 若為互動模式，加入 class 與 data attr
+                const cellClass = isInteractive ? 'shift-cell' : ''; 
+                const cursor = isInteractive ? 'cursor:pointer;' : '';
 
                 bodyHtml += `
-                    <td class="shift-cell" 
+                    <td class="${cellClass}" 
                         data-staff-id="${staff.id}" 
                         data-day="${d}" 
-                        style="cursor:pointer; ${style}; ${borderStyle}"
+                        style="${cursor} ${style}; ${borderStyle}"
                         ${title}>
                         ${code === 'M_OFF' ? 'OFF' : code}
                     </td>`;
@@ -235,15 +261,7 @@ export class SchedulePage {
         });
         bodyHtml += '</tbody>';
 
-        container.innerHTML = `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
-
-        const cells = container.querySelectorAll('.shift-cell');
-        cells.forEach(cell => {
-            cell.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.openShiftMenu(e.currentTarget, shiftDefs);
-            });
-        });
+        return `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
     }
 
     openShiftMenu(targetCell, availableShifts) {
@@ -288,7 +306,7 @@ export class SchedulePage {
         }
         this.state.scheduleData.assignments[staffId][day] = shiftCode;
 
-        this.renderGrid(); // Optimistic Update
+        this.renderGrid();
 
         try {
             await ScheduleService.updateShift(
@@ -306,7 +324,7 @@ export class SchedulePage {
     }
 
     // =========================================================
-    //  多版本 AI 排班 (Req 6)
+    //  多版本 AI 排班
     // =========================================================
     async runMultiVersionAI() {
         if (!confirm("確定執行智慧排班？\n這將計算 3 個版本供您選擇。")) return;
@@ -371,31 +389,36 @@ export class SchedulePage {
         };
     }
 
+    // ✅ 渲染版本選擇 Modal (含 Grid 預覽)
     renderVersionsModal() {
-        const container = document.getElementById('versions-container');
-        container.innerHTML = this.generatedVersions.map(v => `
-            <div class="col-md-4">
-                <div class="card h-100 border-primary version-card hover-shadow">
-                    <div class="card-header bg-light fw-bold text-center">版本 ${v.id}</div>
-                    <div class="card-body">
-                        <ul class="list-unstyled small mb-3">
-                            <li class="d-flex justify-content-between">
-                                <span>總班數標準差:</span> <strong class="text-primary">${v.stats.sdTotal}</strong>
-                            </li>
-                            <li class="d-flex justify-content-between">
-                                <span>夜班標準差:</span> <strong class="text-warning">${v.stats.sdNight}</strong>
-                            </li>
-                            <li class="d-flex justify-content-between mt-2">
-                                <span>未滿警告:</span> <span class="badge ${v.logs.length>0?'bg-danger':'bg-success'}">${v.logs.length}</span>
-                            </li>
-                        </ul>
-                        <button class="btn btn-outline-primary w-100" onclick="window.routerPage.applyVersion(${v.id-1})">
-                            套用此版本
-                        </button>
+        this.generatedVersions.forEach((v, idx) => {
+            const container = document.getElementById(`v${v.id}`);
+            if(!container) return;
+
+            // 1. 產生評分摘要
+            const summaryHtml = `
+                <div class="alert alert-info d-flex justify-content-between align-items-center mb-2 mt-2">
+                    <div>
+                        <span class="me-3"><strong>總班標準差:</strong> ${v.stats.sdTotal}</span>
+                        <span class="me-3"><strong>夜班標準差:</strong> ${v.stats.sdNight}</span>
+                        <span><strong>未滿足警告:</strong> ${v.logs.length}</span>
                     </div>
+                    <button class="btn btn-primary btn-sm" onclick="window.routerPage.applyVersion(${idx})">
+                        <i class="fas fa-check"></i> 套用此版本
+                    </button>
                 </div>
-            </div>
-        `).join('');
+            `;
+
+            // 2. 產生預覽 Grid (使用共用函式，設為 false 不可互動)
+            const gridHtml = `
+                <div class="schedule-grid-wrapper border rounded" style="max-height: 60vh; overflow: auto;">
+                    ${this.generateTableHtml(v.assignments, false)}
+                </div>
+            `;
+
+            container.innerHTML = summaryHtml + gridHtml;
+        });
+        
         window.routerPage = this;
     }
 
@@ -408,10 +431,10 @@ export class SchedulePage {
         );
         
         this.versionsModal.hide();
-        this.renderGrid();
+        this.renderGrid(); // 更新主畫面
         
         if (selected.logs.length > 0) {
-            alert(`已套用版本 ${selected.id}。\n注意：有 ${selected.logs.length} 處人力不足，請手動調整。`);
+            alert(`已套用版本 ${selected.id}。\n(尚有部分人力不足，請手動調整)`);
         } else {
             alert(`✅ 已成功套用版本 ${selected.id}。`);
         }
@@ -421,15 +444,12 @@ export class SchedulePage {
         if(!confirm("確定清除？\n這將刪除所有已排的班別，只保留「預班(OFF/M_OFF)」。")) return;
         
         const assignments = this.state.scheduleData.assignments;
-        let count = 0;
         
         Object.keys(assignments).forEach(uid => {
             Object.keys(assignments[uid]).forEach(day => {
                 const code = assignments[uid][day];
-                // ✅ 保留 OFF 與 M_OFF
                 if (code && code !== 'OFF' && code !== 'M_OFF') {
                     delete assignments[uid][day];
-                    count++;
                 }
             });
         });
@@ -439,13 +459,12 @@ export class SchedulePage {
         );
         
         this.renderGrid();
-        alert(`已清除 ${count} 格班別，保留預班設定。`);
+        alert(`已清除所有排班，保留預班設定。`);
     }
 
     showStatistics() {
         const stats = this.calculateStats(this.state.scheduleData.assignments);
-        alert(`當前評分：\n總班數 SD: ${stats.sdTotal}\n夜班 SD: ${stats.sdNight}`);
-        // 也可以用 Modal 顯示更詳細的
+        alert(`當前評分：\n總班數 SD: ${stats.sdTotal}\n夜班 SD: ${stats.sdNight}\n(數值越低越平均)`);
     }
 
     async togglePublish() {
