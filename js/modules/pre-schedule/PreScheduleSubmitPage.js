@@ -18,7 +18,7 @@ export class PreScheduleSubmitPage {
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
-        this.myPreferences = {}; // ✅ 儲存偏好
+        this.myPreferences = {}; // 儲存偏好
         this.unitAggregate = {}; 
         this.unitNames = {}; 
         this.isReadOnly = false; 
@@ -127,22 +127,22 @@ export class PreScheduleSubmitPage {
         this.currentUser = authService.getProfile();
         if(!this.currentUser) return;
 
-        // 1. 處理「優先班別」只能選 2 個的邏輯
+        // 優先班別最多選 2 個
         const prefChecks = document.querySelectorAll('.pref-check');
         prefChecks.forEach(chk => {
             chk.addEventListener('change', () => {
                 const checked = document.querySelectorAll('.pref-check:checked');
                 if (checked.length > 2) {
-                    chk.checked = false; // 取消當前勾選
+                    chk.checked = false; 
                     alert("優先班別最多只能選擇 2 項");
                 }
             });
         });
 
-        // 2. 載入資料
         try {
+            // 讀取完整 User 資料以取得 constraints
             const userFull = await userService.getUserData(this.currentUser.uid);
-            this.currentUser = userFull; // 更新為完整資料 (含 constraints)
+            this.currentUser = userFull; 
             this.currentUnit = await UnitService.getUnitById(this.currentUser.unitId);
             
             // 顯示/隱藏包班選項
@@ -183,7 +183,6 @@ export class PreScheduleSubmitPage {
             return `<option value="${index}">${label}</option>`;
         }).join('');
 
-        // 自動選取第一個開放的
         const openIdx = list.findIndex(s => s.status === 'open');
         if(openIdx >= 0) {
             select.selectedIndex = openIdx;
@@ -201,12 +200,12 @@ export class PreScheduleSubmitPage {
         document.getElementById('limit-off').textContent = schedule.settings.maxOffDays;
         document.getElementById('limit-display').textContent = schedule.settings.maxOffDays;
 
-        // 讀取我的提交
+        // 讀取提交資料
         const mySub = (schedule.submissions && schedule.submissions[this.currentUser.uid]) || {};
         this.myWishes = mySub.wishes || {};
         document.getElementById('wish-notes').value = mySub.notes || '';
 
-        // ✅ 回填偏好設定
+        // 回填偏好設定
         const myPref = mySub.preferences || {};
         // 包班
         if (myPref.batch) {
@@ -224,10 +223,8 @@ export class PreScheduleSubmitPage {
             });
         }
 
-        // 計算每日統計
         this.calculateAggregate(schedule);
 
-        // 唯讀判斷
         const today = new Date().toISOString().split('T')[0];
         this.isReadOnly = (schedule.status !== 'open' || today < schedule.settings.openDate || today > schedule.settings.closeDate);
         
@@ -276,7 +273,6 @@ export class PreScheduleSubmitPage {
         const daysInMonth = new Date(this.currentSchedule.year, this.currentSchedule.month, 0).getDate();
         const firstDay = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, 1).getDay();
 
-        // 星期表頭
         const weeks = ['日','一','二','三','四','五','六'];
         weeks.forEach(w => {
             const div = document.createElement('div');
@@ -285,12 +281,10 @@ export class PreScheduleSubmitPage {
             container.appendChild(div);
         });
 
-        // 空白格
         for(let i=0; i<firstDay; i++) {
             container.appendChild(document.createElement('div'));
         }
 
-        // 日期格
         for(let d=1; d<=daysInMonth; d++) {
             const cell = document.createElement('div');
             cell.className = 'calendar-day';
@@ -299,22 +293,19 @@ export class PreScheduleSubmitPage {
             const isWeekend = date.getDay() === 0 || date.getDay() === 6;
             if(isWeekend) cell.classList.add('weekend');
 
-            // 檢查是否已選
             const myType = this.myWishes[d];
             if(myType === 'OFF') {
                 cell.classList.add('selected');
                 cell.innerHTML = `<div class="date-num">${d}</div><div class="shift-tag">OFF</div>`;
-            } else if (['白','小','大','x白','x小','x大'].includes(myType)) { // 支援其他預班
+            } else if (['白','小','大','x白','x小','x大'].includes(myType)) { 
                 cell.classList.add('selected-shift'); 
                 cell.innerHTML = `<div class="date-num">${d}</div><div class="shift-tag" style="background:#666;">${myType}</div>`;
             } else {
                 cell.innerHTML = `<div class="date-num">${d}</div>`;
             }
 
-            // 顯示統計 (若有開啟)
             if(this.unitAggregate[d]) {
                 const count = this.unitAggregate[d];
-                // 這裡可以加入 daily limit 檢查顯示紅框，此處略
                 const badge = document.createElement('div');
                 badge.className = 'agg-count';
                 badge.textContent = `${count}人休`;
@@ -340,7 +331,6 @@ export class PreScheduleSubmitPage {
             cell.classList.remove('selected');
             cell.querySelector('.shift-tag')?.remove();
         } else {
-            // 檢查上限
             const currentOff = Object.values(this.myWishes).filter(v => v === 'OFF').length;
             const maxOff = parseInt(this.currentSchedule.settings.maxOffDays);
             
@@ -358,7 +348,6 @@ export class PreScheduleSubmitPage {
     updateCounts() {
         const total = Object.values(this.myWishes).filter(v => v === 'OFF').length;
         let holiday = 0;
-        
         Object.keys(this.myWishes).forEach(d => {
             if(this.myWishes[d] !== 'OFF') return;
             const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, parseInt(d));
@@ -383,7 +372,7 @@ export class PreScheduleSubmitPage {
         btn.disabled = true;
         btn.innerHTML = '提交中...';
 
-        // ✅ 收集偏好
+        // 收集偏好
         const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
         const priorities = [];
         document.querySelectorAll('.pref-check:checked').forEach(c => priorities.push(c.value));
@@ -401,12 +390,11 @@ export class PreScheduleSubmitPage {
                 this.currentUser.uid,
                 this.myWishes,
                 document.getElementById('wish-notes').value,
-                preferences // ✅ 傳入偏好
+                preferences
             );
 
             if (res.success) {
                 alert('✅ 提交成功！');
-                // 重新載入以確認狀態
                 this.loadScheduleData(this.preSchedulesList.indexOf(this.currentSchedule));
             } else {
                 throw new Error(res.error);
