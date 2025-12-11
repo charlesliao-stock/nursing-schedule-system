@@ -1,7 +1,7 @@
 import { loginPage } from "../modules/auth/LoginPage.js";
 import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
 import { UnitListPage } from "../modules/system/UnitListPage.js";
-import { UnitEditPage } from "../modules/system/UnitEditPage.js"; // 雖已整合進List，保留以防萬一
+import { UnitEditPage } from "../modules/system/UnitEditPage.js";
 import { SystemSettingsPage } from "../modules/system/SystemSettingsPage.js";
 
 import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
@@ -10,9 +10,11 @@ import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
 import { RuleSettings } from "../modules/settings/RuleSettings.js";
 import { GroupSettingsPage } from "../modules/unit/GroupSettingsPage.js";
 
-// ✅ 排班相關更新
 import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js"; 
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
+// ✅ 新增：我的班表頁面
+import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
+
 import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
 import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
 
@@ -21,7 +23,6 @@ import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
 import { PersonalStatsPage } from "../modules/statistics/PersonalStatsPage.js";
 import { UnitStatsPage } from "../modules/statistics/UnitStatsPage.js";
 
-// Dashboards
 import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
 import { UnitManagerDashboard } from "../modules/dashboard/UnitManagerDashboard.js";
 import { UserDashboard } from "../modules/dashboard/UserDashboard.js";
@@ -34,30 +35,25 @@ class Router {
         this.routes = {
             '/': loginPage,
             '/login': loginPage,
-            
-            // Dashboard
             '/dashboard': 'DASHBOARD_HANDLER', 
 
-            // System
             '/system/units/list': UnitListPage,
             '/system/units/create': UnitCreatePage,
             '/system/settings': SystemSettingsPage,
 
-            // Unit
             '/unit/staff/list': StaffListPage,
             '/unit/staff/create': StaffCreatePage,
             '/unit/settings/shifts': ShiftSettingsPage,
             '/unit/settings/rules': RuleSettings,
             '/unit/settings/groups': GroupSettingsPage,
 
-            // ✅ Schedule (更新)
-            '/schedule/list': ScheduleListPage, // 排班作業入口 (清單)
-            '/schedule/edit': SchedulePage,     // 排班操作介面 (帶參數)
+            '/schedule/list': ScheduleListPage,
+            '/schedule/edit': SchedulePage,
+            '/schedule/my': MySchedulePage, // ✅ 註冊路由
             
             '/pre-schedule/manage': PreScheduleManagePage,
             '/pre-schedule/submit': PreScheduleSubmitPage,
 
-            // Swap & Stats
             '/swaps/review': SwapReviewPage,
             '/swaps/apply': SwapApplyPage,
             '/stats/unit': UnitStatsPage,
@@ -73,12 +69,10 @@ class Router {
 
     async handleRoute() {
         let path = window.location.hash.slice(1) || '/';
-        // 處理 Query String (如 /schedule/edit?id=123)
         const purePath = path.split('?')[0]; 
         
         if (purePath === '') path = '/';
         
-        // 1. 登入頁特殊處理
         if (purePath === '/' || purePath === '/login') {
             this.currentLayout = null;
             this.appElement.innerHTML = await loginPage.render();
@@ -86,7 +80,6 @@ class Router {
             return;
         }
 
-        // 2. 權限檢查
         const profile = authService.getProfile();
         const currentUser = profile || authService.getCurrentUser();
 
@@ -95,7 +88,6 @@ class Router {
             return;
         }
 
-        // 3. 載入 Layout
         if (!this.currentLayout || (profile && this.currentLayout.user !== profile)) {
             const userToPass = profile || currentUser || { name: '載入中...', role: 'guest' };
             this.currentLayout = new MainLayout(userToPass);
@@ -103,7 +95,6 @@ class Router {
             this.currentLayout.afterRender(); 
         }
 
-        // 4. 路由解析
         let PageClassOrInstance = this.routes[purePath];
         let pageInstance = null;
 
@@ -124,13 +115,10 @@ class Router {
             }
         }
 
-        // 5. 渲染頁面
         const viewContainer = document.getElementById('main-view');
 
         if (pageInstance && viewContainer) {
-            // 更新 Sidebar Active 狀態
             let menuPath = purePath;
-            // 特殊映射：編輯頁對應到列表頁的選單
             if (purePath === '/schedule/edit') menuPath = '/schedule/list';
             if (this.currentLayout) this.currentLayout.updateActiveMenu(menuPath);
 
