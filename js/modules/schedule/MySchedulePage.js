@@ -1,63 +1,45 @@
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
-import { userService } from "../../services/firebase/UserService.js";
 
 export class MySchedulePage {
     constructor() {
         this.year = new Date().getFullYear();
         this.month = new Date().getMonth() + 1;
         this.currentUser = null;
-        this.targetUnitId = null;
     }
 
     async render() {
-        // 取得使用者單位，做為預設
-        const profile = authService.getProfile();
-        this.currentUser = profile;
-        if (!this.targetUnitId && profile) this.targetUnitId = profile.unitId;
-
-        // 單位選單 (供查詢被排班的其他單位)
-        const units = await UnitService.getAllUnits();
-        const unitOptions = units.map(u => 
-            `<option value="${u.unitId}" ${u.unitId === this.targetUnitId ? 'selected' : ''}>${u.unitName}</option>`
-        ).join('');
-
+        this.currentUser = authService.getProfile();
         return `
-            <div class="container-fluid">
+            <div class="container-fluid mt-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-calendar-check"></i> 我的班表</h2>
+                    <h3 class="text-gray-800 fw-bold"><i class="fas fa-calendar-check"></i> 我的班表</h3>
                 </div>
 
                 <div class="card shadow mb-4">
                     <div class="card-body bg-light">
-                        <div class="d-flex flex-wrap gap-3 align-items-center">
-                            <div>
-                                <label class="fw-bold">單位：</label>
-                                <select id="my-unit-select" class="form-select d-inline-block w-auto">${unitOptions}</select>
-                            </div>
-                            <div>
-                                <label class="fw-bold">月份：</label>
-                                <input type="month" id="my-month-picker" class="form-control d-inline-block w-auto" 
-                                       value="${this.year}-${String(this.month).padStart(2,'0')}">
-                            </div>
-                            <button id="btn-query-my" class="btn btn-primary"><i class="fas fa-search"></i> 查詢</button>
+                        <div class="d-flex align-items-center gap-3">
+                            <label class="fw-bold">月份：</label>
+                            <input type="month" id="my-month" class="form-control w-auto" 
+                                   value="${this.year}-${String(this.month).padStart(2,'0')}">
+                            <button id="btn-query" class="btn btn-primary">查詢</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="card shadow">
-                    <div class="card-header py-3">
-                        <h6 class="m-0 font-weight-bold text-primary">班表內容</h6>
-                    </div>
-                    <div class="card-body">
+                    <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-bordered table-hover text-nowrap text-center" id="my-schedule-table">
-                                <thead class="table-light">
-                                    <tr id="my-table-head"></tr>
+                            <table class="table table-bordered text-center mb-0" id="my-schedule-table">
+                                <thead class="table-primary">
+                                    <tr id="table-head-date"></tr>
+                                    <tr id="table-head-week"></tr>
                                 </thead>
-                                <tbody id="my-table-body">
-                                    <tr><td class="p-5 text-muted">載入中...</td></tr>
+                                <tbody>
+                                    <tr id="table-body-shift">
+                                        <td colspan="31" class="p-5 text-muted">請點選查詢</td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -68,65 +50,69 @@ export class MySchedulePage {
     }
 
     async afterRender() {
-        document.getElementById('btn-query-my').addEventListener('click', () => this.loadData());
-        this.loadData();
+        document.getElementById('btn-query').addEventListener('click', () => this.loadSchedule());
+        
+        // 自動載入當月
+        if(this.currentUser && this.currentUser.unitId) {
+            this.loadSchedule();
+        }
     }
 
-    async loadData() {
-        const unitId = document.getElementById('my-unit-select').value;
-        const [y, m] = document.getElementById('my-month-picker').value.split('-');
-        this.targetUnitId = unitId;
+    async loadSchedule() {
+        const val = document.getElementById('my-month').value;
+        if(!val) return;
+        const [y, m] = val.split('-');
         this.year = parseInt(y);
         this.month = parseInt(m);
 
-        const thead = document.getElementById('my-table-head');
-        const tbody = document.getElementById('my-table-body');
-        
-        // 1. 產生表頭 (日期)
         const daysInMonth = new Date(this.year, this.month, 0).getDate();
-        let headHtml = '<th class="bg-light sticky-col" style="min-width:100px;">人員</th>';
-        for (let d = 1; d <= daysInMonth; d++) {
-            const date = new Date(this.year, this.month - 1, d);
-            const weekDay = ['日','一','二','三','四','五','六'][date.getDay()];
-            const color = (date.getDay() === 0 || date.getDay() === 6) ? 'text-danger' : '';
-            headHtml += `<th class="${color}">${d}<br><small>${weekDay}</small></th>`;
+        
+        // 1. 渲染表頭
+        let headDate = '';
+        let headWeek = '';
+        const weeks = ['日','一','二','三','四','五','六'];
+        
+        for(let d=1; d<=daysInMonth; d++) {
+            const date = new Date(this.year, this.month-1, d);
+            const w = date.getDay();
+            const isW = w===0 || w===6;
+            headDate += `<th class="${isW?'text-danger':''}">${d}</th>`;
+            headWeek += `<th class="${isW?'text-danger':''}" style="font-size:0.8rem;">${weeks[w]}</th>`;
         }
-        thead.innerHTML = headHtml;
+        document.getElementById('table-head-date').innerHTML = headDate;
+        document.getElementById('table-head-week').innerHTML = headWeek;
 
-        // 2. 載入資料
-        const schedule = await ScheduleService.getSchedule(unitId, this.year, this.month);
-        if (!schedule || !schedule.assignments) {
-            tbody.innerHTML = `<tr><td colspan="${daysInMonth+1}" class="p-5 text-muted">尚無班表資料</td></tr>`;
+        // 2. 查詢資料
+        const unitId = this.currentUser.unitId;
+        if(!unitId) {
+            document.getElementById('table-body-shift').innerHTML = `<td colspan="${daysInMonth}" class="p-5 text-muted">您尚未綁定單位</td>`;
             return;
         }
 
-        // 3. 取得該單位所有人員 (為了顯示全部門的大表，讓使用者看整體)
-        // 需求：顯示的內容為當月所在的單位及班表
-        const staffList = await userService.getUnitStaff(unitId);
+        const schedule = await ScheduleService.getSchedule(unitId, this.year, this.month);
         
-        // 排序：自己排第一個
-        staffList.sort((a, b) => {
-            if (a.id === this.currentUser.uid) return -1;
-            if (b.id === this.currentUser.uid) return 1;
-            return 0;
-        });
-
+        // 3. 渲染班表
         let bodyHtml = '';
-        staffList.forEach(staff => {
-            const isMe = staff.id === this.currentUser.uid;
-            const rowClass = isMe ? 'table-warning fw-bold' : ''; // 自己那一行高亮
+        if(schedule && schedule.assignments && schedule.assignments[this.currentUser.uid]) {
+            const myShifts = schedule.assignments[this.currentUser.uid];
             
-            let rowHtml = `<tr class="${rowClass}"><td class="sticky-col text-start">${staff.name}</td>`;
-            
-            const shifts = schedule.assignments[staff.id] || {};
-            for (let d = 1; d <= daysInMonth; d++) {
-                const shift = shifts[d] || '';
-                rowHtml += `<td>${shift}</td>`;
+            for(let d=1; d<=daysInMonth; d++) {
+                const shift = myShifts[d] || '';
+                let bg = '';
+                if(shift === 'OFF' || shift === 'M_OFF') bg = 'bg-light text-muted';
+                else if(shift === 'N') bg = 'bg-dark text-white';
+                else if(shift === 'E') bg = 'bg-warning text-dark';
+                else if(shift === 'D') bg = 'bg-primary text-white';
+                
+                // M_OFF 顯示為 OFF
+                const display = shift === 'M_OFF' ? 'OFF' : shift;
+                
+                bodyHtml += `<td class="${bg} fw-bold align-middle" style="height:50px;">${display}</td>`;
             }
-            rowHtml += '</tr>';
-            bodyHtml += rowHtml;
-        });
-
-        tbody.innerHTML = bodyHtml;
+        } else {
+            bodyHtml = `<td colspan="${daysInMonth}" class="p-5 text-muted">本月尚無班表資料</td>`;
+        }
+        
+        document.getElementById('table-body-shift').innerHTML = bodyHtml;
     }
 }
