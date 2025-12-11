@@ -6,10 +6,9 @@ import { UnitService } from "../../services/firebase/UnitService.js";
 export class PreScheduleSubmitPage {
     constructor() {
         const today = new Date();
-        // 預設下下個月 (例如現在12月 -> 預排2月)
         let targetMonth = today.getMonth() + 1 + 1; 
         let targetYear = today.getFullYear();
-        if (targetMonth > 12) { targetMonth -= 12; targetYear++; }
+        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
 
         this.year = targetYear;
         this.month = targetMonth;
@@ -26,12 +25,78 @@ export class PreScheduleSubmitPage {
         
         // 模擬相關
         this.isAdminMode = false;
-        this.targetUserId = null; // 管理者正在幫誰填
+        this.targetUserId = null;
     }
 
     async render() {
-        // 先顯示基本框架
-        return `
+        // ✅ 1. 加入 CSS 樣式以修復格式跑版問題
+        const styles = `
+            <style>
+                .calendar-grid {
+                    display: grid;
+                    grid-template-columns: repeat(7, 1fr); /* 強制 7 欄 */
+                    gap: 1px;
+                    background-color: #e3e6f0;
+                    border: 1px solid #e3e6f0;
+                }
+                .calendar-header {
+                    background-color: #f8f9fc;
+                    color: #4e73df;
+                    font-weight: bold;
+                    text-align: center;
+                    padding: 10px 0;
+                }
+                .calendar-day {
+                    background-color: white;
+                    min-height: 80px; /* 增加高度 */
+                    padding: 5px;
+                    cursor: pointer;
+                    position: relative;
+                    transition: background 0.2s;
+                }
+                .calendar-day:hover {
+                    background-color: #f1f3f9;
+                }
+                .calendar-day.weekend {
+                    background-color: #fff3cd; /* 週末底色 */
+                }
+                .calendar-day.selected {
+                    background-color: #ffe5d0 !important; /* 選中底色 */
+                    border: 2px solid #fd7e14;
+                }
+                .calendar-day.selected-shift {
+                    background-color: #e2e6ea !important;
+                }
+                .calendar-day.disabled {
+                    background-color: #eaecf4;
+                    cursor: not-allowed;
+                }
+                .date-num {
+                    font-weight: bold;
+                    font-size: 1.1rem;
+                    margin-bottom: 5px;
+                }
+                .shift-tag {
+                    display: inline-block;
+                    width: 100%;
+                    text-align: center;
+                    background-color: #fd7e14;
+                    color: white;
+                    border-radius: 4px;
+                    font-size: 0.85rem;
+                    padding: 2px 0;
+                }
+                .agg-count {
+                    position: absolute;
+                    bottom: 2px;
+                    right: 5px;
+                    font-size: 0.75rem;
+                    color: #858796;
+                }
+            </style>
+        `;
+
+        const html = `
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-edit"></i> 提交預班</h3>
@@ -113,19 +178,25 @@ export class PreScheduleSubmitPage {
                                     </div>
 
                                     <div class="mb-3">
-                                        <label class="fw-bold d-block mb-2">排班偏好 (優先班別, 限選2)</label>
-                                        <div class="d-flex gap-2">
-                                            <div class="form-check">
-                                                <input class="form-check-input pref-check" type="checkbox" value="D" id="pref-d">
-                                                <label class="form-check-label" for="pref-d">白班 (D)</label>
+                                        <label class="fw-bold d-block mb-2">排班偏好 (請選擇)</label>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label class="small text-muted">偏好順序 1</label>
+                                                <select class="form-select" id="pref-1">
+                                                    <option value="">(無)</option>
+                                                    <option value="D">白班 (D)</option>
+                                                    <option value="E">小夜 (E)</option>
+                                                    <option value="N">大夜 (N)</option>
+                                                </select>
                                             </div>
-                                            <div class="form-check">
-                                                <input class="form-check-input pref-check" type="checkbox" value="E" id="pref-e">
-                                                <label class="form-check-label" for="pref-e">小夜 (E)</label>
-                                            </div>
-                                            <div class="form-check">
-                                                <input class="form-check-input pref-check" type="checkbox" value="N" id="pref-n">
-                                                <label class="form-check-label" for="pref-n">大夜 (N)</label>
+                                            <div class="col-6">
+                                                <label class="small text-muted">偏好順序 2</label>
+                                                <select class="form-select" id="pref-2">
+                                                    <option value="">(無)</option>
+                                                    <option value="D">白班 (D)</option>
+                                                    <option value="E">小夜 (E)</option>
+                                                    <option value="N">大夜 (N)</option>
+                                                </select>
                                             </div>
                                         </div>
                                     </div>
@@ -146,10 +217,11 @@ export class PreScheduleSubmitPage {
                 </div>
             </div>
         `;
+
+        return styles + html;
     }
 
     async afterRender() {
-        // Fix 1: 等待 Auth 初始化
         let retries = 0;
         while (!authService.getProfile() && retries < 10) {
             await new Promise(r => setTimeout(r, 200));
@@ -163,31 +235,20 @@ export class PreScheduleSubmitPage {
             return;
         }
 
-        // 檢查是否為系統管理員
         if (currentUserProfile.role === 'system_admin' || currentUserProfile.originalRole === 'system_admin') {
             this.isAdminMode = true;
-            this.setupAdminUI(); // 載入管理員模擬選單
+            this.setupAdminUI();
         } else {
-            // 一般使用者：直接載入自己
             await this.loadTargetUser(currentUserProfile.uid);
         }
 
-        // 綁定年份按鈕
         document.getElementById('btn-prev-year').addEventListener('click', () => { this.year--; this.updateYearDisplay(); });
         document.getElementById('btn-next-year').addEventListener('click', () => { this.year++; this.updateYearDisplay(); });
         document.getElementById('btn-load').addEventListener('click', () => this.tryLoadSchedule());
         document.getElementById('btn-submit').addEventListener('click', () => this.handleSubmit());
 
-        // 綁定 Checkbox 限制
-        document.querySelectorAll('.pref-check').forEach(chk => {
-            chk.addEventListener('change', () => {
-                if (document.querySelectorAll('.pref-check:checked').length > 2) {
-                    chk.checked = false; alert("優先班別最多只能選擇 2 項");
-                }
-            });
-        });
+        // 簡單連動：如果偏好1選了某個，偏好2可以選其他的 (這裡不做強制防呆，允許使用者隨意選)
 
-        // 預設嘗試載入
         if(!this.isAdminMode) this.tryLoadSchedule();
     }
 
@@ -195,7 +256,6 @@ export class PreScheduleSubmitPage {
         document.getElementById('display-year').textContent = this.year;
     }
 
-    // (Req 3) 管理員模擬 UI 設定
     async setupAdminUI() {
         const section = document.getElementById('admin-impersonate-section');
         section.style.display = 'block';
@@ -220,32 +280,27 @@ export class PreScheduleSubmitPage {
         });
     }
 
-    // 載入目標使用者的資料 (自己或模擬對象)
     async loadTargetUser(uid) {
         try {
             const userFull = await userService.getUserData(uid);
             if(!userFull) throw new Error("找不到使用者資料");
             
-            this.currentUser = userFull; // 更新當前操作對象
+            this.currentUser = userFull; 
             this.targetUserId = uid;
             this.currentUnit = await UnitService.getUnitById(this.currentUser.unitId);
             
-            // 更新 UI 顯示
             document.getElementById('user-name-display').textContent = this.currentUser.name;
-            document.getElementById('main-content').style.display = 'none'; // 先隱藏舊內容
+            document.getElementById('main-content').style.display = 'none';
 
-            // 處理包班顯示 (Req 2)
             if (this.currentUser.constraints?.canBatch) {
                 document.getElementById('batch-pref-section').style.display = 'block';
             } else {
                 document.getElementById('batch-pref-section').style.display = 'none';
             }
 
-            // 取得該單位人員名單 (為了 hover 顯示)
             const staff = await userService.getUnitStaff(this.currentUser.unitId);
             staff.forEach(s => this.unitStaffMap[s.uid] = s.name);
 
-            // 自動觸發讀取
             this.tryLoadSchedule();
 
         } catch(e) { 
@@ -263,7 +318,6 @@ export class PreScheduleSubmitPage {
         const m = parseInt(document.getElementById('month-select').value);
         this.month = m;
 
-        // 讀取該單位、該年月的預班表
         const schedule = await PreScheduleService.getPreSchedule(this.currentUser.unitId, this.year, this.month);
         
         if (!schedule) {
@@ -281,7 +335,6 @@ export class PreScheduleSubmitPage {
         const schedule = this.currentSchedule;
         document.getElementById('main-content').style.display = 'block';
         
-        // 狀態 Badge
         let statusBadge = '';
         if(schedule.status === 'open') statusBadge = '<span class="badge bg-success">開放中</span>';
         else if(schedule.status === 'closed') statusBadge = '<span class="badge bg-danger">已截止</span>';
@@ -293,13 +346,14 @@ export class PreScheduleSubmitPage {
         document.getElementById('limit-off').textContent = schedule.settings.maxOffDays;
         document.getElementById('limit-display').textContent = schedule.settings.maxOffDays;
 
-        // 讀取提交資料
+        // 讀取資料
         const mySub = (schedule.submissions && schedule.submissions[this.currentUser.uid]) || {};
         this.myWishes = mySub.wishes || {};
         document.getElementById('wish-notes').value = mySub.notes || '';
 
-        // 回填偏好
+        // ✅ 回填偏好設定 (包班 & 偏好1/2)
         const myPref = mySub.preferences || {};
+        
         // 包班
         if (myPref.batch) {
             const radio = document.querySelector(`input[name="batchPref"][value="${myPref.batch}"]`);
@@ -307,31 +361,25 @@ export class PreScheduleSubmitPage {
         } else {
             document.getElementById('batch-none').checked = true;
         }
-        // 優先
-        document.querySelectorAll('.pref-check').forEach(chk => chk.checked = false);
-        if (myPref.priorities && Array.isArray(myPref.priorities)) {
-            myPref.priorities.forEach(p => {
-                const chk = document.getElementById(`pref-${p.toLowerCase()}`);
-                if(chk) chk.checked = true;
-            });
-        }
+        
+        // 偏好1 & 偏好2
+        document.getElementById('pref-1').value = myPref.priority1 || '';
+        document.getElementById('pref-2').value = myPref.priority2 || '';
 
         this.calculateAggregate(schedule);
 
-        // 唯讀判斷 (管理員模擬時，無視日期限制，但這裡先照規則走，或可給特權)
         const today = new Date().toISOString().split('T')[0];
-        // 如果是 Admin 模式，則總是允許編輯 (方便測試)
         const isTimeValid = (schedule.status === 'open' && today >= schedule.settings.openDate && today <= schedule.settings.closeDate);
         this.isReadOnly = !(isTimeValid || this.isAdminMode);
         
         if (this.isReadOnly) {
             document.getElementById('btn-submit').disabled = true;
             document.getElementById('btn-submit').textContent = "唯讀模式 (非開放時間)";
-            document.querySelectorAll('input, textarea').forEach(i => i.disabled = true);
+            document.querySelectorAll('input, textarea, select').forEach(i => i.disabled = true);
         } else {
             document.getElementById('btn-submit').disabled = false;
             document.getElementById('btn-submit').innerHTML = '<i class="fas fa-paper-plane"></i> 提交預班';
-            document.querySelectorAll('input, textarea').forEach(i => i.disabled = false);
+            document.querySelectorAll('input, textarea, select').forEach(i => i.disabled = false);
         }
 
         this.renderCalendar();
@@ -452,12 +500,16 @@ export class PreScheduleSubmitPage {
         btn.disabled = true;
         btn.innerHTML = '提交中...';
 
-        // 收集偏好
+        // ✅ 收集新格式偏好
         const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
-        const priorities = [];
-        document.querySelectorAll('.pref-check:checked').forEach(c => priorities.push(c.value));
+        const pref1 = document.getElementById('pref-1').value;
+        const pref2 = document.getElementById('pref-2').value;
 
-        const preferences = { batch: batchPref, priorities: priorities };
+        const preferences = {
+            batch: batchPref,
+            priority1: pref1,
+            priority2: pref2
+        };
 
         try {
             const res = await PreScheduleService.submitPersonalWish(
