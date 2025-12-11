@@ -50,6 +50,14 @@ export class StaffCreatePage {
                                     </select>
                                 </div>
                             </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">到職日期</label>
+                                    <input type="date" class="form-control" id="hireDate">
+                                    <div class="form-text small">用於計算年資與排班品質評分</div>
+                                </div>
+                            </div>
 
                             <hr class="my-3">
 
@@ -152,12 +160,13 @@ export class StaffCreatePage {
                 title: document.getElementById('title').value,
                 unitId: document.getElementById('unitId').value,
                 email: document.getElementById('email').value.trim(),
+                // ✅ 收集到職日
+                hireDate: document.getElementById('hireDate').value || null,
                 isManager: managerCheck.checked,
                 isScheduler: schedulerCheck.checked,
-                // ✅ 更新：收集新的限制參數
                 constraints: {
                     maxConsecutive: parseInt(document.getElementById('maxConsecutive').value) || 6,
-                    maxConsecutiveNights: parseInt(document.getElementById('maxConsecutiveNights').value) || 4, // 新增
+                    maxConsecutiveNights: parseInt(document.getElementById('maxConsecutiveNights').value) || 4, 
                     canBatch: document.getElementById('canBatch').checked,
                     isPregnant: document.getElementById('isPregnant').checked
                 }
