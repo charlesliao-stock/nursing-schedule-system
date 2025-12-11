@@ -16,7 +16,6 @@ export class StaffListPage {
         this.currentUser = authService.getProfile();
         const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
         
-        // 預先載入單位選項，確保 HTML 渲染時已有資料
         let unitOptionsHtml = '<option value="">載入中...</option>';
         try {
             if (isAdmin) {
@@ -25,7 +24,6 @@ export class StaffListPage {
                 unitOptionsHtml = `<option value="">全部單位</option>` + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             } else {
                 let units = await UnitService.getUnitsByManager(this.currentUser.uid);
-                // 若管理者無管理單位但有歸屬單位，補上歸屬單位
                 if(units.length === 0 && this.currentUser.unitId) {
                     const u = await UnitService.getUnitById(this.currentUser.unitId);
                     if(u) units.push(u);
@@ -150,6 +148,12 @@ export class StaffListPage {
                                         </select>
                                     </div>
                                 </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">到職日期</label>
+                                    <input type="date" id="edit-hireDate" class="form-control">
+                                </div>
+
                                 <hr>
                                 <div class="mb-3">
                                     <label class="form-label fw-bold text-primary">排班參數</label>
@@ -202,7 +206,7 @@ export class StaffListPage {
     async afterRender() {
         if(!this.currentUser) return;
         
-        window.routerPage = this; // 供 HTML onclick 使用
+        window.routerPage = this;
 
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
         const unitSelect = document.getElementById('unit-filter');
@@ -212,11 +216,8 @@ export class StaffListPage {
         document.getElementById('btn-save').addEventListener('click', () => this.handleSave());
         document.getElementById('keyword-search').addEventListener('input', (e) => this.filterData(e.target.value));
         
-        // Modal 內組別連動
         document.getElementById('edit-unit').addEventListener('change', (e) => this.updateGroupOptions(e.target.value));
 
-        // 觸發初始載入
-        // 即使是 "全部單位" (value="")，只要是 Admin 也應該載入
         this.loadData(); 
     }
 
@@ -230,14 +231,12 @@ export class StaffListPage {
             const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
 
             if (isAdmin && !unitId) {
-                // Admin 且選 "全部單位" -> 載入所有
                 list = await userService.getAllUsers();
             } else {
                 const target = unitId || this.currentUser.unitId;
                 if (target) {
                     list = await userService.getUsersByUnit(target);
                 } else {
-                    // 如果沒有單位 ID，清空
                     list = [];
                 }
             }
@@ -356,7 +355,6 @@ export class StaffListPage {
         return '<span class="badge bg-secondary">一般</span>';
     }
 
-    // 更新 Modal 內的組別下拉選單
     async updateGroupOptions(unitId, selectedGroup = '') {
         const groupSelect = document.getElementById('edit-group');
         groupSelect.innerHTML = '<option value="">載入中...</option>';
@@ -385,9 +383,7 @@ export class StaffListPage {
         
         const editUnit = document.getElementById('edit-unit');
         const filterUnit = document.getElementById('unit-filter');
-        // 複製主畫面的單位選項到 Modal
         editUnit.innerHTML = filterUnit.innerHTML;
-        // 如果主畫面選的是 "全部單位" (value="")，Modal 中移除這個選項 (新增人員必須指定單位)
         if(editUnit.options.length > 0 && editUnit.options[0].value === "") {
             editUnit.remove(0);
         }
@@ -403,7 +399,9 @@ export class StaffListPage {
             document.getElementById('edit-email').disabled = true;
             document.getElementById('edit-level').value = u.rank;
             
-            // ✅ 載入組別
+            // ✅ 回填到職日
+            document.getElementById('edit-hireDate').value = u.hireDate || '';
+
             await this.updateGroupOptions(u.unitId, u.group);
 
             document.getElementById('edit-isPregnant').checked = !!u.constraints?.isPregnant;
@@ -418,13 +416,11 @@ export class StaffListPage {
             document.getElementById('edit-uid').value = "";
             document.getElementById('edit-email').disabled = false;
             
-            // 若主畫面已選定某單位，則預設該單位
             const currentFilter = filterUnit.value;
             if (currentFilter) {
                 editUnit.value = currentFilter;
                 await this.updateGroupOptions(currentFilter);
             } else if (editUnit.options.length > 0) {
-                // 否則預設第一個並載入組別
                 await this.updateGroupOptions(editUnit.value);
             }
         }
@@ -446,6 +442,8 @@ export class StaffListPage {
             staffId: document.getElementById('edit-staffId').value,
             rank: document.getElementById('edit-level').value,
             group: document.getElementById('edit-group').value,
+            // ✅ 儲存到職日
+            hireDate: document.getElementById('edit-hireDate').value || null,
             role: newRole,
             permissions: {
                 canManageUnit: isManager,
