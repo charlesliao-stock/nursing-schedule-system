@@ -1,6 +1,6 @@
 import { firebaseService } from "./FirebaseService.js";
 import { 
-    doc, getDoc, setDoc, updateDoc, serverTimestamp 
+    doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export class ScheduleService {
@@ -8,12 +8,8 @@ export class ScheduleService {
     static getScheduleId(unitId, year, month) {
         return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
     }
-
-    // ... getSchedule, createEmptySchedule, updateShift, updateAllAssignments 保持原樣 ...
-    // (為了節省篇幅，請保留您原本的程式碼，僅新增下方方法)
     
     static async getSchedule(unitId, year, month) {
-        /* ... 請保留原有的程式碼 ... */
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
@@ -23,65 +19,50 @@ export class ScheduleService {
         } catch (error) { throw error; }
     }
 
-    static async createEmptySchedule(unitId, year, month, staffList = []) {
-        /* ... 請保留原有的程式碼 ... */
+    // ✅ 新增：通用儲存方法 (Create or Update)
+    static async saveSchedule(unitId, year, month, data) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
-            const assignments = {};
-            staffList.forEach(staffId => { assignments[staffId] = {}; });
-            const initData = {
-                unitId, year, month, status: "draft", assignments: assignments,
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+            
+            const payload = {
+                ...data,
+                unitId, year, month,
+                updatedAt: serverTimestamp()
             };
-            await setDoc(docRef, initData);
-            return initData;
-        } catch (error) { throw error; }
+            
+            // 使用 merge: true，若文件不存在則建立，存在則更新
+            await setDoc(docRef, payload, { merge: true });
+            return true;
+        } catch (error) { 
+            console.error("Save Schedule Error:", error);
+            throw error; 
+        }
     }
 
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
-        /* ... 請保留原有的程式碼 ... */
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
             const fieldPath = `assignments.${staffId}.${day}`;
+            // 這裡仍維持 updateDoc，因為通常是在班表已存在時操作
+            // 若需防呆，可改用 setDoc merge
             await updateDoc(docRef, { [fieldPath]: shiftCode, updatedAt: serverTimestamp() });
             return true;
         } catch (error) { throw error; }
     }
 
     static async updateAllAssignments(unitId, year, month, assignments) {
-        /* ... 請保留原有的程式碼 ... */
-        try {
-            const db = firebaseService.getDb();
-            const scheduleId = this.getScheduleId(unitId, year, month);
-            const docRef = doc(db, "schedules", scheduleId);
-            await updateDoc(docRef, { assignments: assignments, updatedAt: serverTimestamp() });
-            return true;
-        } catch (error) { throw error; }
+        // ✅ 改用 saveSchedule 以防止文件不存在時報錯
+        return await this.saveSchedule(unitId, year, month, { assignments });
     }
 
-    /**
-     * 【Phase 3.4 新增】更新班表狀態 (發布/撤回)
-     * @param {string} status - 'draft' | 'published'
-     */
     static async updateStatus(unitId, year, month, status) {
-        try {
-            const db = firebaseService.getDb();
-            const scheduleId = this.getScheduleId(unitId, year, month);
-            const docRef = doc(db, "schedules", scheduleId);
-
-            await updateDoc(docRef, {
-                status: status,
-                publishedAt: status === 'published' ? serverTimestamp() : null,
-                updatedAt: serverTimestamp()
-            });
-            return true;
-        } catch (error) {
-            console.error("更新狀態失敗", error);
-            throw error;
-        }
+        return await this.saveSchedule(unitId, year, month, { 
+            status, 
+            publishedAt: status === 'published' ? serverTimestamp() : null 
+        });
     }
 }
