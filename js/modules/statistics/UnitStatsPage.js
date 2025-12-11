@@ -4,35 +4,44 @@ import { authService } from "../../services/firebase/AuthService.js";
 
 export class UnitStatsPage {
     constructor() {
-        this.year = new Date().getFullYear();
-        this.month = new Date().getMonth() + 1;
+        const today = new Date();
+        this.startMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`;
+        this.endMonth = this.startMonth;
     }
 
     async render() {
         return `
-            <div class="container-fluid">
-                <h2 class="mb-4"><i class="fas fa-chart-bar"></i> 單位統計報表</h2>
-                <div class="card shadow mb-4">
+            <div class="container-fluid mt-4">
+                <h2 class="mb-4"><i class="fas fa-chart-bar"></i> 單位區間統計</h2>
+                <div class="card shadow mb-4 border-left-primary">
                     <div class="card-body bg-light">
-                        <div class="d-flex align-items-center gap-3">
-                            <label class="fw-bold">月份：</label>
-                            <input type="month" id="unit-stats-month" class="form-control w-auto" 
-                                   value="${this.year}-${String(this.month).padStart(2,'0')}">
-                            <button id="btn-unit-query" class="btn btn-primary">查詢</button>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <label class="fw-bold">區間：</label>
+                            <input type="month" id="start-month" class="form-control w-auto" value="${this.startMonth}">
+                            <span>~</span>
+                            <input type="month" id="end-month" class="form-control w-auto" value="${this.endMonth}">
+                            <button id="btn-unit-query" class="btn btn-primary ms-2"><i class="fas fa-search"></i> 查詢</button>
                         </div>
                     </div>
                 </div>
                 
                 <div class="card shadow">
-                    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">每日人力覆蓋表</h6></div>
-                    <div class="card-body">
+                    <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">統計結果</h6></div>
+                    <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-bordered table-sm text-center">
-                                <thead class="table-light">
-                                    <tr><th>日期</th><th>白班 (D)</th><th>小夜 (E)</th><th>大夜 (N)</th><th>休假 (OFF)</th><th>總上班</th></tr>
+                            <table class="table table-bordered table-striped mb-0 text-center">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>日期</th>
+                                        <th class="bg-primary text-white">白班 (D)</th>
+                                        <th class="bg-warning text-dark">小夜 (E)</th>
+                                        <th class="bg-danger text-white">大夜 (N)</th>
+                                        <th class="bg-secondary text-white">休假 (OFF)</th>
+                                        <th>總上班數</th>
+                                    </tr>
                                 </thead>
                                 <tbody id="unit-stats-tbody">
-                                    <tr><td colspan="6">請查詢</td></tr>
+                                    <tr><td colspan="6" class="p-5 text-muted">請選擇區間查詢</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -43,33 +52,75 @@ export class UnitStatsPage {
     }
 
     async afterRender() {
+        document.getElementById('btn-unit-query').addEventListener('click', () => this.loadStats());
+    }
+
+    async loadStats() {
         const user = authService.getProfile();
+        const sVal = document.getElementById('start-month').value;
+        const eVal = document.getElementById('end-month').value;
         
-        const load = async () => {
-            const [y, m] = document.getElementById('unit-stats-month').value.split('-');
-            const schedule = await ScheduleService.getSchedule(user.unitId, parseInt(y), parseInt(m));
-            const tbody = document.getElementById('unit-stats-tbody');
+        if(!sVal || !eVal) return alert("請選擇完整區間");
+        if(sVal > eVal) return alert("起始月份不可大於結束月份");
 
-            if (!schedule) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-muted p-4">無資料</td></tr>';
-                return;
-            }
+        const tbody = document.getElementById('unit-stats-tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="p-5"><span class="spinner-border spinner-border-sm"></span> 統計中...</td></tr>';
 
-            const dailyStats = StatisticsService.calculateUnitCoverage(schedule);
+        // 解析日期區間
+        let current = new Date(sVal + '-01');
+        const end = new Date(eVal + '-01');
+        
+        const aggregate = {}; // { "2025-12-01": {D:0, E:0...} }
+
+        while(current <= end) {
+            const y = current.getFullYear();
+            const m = current.getMonth() + 1;
             
-            tbody.innerHTML = Object.entries(dailyStats).map(([day, stats]) => `
-                <tr>
-                    <td class="fw-bold">${day}</td>
-                    <td class="text-primary">${stats.D}</td>
-                    <td class="text-warning">${stats.E}</td>
-                    <td class="text-danger">${stats.N}</td>
-                    <td class="text-muted">${stats.OFF}</td>
-                    <td class="fw-bold">${stats.Total}</td>
-                </tr>
-            `).join('');
-        };
+            const schedule = await ScheduleService.getSchedule(user.unitId, y, m);
+            if(schedule && schedule.assignments) {
+                const daysInMonth = new Date(y, m, 0).getDate();
+                
+                // 統計該月
+                Object.values(schedule.assignments).forEach(staffShifts => {
+                    for(let d=1; d<=daysInMonth; d++) {
+                        const shift = staffShifts[d];
+                        const dateKey = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        
+                        if(!aggregate[dateKey]) aggregate[dateKey] = { D:0, E:0, N:0, OFF:0, Total:0 };
+                        
+                        if(shift === 'D') aggregate[dateKey].D++;
+                        else if(shift === 'E') aggregate[dateKey].E++;
+                        else if(shift === 'N') aggregate[dateKey].N++;
+                        else if(shift === 'OFF' || shift === 'M_OFF') aggregate[dateKey].OFF++;
+                        
+                        if(['D','E','N'].includes(shift)) aggregate[dateKey].Total++;
+                    }
+                });
+            }
+            
+            // 下個月
+            current.setMonth(current.getMonth() + 1);
+        }
 
-        document.getElementById('btn-unit-query').addEventListener('click', load);
-        load();
+        // 渲染結果
+        const sortedKeys = Object.keys(aggregate).sort();
+        if(sortedKeys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="p-5 text-muted">該區間無班表資料</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = sortedKeys.map(date => {
+            const d = aggregate[date];
+            return `
+                <tr>
+                    <td class="fw-bold">${date}</td>
+                    <td>${d.D}</td>
+                    <td>${d.E}</td>
+                    <td>${d.N}</td>
+                    <td class="text-muted">${d.OFF}</td>
+                    <td class="fw-bold">${d.Total}</td>
+                </tr>
+            `;
+        }).join('');
     }
 }
