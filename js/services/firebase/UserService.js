@@ -12,7 +12,6 @@ class UserService {
         this.collectionName = 'users'; 
     }
 
-    // Auth & Create
     async createAuthUser(email, password) {
         let secondaryApp = null;
         try {
@@ -34,6 +33,7 @@ class UserService {
             if (!authRes.success) return authRes;
             const db = firebaseService.getDb();
             const newUid = authRes.uid;
+            
             await setDoc(doc(db, this.collectionName, newUid), {
                 uid: newUid,
                 name: staffData.name,
@@ -43,6 +43,7 @@ class UserService {
                 rank: staffData.title || staffData.rank || 'N0',
                 group: staffData.group || '',
                 role: staffData.role || 'user',
+                hireDate: staffData.hireDate || null, // ✅ 新增：到職日期
                 constraints: staffData.constraints || {}, 
                 permissions: staffData.permissions || {},
                 status: 'active',
@@ -52,9 +53,8 @@ class UserService {
         } catch (error) { return { success: false, error: error.message }; }
     }
 
-    // ✅ 修復：增加防呆，避免 undefined 導致 crash
     async getUserData(uid) {
-        if (!uid) return null; // Fix Error 2
+        if (!uid) return null;
         try {
             const db = firebaseService.getDb();
             const docRef = doc(db, this.collectionName, uid);
@@ -66,16 +66,13 @@ class UserService {
         }
     }
 
-    // ✅ 新增：修復儀表板 "--" 問題
     async getAllStaffCount() {
         try {
             const db = firebaseService.getDb();
             const coll = collection(db, this.collectionName);
             const snapshot = await getCountFromServer(coll);
             return snapshot.data().count;
-        } catch (e) {
-            return 0;
-        }
+        } catch (e) { return 0; }
     }
 
     async getAllUsers() {
