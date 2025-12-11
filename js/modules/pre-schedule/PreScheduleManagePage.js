@@ -8,27 +8,30 @@ export class PreScheduleManagePage {
         this.targetUnitId = null;
         this.preSchedules = [];
         this.unitData = null;
-        this.selectedStaff = []; 
+        this.selectedStaff = []; // 設定用：參與人員名單
         
+        // 審核用變數
         this.reviewStaffList = []; 
         this.currentReviewId = null; 
         
-        this.modal = null;
-        this.searchModal = null;
-        this.reviewModal = null;
+        // Modals
+        this.modal = null;       // 設定 Modal
+        this.searchModal = null; // 搜尋人員 Modal
+        this.reviewModal = null; // 審核總表 Modal
 
         this.isEditMode = false;
         this.editingScheduleId = null;
         
+        // 定義支援的預班類型與樣式
         this.shiftTypes = {
-            'OFF': { label: 'OFF', color: '#dc3545', bg: '#dc3545', text: 'white' },
-            'D':   { label: 'D',   color: '#0d6efd', bg: '#0d6efd', text: 'white' },
-            'E':   { label: 'E',   color: '#ffc107', bg: '#ffc107', text: 'black' },
-            'N':   { label: 'N',   color: '#212529', bg: '#212529', text: 'white' },
+            'OFF': { label: 'OFF', color: '#dc3545', bg: '#dc3545', text: 'white' }, // 紅
+            'D':   { label: 'D',   color: '#0d6efd', bg: '#0d6efd', text: 'white' }, // 藍
+            'E':   { label: 'E',   color: '#ffc107', bg: '#ffc107', text: 'black' }, // 黃
+            'N':   { label: 'N',   color: '#212529', bg: '#212529', text: 'white' }, // 黑
             'XD':  { label: 'x白', color: '#adb5bd', bg: '#f8f9fa', text: '#0d6efd', border: '1px solid #0d6efd' },
             'XE':  { label: 'x小', color: '#adb5bd', bg: '#f8f9fa', text: '#ffc107', border: '1px solid #ffc107' },
             'XN':  { label: 'x大', color: '#adb5bd', bg: '#f8f9fa', text: '#212529', border: '1px solid #212529' },
-            'M_OFF': { label: 'OFF', color: '#6f42c1', bg: '#6f42c1', text: 'white' }
+            'M_OFF': { label: 'OFF', color: '#6f42c1', bg: '#6f42c1', text: 'white' } // 管理者強制
         };
     }
 
@@ -49,7 +52,8 @@ export class PreScheduleManagePage {
             unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
         }
 
-        const baseLayout = `
+        // 1. 基礎版面 (Unit Select + Table)
+        const mainLayout = `
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-calendar-check"></i> 預班管理</h3>
@@ -90,6 +94,7 @@ export class PreScheduleManagePage {
             </div>
         `;
 
+        // 2. 右鍵選單 (Context Menu)
         const contextMenu = `
             <div id="shift-context-menu" class="list-group shadow" style="position:fixed; z-index:9999; display:none; width:120px;">
                 ${Object.entries(this.shiftTypes).filter(([k])=>k!=='M_OFF').map(([key, cfg]) => 
@@ -101,41 +106,7 @@ export class PreScheduleManagePage {
             </div>
         `;
 
-        const reviewModalHtml = `
-            <div class="modal fade" id="review-modal" tabindex="-1" data-bs-backdrop="static">
-                <div class="modal-dialog modal-fullscreen">
-                    <div class="modal-content">
-                        <div class="modal-header bg-primary text-white py-2">
-                            <h6 class="modal-title" id="review-modal-title"><i class="fas fa-th"></i> 預班總表審核</h6>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body p-0 d-flex flex-column">
-                            <div class="d-flex justify-content-between align-items-center p-2 bg-light border-bottom">
-                                <div class="small">
-                                    <span class="badge bg-danger me-1">OFF</span>
-                                    <span class="badge bg-primary me-1">D</span>
-                                    <span class="badge bg-warning text-dark me-1">E</span>
-                                    <span class="badge bg-dark me-1">N</span>
-                                    <span class="badge" style="background:#6f42c1;">紫:管</span>
-                                    <span class="ms-2 text-muted"><i class="fas fa-mouse-pointer"></i> 左鍵:切換 | 右鍵:選單</span>
-                                </div>
-                                <button class="btn btn-primary px-4" id="btn-save-review">
-                                    <i class="fas fa-save"></i> 儲存變更
-                                </button>
-                            </div>
-                            <div class="table-responsive flex-grow-1">
-                                <table class="table table-bordered table-sm text-center table-hover mb-0 user-select-none" style="font-size: 0.85rem;" id="review-table">
-                                    <thead class="table-light sticky-top" style="z-index: 1020;" id="review-thead"></thead>
-                                    <tbody id="review-tbody"></tbody>
-                                    <tfoot class="table-light sticky-bottom fw-bold" style="z-index: 1020;" id="review-tfoot"></tfoot>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
+        // 3. 設定 Modal
         const settingsModalHtml = `
             <div class="modal fade" id="pre-modal" tabindex="-1">
                 <div class="modal-dialog modal-xl">
@@ -229,6 +200,7 @@ export class PreScheduleManagePage {
             </div>
         `;
 
+        // 4. 搜尋人員 Modal
         const searchModalHtml = `
             <div class="modal fade" id="search-modal" tabindex="-1" style="z-index: 1060;">
                 <div class="modal-dialog">
@@ -251,7 +223,44 @@ export class PreScheduleManagePage {
             </div>
         `;
 
-        return baseLayout + contextMenu + reviewModalHtml + settingsModalHtml + searchModalHtml;
+        // 5. 審核總表 Modal
+        const reviewModalHtml = `
+            <div class="modal fade" id="review-modal" tabindex="-1" data-bs-backdrop="static">
+                <div class="modal-dialog modal-fullscreen">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white py-2">
+                            <h6 class="modal-title" id="review-modal-title"><i class="fas fa-th"></i> 預班總表審核</h6>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-0 d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-center p-2 bg-light border-bottom">
+                                <div class="small">
+                                    <span class="badge bg-danger me-1">OFF</span>
+                                    <span class="badge bg-primary me-1">D</span>
+                                    <span class="badge bg-warning text-dark me-1">E</span>
+                                    <span class="badge bg-dark me-1">N</span>
+                                    <span class="badge bg-light text-primary border me-1">x白</span>
+                                    <span class="badge" style="background:#6f42c1;">紫:管</span>
+                                    <span class="ms-2 text-muted"><i class="fas fa-mouse-pointer"></i> 左鍵:切換 | 右鍵:選單</span>
+                                </div>
+                                <button class="btn btn-primary px-4" id="btn-save-review">
+                                    <i class="fas fa-save"></i> 儲存變更
+                                </button>
+                            </div>
+                            <div class="table-responsive flex-grow-1">
+                                <table class="table table-bordered table-sm text-center table-hover mb-0 user-select-none" style="font-size: 0.85rem;" id="review-table">
+                                    <thead class="table-light sticky-top" style="z-index: 1020;" id="review-thead"></thead>
+                                    <tbody id="review-tbody"></tbody>
+                                    <tfoot class="table-light sticky-bottom fw-bold" style="z-index: 1020;" id="review-tfoot"></tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return mainLayout + contextMenu + settingsModalHtml + searchModalHtml + reviewModalHtml;
     }
 
     async afterRender() {
@@ -260,7 +269,7 @@ export class PreScheduleManagePage {
         this.searchModal = new bootstrap.Modal(document.getElementById('search-modal'));
         window.routerPage = this;
 
-        // 綁定主畫面事件
+        // 主畫面事件
         document.getElementById('unit-select').addEventListener('change', (e) => this.loadList(e.target.value));
         document.getElementById('btn-add').addEventListener('click', () => this.openModal(null));
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
@@ -348,25 +357,29 @@ export class PreScheduleManagePage {
         document.getElementById('edit-close').value = closeDate;
     }
 
+    // =========================================================
+    //  審核邏輯
+    // =========================================================
     async openReview(scheduleId) {
         this.currentReviewId = scheduleId;
         const schedule = this.preSchedules.find(s => s.id === scheduleId);
         if (!schedule) return;
 
-        // 1. 設定標題
-        const unitName = document.getElementById('unit-select').options[document.getElementById('unit-select').selectedIndex].text;
+        // 設定標題
+        const unitName = document.getElementById('unit-select').options[document.getElementById('unit-select').selectedIndex]?.text || '';
         document.getElementById('review-modal-title').innerHTML = `<i class="fas fa-th"></i> 預班審核 - ${unitName} (${schedule.year}年${schedule.month}月)`;
 
         const daysInMonth = new Date(schedule.year, schedule.month, 0).getDate();
         const allStaff = await userService.getUsersByUnit(this.targetUnitId);
         
+        // 篩選與排序
         this.reviewStaffList = allStaff.filter(s => schedule.staffIds.includes(s.uid))
             .sort((a, b) => {
                 const roleScore = (r) => (r === 'HN' ? 2 : (r === 'AHN' ? 1 : 0));
                 return roleScore(b.rank) - roleScore(a.rank) || a.staffId.localeCompare(b.staffId);
             });
 
-        // 2. 表頭
+        // 渲染表頭
         let thead = '<tr><th class="sticky-col bg-light text-start ps-3" style="min-width:120px; left:0; z-index:1030;">人員</th>';
         // 插入特註欄位
         thead += '<th class="sticky-col bg-light" style="min-width:100px; left:120px; z-index:1030;">特註/偏好</th>';
@@ -379,7 +392,7 @@ export class PreScheduleManagePage {
         thead += '</tr>';
         document.getElementById('review-thead').innerHTML = thead;
 
-        // 3. 內容
+        // 渲染內容
         this.renderReviewBody(schedule, daysInMonth);
         this.updateFooterStats(schedule, daysInMonth);
         this.reviewModal.show();
@@ -656,5 +669,5 @@ export class PreScheduleManagePage {
     }
 
     async deletePreSchedule(id) { if(confirm("確定刪除？")) { await PreScheduleService.deletePreSchedule(id); this.loadList(this.targetUnitId); } }
-    async importLastMonthSettings() { /* 保留邏輯，省略細節 */ alert("功能保留"); }
+    async importLastMonthSettings() { alert("功能保留"); }
 }
