@@ -96,3 +96,51 @@ export class UnitStatsPage {
         if(sVal > eVal) return alert("起始月份不可大於結束月份");
 
         const tbody = document.getElementById('unit-stats-tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="p-5"><span class="spinner-border spinner-border-sm"></span> 統計中...</td></tr>';
+
+        let current = new Date(sVal + '-01');
+        const end = new Date(eVal + '-01');
+        const aggregate = {};
+
+        while(current <= end) {
+            const y = current.getFullYear();
+            const m = current.getMonth() + 1;
+            const schedule = await ScheduleService.getSchedule(unitId, y, m);
+            
+            if(schedule && schedule.assignments) {
+                const daysInMonth = new Date(y, m, 0).getDate();
+                Object.values(schedule.assignments).forEach(staffShifts => {
+                    for(let d=1; d<=daysInMonth; d++) {
+                        const shift = staffShifts[d];
+                        const dateKey = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        if(!aggregate[dateKey]) aggregate[dateKey] = { D:0, E:0, N:0, OFF:0, Total:0 };
+                        
+                        if(shift === 'D') aggregate[dateKey].D++;
+                        else if(shift === 'E') aggregate[dateKey].E++;
+                        else if(shift === 'N') aggregate[dateKey].N++;
+                        else if(shift === 'OFF' || shift === 'M_OFF') aggregate[dateKey].OFF++;
+                        
+                        if(['D','E','N'].includes(shift)) aggregate[dateKey].Total++;
+                    }
+                });
+            }
+            current.setMonth(current.getMonth() + 1);
+        }
+
+        const sortedKeys = Object.keys(aggregate).sort();
+        if(sortedKeys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="p-5 text-muted">該區間無班表資料</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = sortedKeys.map(date => {
+            const d = aggregate[date];
+            return `
+                <tr>
+                    <td class="fw-bold">${date}</td>
+                    <td>${d.D}</td><td>${d.E}</td><td>${d.N}</td>
+                    <td class="text-muted">${d.OFF}</td><td class="fw-bold">${d.Total}</td>
+                </tr>`;
+        }).join('');
+    }
+}
