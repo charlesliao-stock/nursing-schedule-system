@@ -1,5 +1,5 @@
-import { StatisticsService } from "../../services/StatisticsService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
+import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
 
 export class UnitStatsPage {
@@ -7,20 +7,29 @@ export class UnitStatsPage {
         const today = new Date();
         this.startMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`;
         this.endMonth = this.startMonth;
+        this.targetUnitId = null;
     }
 
     async render() {
         return `
             <div class="container-fluid mt-4">
                 <h2 class="mb-4"><i class="fas fa-chart-bar"></i> 單位區間統計</h2>
+                
                 <div class="card shadow mb-4 border-left-primary">
                     <div class="card-body bg-light">
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <label class="fw-bold">區間：</label>
-                            <input type="month" id="start-month" class="form-control w-auto" value="${this.startMonth}">
-                            <span>~</span>
-                            <input type="month" id="end-month" class="form-control w-auto" value="${this.endMonth}">
-                            <button id="btn-unit-query" class="btn btn-primary ms-2"><i class="fas fa-search"></i> 查詢</button>
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="fw-bold text-nowrap">單位：</label>
+                                <select id="stats-unit-select" class="form-select w-auto"><option value="">載入中...</option></select>
+                            </div>
+                            <div class="vr mx-2"></div>
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="fw-bold text-nowrap">區間：</label>
+                                <input type="month" id="start-month" class="form-control w-auto" value="${this.startMonth}">
+                                <span>~</span>
+                                <input type="month" id="end-month" class="form-control w-auto" value="${this.endMonth}">
+                                <button id="btn-unit-query" class="btn btn-primary ms-2"><i class="fas fa-search"></i> 查詢</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -41,7 +50,7 @@ export class UnitStatsPage {
                                     </tr>
                                 </thead>
                                 <tbody id="unit-stats-tbody">
-                                    <tr><td colspan="6" class="p-5 text-muted">請選擇區間查詢</td></tr>
+                                    <tr><td colspan="6" class="p-5 text-muted">請選擇區間並查詢</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -52,75 +61,38 @@ export class UnitStatsPage {
     }
 
     async afterRender() {
+        const user = authService.getProfile();
+        const unitSelect = document.getElementById('stats-unit-select');
+        const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
+
+        let units = [];
+        if (isAdmin) units = await UnitService.getAllUnits();
+        else {
+            units = await UnitService.getUnitsByManager(user.uid);
+            if (units.length === 0 && user.unitId) {
+                const u = await UnitService.getUnitById(user.unitId);
+                if (u) units.push(u);
+            }
+        }
+
+        if (units.length === 0) {
+            unitSelect.innerHTML = '<option value="">無權限</option>';
+            unitSelect.disabled = true;
+        } else {
+            unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            if (units.length === 1) unitSelect.disabled = true;
+        }
+
         document.getElementById('btn-unit-query').addEventListener('click', () => this.loadStats());
     }
 
     async loadStats() {
-        const user = authService.getProfile();
+        const unitId = document.getElementById('stats-unit-select').value;
         const sVal = document.getElementById('start-month').value;
         const eVal = document.getElementById('end-month').value;
         
+        if(!unitId) return alert("請確認單位");
         if(!sVal || !eVal) return alert("請選擇完整區間");
         if(sVal > eVal) return alert("起始月份不可大於結束月份");
 
         const tbody = document.getElementById('unit-stats-tbody');
-        tbody.innerHTML = '<tr><td colspan="6" class="p-5"><span class="spinner-border spinner-border-sm"></span> 統計中...</td></tr>';
-
-        // 解析日期區間
-        let current = new Date(sVal + '-01');
-        const end = new Date(eVal + '-01');
-        
-        const aggregate = {}; // { "2025-12-01": {D:0, E:0...} }
-
-        while(current <= end) {
-            const y = current.getFullYear();
-            const m = current.getMonth() + 1;
-            
-            const schedule = await ScheduleService.getSchedule(user.unitId, y, m);
-            if(schedule && schedule.assignments) {
-                const daysInMonth = new Date(y, m, 0).getDate();
-                
-                // 統計該月
-                Object.values(schedule.assignments).forEach(staffShifts => {
-                    for(let d=1; d<=daysInMonth; d++) {
-                        const shift = staffShifts[d];
-                        const dateKey = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                        
-                        if(!aggregate[dateKey]) aggregate[dateKey] = { D:0, E:0, N:0, OFF:0, Total:0 };
-                        
-                        if(shift === 'D') aggregate[dateKey].D++;
-                        else if(shift === 'E') aggregate[dateKey].E++;
-                        else if(shift === 'N') aggregate[dateKey].N++;
-                        else if(shift === 'OFF' || shift === 'M_OFF') aggregate[dateKey].OFF++;
-                        
-                        if(['D','E','N'].includes(shift)) aggregate[dateKey].Total++;
-                    }
-                });
-            }
-            
-            // 下個月
-            current.setMonth(current.getMonth() + 1);
-        }
-
-        // 渲染結果
-        const sortedKeys = Object.keys(aggregate).sort();
-        if(sortedKeys.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="p-5 text-muted">該區間無班表資料</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = sortedKeys.map(date => {
-            const d = aggregate[date];
-            return `
-                <tr>
-                    <td class="fw-bold">${date}</td>
-                    <td>${d.D}</td>
-                    <td>${d.E}</td>
-                    <td>${d.N}</td>
-                    <td class="text-muted">${d.OFF}</td>
-                    <td class="fw-bold">${d.Total}</td>
-                </tr>
-            `;
-        }).join('');
-    }
-}
