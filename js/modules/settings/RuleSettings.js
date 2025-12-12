@@ -68,7 +68,10 @@ export class RuleSettings {
                                             <div class="form-check form-switch mb-3">
                                                 <input class="form-check-input" type="checkbox" id="rule-min-11h" checked disabled>
                                                 <label class="form-check-label fw-bold">班與班間隔至少 11 小時</label>
-                                                <div class="form-text text-danger small">依據勞基法規定，系統將強制禁止「小接白 (E-D)」與「大接小 (N-E)」等逆向或休息不足的排法。</div>
+                                                <div class="form-text text-danger small">
+                                                    系統將強制禁止「小接白 (E-D)」等間隔不足 11 小時之排法。<br>
+                                                    註：大夜(N) 接白(D) 或小(E) 因間隔足夠，視為允許。
+                                                </div>
                                             </div>
                                             <hr>
                                             <div class="mb-3">
@@ -87,16 +90,10 @@ export class RuleSettings {
                                     <div class="card shadow mb-4 h-100 border-left-info">
                                         <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-info"><i class="fas fa-sliders-h"></i> 單位排班原則 (軟性設定)</h6></div>
                                         <div class="card-body">
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold">接班順序 (輪班方向)</label>
-                                                <input type="text" class="form-control bg-light" value="OFF ➝ 大(N) ➝ 白(D) ➝ 小(E)" disabled>
-                                                <div class="form-text small">順向可接，逆向禁止。</div>
-                                            </div>
-                                            
                                             <div class="form-check form-switch mb-3">
                                                 <input class="form-check-input" type="checkbox" id="rule-first-n-off" checked>
-                                                <label class="form-check-label fw-bold">首個大夜 (N) 前必須 OFF</label>
-                                                <div class="form-text small">若昨日非 N，今日排 N，則昨日必須為 OFF。</div>
+                                                <label class="form-check-label fw-bold">排大夜 (N) 的前一天必須是 N 或 OFF</label>
+                                                <div class="form-text small">避免由 D 或 E 直接跳接 N (逆向且間隔短)。</div>
                                             </div>
 
                                             <div class="row g-3">
@@ -263,7 +260,8 @@ export class RuleSettings {
         const constraints = savedRules.constraints || {};
         document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
         document.getElementById('rule-max-types-week').value = constraints.maxShiftTypesWeek || 3;
-        document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false; // 預設 true
+        // 預設開啟首個大夜 OFF 限制
+        document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false;
         document.getElementById('rule-min-consecutive').value = constraints.minConsecutiveSame || 2;
         document.getElementById('rule-max-night').value = constraints.maxConsecutiveNight || 4;
 
@@ -317,9 +315,8 @@ export class RuleSettings {
                 firstNRequiresOFF: document.getElementById('rule-first-n-off').checked,
                 minConsecutiveSame: parseInt(document.getElementById('rule-min-consecutive').value) || 2,
                 maxConsecutiveNight: parseInt(document.getElementById('rule-max-night').value) || 4,
-                // 硬性設定 (預設開啟)
-                minInterval11h: true,
-                shiftSequence: ['OFF', 'N', 'D', 'E'] // 隱含邏輯：順向可接，逆向不可
+                minInterval11h: true, // 預設強制開啟
+                shiftSequence: ['OFF', 'N', 'D', 'E'] // 邏輯參考用
             };
 
             // 3. 收集評分權重
@@ -340,7 +337,7 @@ export class RuleSettings {
 
             const rulesData = { 
                 maxConsecutiveWork: parseInt(document.getElementById('maxConsecutiveDays').value) || 6,
-                constraints: constraints, // ✅ 儲存新設定
+                constraints: constraints, 
                 scoringConfig: newConfig
             };
 
