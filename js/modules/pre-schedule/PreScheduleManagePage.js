@@ -11,11 +11,10 @@ export class PreScheduleManagePage {
         this.selectedStaff = [];
         this.reviewStaffList = [];
         this.currentReviewId = null;
-        this.currentSchedule = null; // 暫存當前正在審核的物件
+        this.currentSchedule = null;
         this.modal = null;
         this.reviewModal = null;
         
-        // 用於右鍵選單的操作對象
         this.contextMenuTarget = { uid: null, day: null };
 
         this.shiftTypes = {
@@ -130,7 +129,6 @@ export class PreScheduleManagePage {
             if (isAdmin) units = await UnitService.getAllUnits();
             else units = await UnitService.getUnitsByManager(user.uid);
             
-            // Fallback: 如果都不是，嘗試用自己的 unitId
             if (units.length === 0 && user.unitId) {
                 const u = await UnitService.getUnitById(user.unitId);
                 if(u) units.push(u);
@@ -141,9 +139,11 @@ export class PreScheduleManagePage {
                 unitSelect.disabled = true;
             } else {
                 unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-                unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
                 
-                // 預設載入第一個
+                // ✅ 邏輯：只有一個單位時 Disable
+                if (units.length === 1) unitSelect.disabled = true;
+
+                unitSelect.addEventListener('change', () => this.loadList(unitSelect.value));
                 this.loadList(units[0].unitId);
             }
         } catch (e) {
@@ -159,21 +159,18 @@ export class PreScheduleManagePage {
         document.getElementById('btn-save').addEventListener('click', () => this.savePreSchedule());
         document.getElementById('btn-save-review').addEventListener('click', () => this.saveReview());
         
-        // 點擊空白處關閉右鍵選單
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('shift-context-menu');
             if(menu && !e.target.closest('#shift-context-menu')) menu.style.display = 'none';
         });
     }
 
-    // 產生新增/編輯表單的 HTML
     getPreFormHtml() {
         const nextMonth = new Date();
         nextMonth.setMonth(nextMonth.getMonth() + 1);
         const y = nextMonth.getFullYear();
         const m = nextMonth.getMonth() + 1;
         const defaultYear = y;
-        const defaultMonth = String(m).padStart(2, '0');
 
         return `
             <form id="pre-schedule-form">
@@ -280,24 +277,19 @@ export class PreScheduleManagePage {
     async openReview(id) {
         this.currentReviewId = id;
         const schedule = this.preSchedules.find(s => s.id === id);
-        this.currentSchedule = schedule; // 儲存參考
+        this.currentSchedule = schedule; 
         
         if (!schedule) return alert("找不到資料");
 
         document.getElementById('review-modal-title').textContent = 
             `預班審核 - ${schedule.year}年${schedule.month}月 (${this.unitData.unitName})`;
 
-        // 載入人員詳情
         const allStaff = await userService.getUnitStaff(this.targetUnitId);
-        // 過濾出有在該次預班名單的人
         this.reviewStaffList = allStaff.filter(s => schedule.staffIds.includes(s.uid));
-        
-        // 根據職級排序
         this.reviewStaffList.sort((a,b) => (a.rank||'').localeCompare(b.rank||''));
 
         const daysInMonth = new Date(schedule.year, schedule.month, 0).getDate();
         
-        // Render Header
         let theadHtml = '<tr><th class="sticky-col bg-light" style="min-width:120px; z-index:20;">人員</th>';
         for(let d=1; d<=daysInMonth; d++) {
             const date = new Date(schedule.year, schedule.month-1, d);
@@ -331,18 +323,15 @@ export class PreScheduleManagePage {
 
                 if (val) {
                     cellContent = val === 'M_OFF' ? 'OFF' : val;
-                    // 區分員工填寫 vs 管理員代填 (M_OFF)
                     if (val === 'M_OFF') {
-                        style = 'background-color: #cff4fc; color: #055160;'; // 藍色 (管理)
+                        style = 'background-color: #cff4fc; color: #055160;'; 
                     } else if (val === 'OFF') {
-                        style = 'background-color: #ffe8cc; color: #fd7e14;'; // 橘色 (員工)
+                        style = 'background-color: #ffe8cc; color: #fd7e14;'; 
                     } else if (this.shiftTypes[val]) {
-                         // 其他班別 D/E/N
                         style = `background-color: ${this.shiftTypes[val].bg}40; color: black;`;
                     }
                 }
                 
-                // 綁定右鍵事件
                 rowHtml += `<td class="${className}" style="${style} cursor:context-menu;" 
                                 oncontextmenu="window.routerPage.handleCellRightClick(event, '${staff.uid}', ${d})">
                                 ${cellContent}
@@ -356,13 +345,8 @@ export class PreScheduleManagePage {
         e.preventDefault();
         this.contextMenuTarget = { uid, day };
         const menu = document.getElementById('shift-context-menu');
-        
-        // 計算位置避免超出視窗
-        let top = e.clientY;
-        let left = e.clientX;
-        
-        menu.style.top = `${top}px`;
-        menu.style.left = `${left}px`;
+        menu.style.top = `${e.clientY}px`;
+        menu.style.left = `${e.clientX}px`;
         menu.style.display = 'block';
     }
 
@@ -377,15 +361,12 @@ export class PreScheduleManagePage {
         if (type === null) {
             delete submissions[uid].wishes[day];
         } else {
-            // 若為 OFF，管理者填寫時標記為 M_OFF (Managed OFF) 以示區別
             const val = type === 'OFF' ? 'M_OFF' : type;
             submissions[uid].wishes[day] = val;
         }
 
-        // 重新渲染表格 (局部更新會更好，這裡簡化為全刷)
         const daysInMonth = new Date(this.currentSchedule.year, this.currentSchedule.month, 0).getDate();
         this.renderReviewBody(this.currentSchedule, daysInMonth);
-        
         document.getElementById('shift-context-menu').style.display = 'none';
     }
 
@@ -407,7 +388,6 @@ export class PreScheduleManagePage {
 
     async openModal(idx) {
         this.modal.show();
-        // 載入人員 Checkbox
         const container = document.getElementById('staff-checkbox-list');
         container.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm"></span> 載入人員中...</div>';
         
@@ -421,7 +401,6 @@ export class PreScheduleManagePage {
             </div>
         `).join('');
 
-        // 全選功能
         document.getElementById('check-all-staff').addEventListener('change', (e) => {
             document.querySelectorAll('.staff-check').forEach(cb => cb.checked = e.target.checked);
         });
