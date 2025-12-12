@@ -3,20 +3,15 @@ import { userService } from "../../services/firebase/UserService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { RuleEngine } from "../ai/RuleEngine.js";
-import { authService } from "../../services/firebase/AuthService.js";
 import { AutoScheduler } from "../ai/AutoScheduler.js";
 import { ScoringService } from "../../services/ScoringService.js";
+import { SchedulePageTemplate } from "./templates/SchedulePageTemplate.js"; // 引入 Template
 
 export class SchedulePage {
     constructor() {
         this.state = {
-            currentUnitId: null,
-            year: null,
-            month: null,
-            unitSettings: null, 
-            staffList: [],
-            scheduleData: null,
-            daysInMonth: 0,
+            currentUnitId: null, year: null, month: null,
+            unitSettings: null, staffList: [], scheduleData: null, daysInMonth: 0,
             scoreResult: null
         };
         this.versionsModal = null; 
@@ -34,74 +29,8 @@ export class SchedulePage {
 
         if(!this.state.currentUnitId) return `<div class="alert alert-danger m-4">無效的參數，請從列表頁進入。</div>`;
 
-        return `
-            <div class="schedule-container">
-                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                    <div class="d-flex align-items-center">
-                        <button class="btn btn-sm btn-outline-secondary me-3" onclick="window.location.hash='/schedule/list'">
-                            <i class="fas fa-arrow-left"></i> 回列表
-                        </button>
-                        <div>
-                            <span class="h4 align-middle fw-bold text-gray-800">
-                                ${this.state.year}年 ${this.state.month}月 排班作業
-                            </span>
-                            <span id="schedule-status-badge" class="badge bg-secondary ms-2">載入中</span>
-                        </div>
-                    </div>
-                    
-                    <div id="loading-indicator" style="display:none;" class="text-primary fw-bold">
-                        <i class="fas fa-spinner fa-spin"></i> 處理中...
-                    </div>
-
-                    <div class="d-flex align-items-center bg-white border rounded px-3 py-1 shadow-sm" style="min-width: 180px;">
-                        <div class="me-3 text-end flex-grow-1">
-                            <div class="small text-muted fw-bold" style="font-size: 0.75rem;">排班品質總分</div>
-                            <div class="h4 mb-0 fw-bold text-primary" id="score-display">--</div>
-                        </div>
-                        <button class="btn btn-sm btn-outline-info rounded-circle" style="width:32px;height:32px;" 
-                                onclick="window.routerPage.showScoreDetails()" title="查看評分詳情">
-                            <i class="fas fa-info"></i>
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="schedule-toolbar d-flex justify-content-between mb-3">
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-outline-secondary btn-sm shadow-sm" onclick="window.location.hash='/unit/settings/rules'">
-                            <i class="fas fa-cog"></i> 規則與權重
-                        </button>
-                        <button id="btn-clear" class="btn btn-outline-danger btn-sm shadow-sm">
-                            <i class="fas fa-undo"></i> 重置回預班狀態
-                        </button>
-                    </div>
-
-                    <div class="d-flex gap-2">
-                        <button id="btn-auto-schedule" class="btn btn-primary shadow-sm" style="background-color: #6366f1; border:none;">
-                            <i class="fas fa-magic"></i> 智慧排班 (AI)
-                        </button>
-                        <button id="btn-validate" class="btn btn-secondary shadow-sm btn-sm">
-                            <i class="fas fa-check-circle"></i> 檢查
-                        </button>
-                        <button id="btn-publish" class="btn btn-success shadow-sm btn-sm">
-                            <i class="fas fa-paper-plane"></i> 發布
-                        </button>
-                    </div>
-                </div>
-
-                <div id="schedule-grid-container" class="schedule-grid-wrapper border rounded"></div>
-
-                <div class="modal fade" id="score-modal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header bg-info text-white"><h5 class="modal-title">評分詳情</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-                            <div class="modal-body p-0"><div id="score-details-body"></div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="modal fade" id="versions-modal" tabindex="-1"><div class="modal-dialog modal-xl"><div class="modal-content"><div class="modal-header bg-gradient-primary text-white"><h5 class="modal-title">AI 排班結果</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body p-0"><ul class="nav nav-tabs nav-fill bg-light" id="versionTabs" role="tablist"><li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#v1">版本 1</button></li><li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#v2">版本 2</button></li><li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#v3">版本 3</button></li></ul><div class="tab-content" id="versionTabsContent"><div class="tab-pane fade show active" id="v1"></div><div class="tab-pane fade" id="v2"></div><div class="tab-pane fade" id="v3"></div></div></div></div></div></div>
-            </div>
-        `;
+        // 直接使用 Template
+        return SchedulePageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
     async afterRender() {
@@ -121,16 +50,11 @@ export class SchedulePage {
     }
 
     handleGlobalClick(e) {
-        if (!e.target.closest('.shift-cell') && this.state.activeMenu) {
-            this.closeMenu();
-        }
+        if (!e.target.closest('.shift-cell') && this.state.activeMenu) this.closeMenu();
     }
 
     closeMenu() {
-        if (this.state.activeMenu) {
-            this.state.activeMenu.remove();
-            this.state.activeMenu = null;
-        }
+        if (this.state.activeMenu) { this.state.activeMenu.remove(); this.state.activeMenu = null; }
     }
 
     async loadData() {
@@ -151,13 +75,11 @@ export class SchedulePage {
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
             
             if (!schedule) {
-                // 初始化 State (尚未寫入 DB，由 resetToPreSchedule 觸發寫入)
                 this.state.scheduleData = {
                     unitId: this.state.currentUnitId, year: this.state.year, month: this.state.month,
                     status: 'draft', assignments: {}
                 };
                 staffList.forEach(s => this.state.scheduleData.assignments[s.uid] = {});
-                
                 await this.resetToPreSchedule(false);
             } else {
                 this.state.scheduleData = schedule;
@@ -165,7 +87,6 @@ export class SchedulePage {
                 this.updateStatusBadge();
                 this.updateScoreDisplay();
             }
-
         } catch (error) {
             console.error(error);
             container.innerHTML = `<div class="alert alert-danger m-3">載入失敗: ${error.message}</div>`;
@@ -174,10 +95,8 @@ export class SchedulePage {
         }
     }
 
-    // ✅ 使用 Service 的 updateAllAssignments (底層已改為 setDoc)
     async resetToPreSchedule(showConfirm = true) {
         if(showConfirm && !confirm("確定重置？\n這將清除所有已排的班別，並重新載入預班資料。")) return;
-        
         const loading = document.getElementById('loading-indicator');
         if(loading) loading.style.display = 'block';
 
@@ -195,29 +114,22 @@ export class SchedulePage {
                     }
                 });
             }
-
             this.state.scheduleData.assignments = newAssignments;
-            
-            // ✅ 這裡現在安全了，Service 會處理文件不存在的情況
-            await ScheduleService.updateAllAssignments(
-                this.state.currentUnitId, this.state.year, this.state.month, newAssignments
-            );
-            
+            await ScheduleService.updateAllAssignments(this.state.currentUnitId, this.state.year, this.state.month, newAssignments);
             this.renderGrid();
             this.updateScoreDisplay();
             if(showConfirm) alert("✅ 已重置為預班初始狀態。");
-
-        } catch(e) {
-            console.error(e);
-            alert("重置失敗: " + e.message);
-        } finally {
-            if(loading) loading.style.display = 'none';
-        }
+        } catch(e) { console.error(e); alert("重置失敗: " + e.message); } finally { if(loading) loading.style.display = 'none'; }
     }
 
+    // 核心渲染邏輯：先運算規則，再呼叫 Template 產生 HTML
     renderGrid() {
+        const validation = RuleEngine.validateAll(
+            this.state.scheduleData, this.state.daysInMonth, this.state.staffList, this.state.unitSettings, this.state.unitSettings?.rules
+        );
         const container = document.getElementById('schedule-grid-container');
-        container.innerHTML = this.generateTableHtml(this.state.scheduleData.assignments, true, false);
+        // 呼叫 Template
+        container.innerHTML = SchedulePageTemplate.renderGrid(this.state, validation, { isInteractive: true });
         this.bindMenu();
     }
 
@@ -270,93 +182,9 @@ export class SchedulePage {
     }
 
     showScoreDetails() {
-        const r = this.state.scoreResult;
-        if (!r) return alert("尚未計算分數");
-        const d = r.details;
-        
-        const renderItem = (label, obj, extra='') => `
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                <span>${label}</span>
-                <div class="text-end"><span class="badge bg-primary rounded-pill">${obj.score.toFixed(0)}分</span><small class="text-muted ms-2">${extra}</small></div>
-            </li>`;
-
-        let html = `
-            <div class="p-3 bg-light text-center border-bottom">
-                <h1 class="display-4 fw-bold mb-0 ${r.totalScore>=80?'text-success':'text-primary'}">${r.totalScore}</h1>
-                <div class="small text-muted">總分</div>
-                ${r.passed ? '<span class="badge bg-success">Hard Constraints Pass</span>' : '<span class="badge bg-danger">Hard Constraints Fail</span>'}
-            </div>
-            <ul class="list-group list-group-flush">
-                ${renderItem('公平性', d.fairness, `SD:${d.fairness.hoursSD||'-'}`)}
-                ${renderItem('滿意度', d.satisfaction)}
-                ${renderItem('效率', d.efficiency, d.efficiency.coverage)}
-                ${renderItem('健康', d.health)}
-                ${renderItem('品質', d.quality)}
-                ${renderItem('成本', d.cost)}
-            </ul>
-        `;
-        document.getElementById('score-details-body').innerHTML = html;
+        if (!this.state.scoreResult) return alert("尚未計算分數");
+        document.getElementById('score-details-body').innerHTML = SchedulePageTemplate.renderScoreDetails(this.state.scoreResult);
         this.scoreModal.show();
-    }
-
-    generateTableHtml(assignments, isInteractive, isDropZone, versionIdx = null) {
-        const { year, month, daysInMonth, staffList, unitSettings } = this.state;
-        const shiftDefs = unitSettings?.settings?.shifts || [];
-        const rules = unitSettings?.rules || { constraints: {} }; 
-        const tempSchedule = { year, month, assignments };
-        const validation = RuleEngine.validateAll(tempSchedule, daysInMonth, staffList, unitSettings, rules);
-        const { staffReport, coverageErrors } = validation;
-
-        const shiftMap = {};
-        shiftDefs.forEach(s => shiftMap[s.code] = s);
-        shiftMap['OFF'] = { color: '#e5e7eb', name: '休' };
-        shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' }; 
-
-        let headerHtml = '<thead><tr><th class="sticky-col bg-light" style="min-width:140px; z-index:20;">人員 / 日期</th>';
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dateObj = new Date(year, month - 1, d);
-            const weekStr = ['日','一','二','三','四','五','六'][dateObj.getDay()];
-            let thClass = (dateObj.getDay()===0||dateObj.getDay()===6) ? 'text-danger' : '';
-            if (coverageErrors && coverageErrors[d]) thClass += ' bg-warning'; 
-            headerHtml += `<th class="${thClass}" style="min-width:40px;">${d}<br><span style="font-size:0.8em">${weekStr}</span></th>`;
-        }
-        headerHtml += '</tr></thead>';
-
-        let bodyHtml = '<tbody>';
-        staffList.forEach(staff => {
-            const staffAssignments = assignments[staff.uid] || {};
-            const staffErrors = staffReport[staff.uid]?.errors || {};
-            const deleteBtn = isInteractive 
-                ? `<i class="fas fa-times text-danger ms-2" style="cursor:pointer;" onclick="window.routerPage.deleteStaff('${staff.uid}')"></i>` 
-                : '';
-
-            bodyHtml += `<tr>
-                <td class="sticky-col bg-white" style="z-index:10;">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div><strong>${staff.name}</strong><br><span class="text-muted small">${staff.rank || ''}</span></div>
-                        ${deleteBtn}
-                    </div>
-                </td>`;
-
-            for (let d = 1; d <= daysInMonth; d++) {
-                const code = staffAssignments[d] || '';
-                let style = '';
-                if(code === 'M_OFF') style = 'background-color:#6f42c1; color:white;';
-                else if (code && shiftMap[code]) style = `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}`;
-                
-                const errorMsg = staffErrors[d];
-                const borderStyle = errorMsg ? 'border: 2px solid red !important;' : '';
-                const title = errorMsg ? `title="${errorMsg}"` : '';
-                const cellClass = isInteractive ? 'shift-cell' : ''; 
-                const cursor = isInteractive ? 'cursor:pointer;' : '';
-                const dropAttrs = isDropZone ? `ondragover="event.preventDefault()" ondrop="window.routerPage.handleDrop(event, '${staff.uid}', ${d}, ${versionIdx})"` : '';
-
-                bodyHtml += `<td class="${cellClass}" data-staff-id="${staff.uid}" data-day="${d}" style="${cursor} ${style}; ${borderStyle}" ${title} ${dropAttrs}>${code === 'M_OFF' ? 'OFF' : code}</td>`;
-            }
-            bodyHtml += '</tr>';
-        });
-        bodyHtml += '</tbody>';
-        return `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
     }
 
     async runMultiVersionAI() {
@@ -381,18 +209,26 @@ export class SchedulePage {
         this.generatedVersions.forEach((v, idx) => {
             const tabPane = document.getElementById(`v${v.id}`);
             if(!tabPane) return;
+            
+            // 計算缺班
             const missing = this.calculateMissingShifts(v.assignments);
+            
+            // 驗證規則
+            const validation = RuleEngine.validateAll(
+                { year: this.state.year, month: this.state.month, assignments: v.assignments },
+                this.state.daysInMonth, this.state.staffList, this.state.unitSettings, this.state.unitSettings?.rules
+            );
+
+            // 組合 UI
             const scoreBadge = v.score.passed ? `<span class="badge bg-success fs-5">${v.score.totalScore} 分</span>` : `<span class="badge bg-danger fs-5">不合格</span>`;
             const infoHtml = `<div class="alert alert-light border d-flex justify-content-between align-items-center mb-2"><div class="d-flex align-items-center gap-3">${scoreBadge}<div class="small text-muted border-start ps-3"><div>公平性: ${v.score.details.fairness.score.toFixed(0)}</div><div>滿意度: ${v.score.details.satisfaction.score.toFixed(0)}</div></div></div><button class="btn btn-primary" onclick="window.routerPage.applyVersion(${idx})">套用此版本</button></div>`;
+            const poolHtml = SchedulePageTemplate.renderMissingPool(missing);
             
-            let poolHtml = '';
-            if (missing.length > 0) {
-                poolHtml = '<div class="card mb-2 border-danger"><div class="card-header bg-danger text-white py-1 small">缺班池 (請拖曳補班)</div><div class="card-body p-2 d-flex flex-wrap gap-2">';
-                missing.forEach(m => { poolHtml += `<span class="badge bg-dark p-2" style="cursor:grab;" draggable="true" ondragstart="window.routerPage.handleDragStart(event, '${m.shift}')">${m.day}日: ${m.shift} <span class="badge bg-light text-dark rounded-pill ms-1">${m.count}</span></span>`; });
-                poolHtml += '</div></div>';
-            } else { poolHtml = '<div class="alert alert-success py-1 mb-2 small"><i class="fas fa-check"></i> 人力需求已全數滿足</div>'; }
-
-            const gridHtml = `<div style="max-height:60vh; overflow:auto;">${this.generateTableHtml(v.assignments, false, true, idx)}</div>`;
+            // 呼叫 Template 的 Grid 渲染 (isDropZone = true)
+            // 這裡需要造一個 fake Context 給 Template
+            const fakeCtx = { ...this.state, scheduleData: { assignments: v.assignments } };
+            const gridHtml = `<div style="max-height:60vh; overflow:auto;">${SchedulePageTemplate.renderGrid(fakeCtx, validation, { isInteractive: false, isDropZone: true, versionIdx: idx })}</div>`;
+            
             tabPane.innerHTML = infoHtml + poolHtml + gridHtml;
         });
     }
@@ -438,6 +274,7 @@ export class SchedulePage {
     async deleteStaff(uid) {
         if(!confirm("從本月班表中移除此人員？")) return;
         delete this.state.scheduleData.assignments[uid];
+        // 這裡僅從前端 List 移除顯示，並更新 DB (不刪除 User)
         this.state.staffList = this.state.staffList.filter(s => s.uid !== uid);
         await ScheduleService.updateAllAssignments(this.state.currentUnitId, this.state.year, this.state.month, this.state.scheduleData.assignments);
         this.renderGrid();
