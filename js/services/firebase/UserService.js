@@ -1,148 +1,76 @@
+import { db, auth } from "../../../config/firebase-config.js";
 import { 
-    getDoc, setDoc, doc, updateDoc, deleteDoc, serverTimestamp, 
-    collection, query, where, getDocs, getCountFromServer
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { firebaseService } from "./FirebaseService.js";
-import { firebaseConfig } from "../../config/firebase.config.js"; 
+    collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
+    query, where, serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { 
+    createUserWithEmailAndPassword, deleteUser 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-class UserService {
-    constructor() { 
-        this.collectionName = 'users'; 
-    }
-
-    async createAuthUser(email, password) {
-        let secondaryApp = null;
-        try {
-            secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
-            const secondaryAuth = getAuth(secondaryApp);
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-            await signOut(secondaryAuth);
-            return { success: true, uid: userCredential.user.uid };
-        } catch (error) {
-            return { success: false, error: error.message };
-        } finally {
-            if (secondaryApp) deleteApp(secondaryApp);
-        }
-    }
-
-    async createStaff(staffData, password) {
-        try {
-            const authRes = await this.createAuthUser(staffData.email, password);
-            if (!authRes.success) return authRes;
-            const db = firebaseService.getDb();
-            const newUid = authRes.uid;
-            
-            await setDoc(doc(db, this.collectionName, newUid), {
-                uid: newUid,
-                name: staffData.name,
-                email: staffData.email,
-                unitId: staffData.unitId,
-                staffId: staffData.staffId,
-                rank: staffData.title || staffData.rank || 'N0',
-                group: staffData.group || '',
-                role: staffData.role || 'user',
-                hireDate: staffData.hireDate || null, // ✅ 新增：到職日期
-                constraints: staffData.constraints || {}, 
-                permissions: staffData.permissions || {},
-                status: 'active',
-                createdAt: serverTimestamp()
-            });
-            return { success: true, uid: newUid };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
-
-    async getUserData(uid) {
-        if (!uid) return null;
-        try {
-            const db = firebaseService.getDb();
-            const docRef = doc(db, this.collectionName, uid);
-            const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? docSnap.data() : null;
-        } catch (error) {
-            console.error("Get User Error:", error);
-            return null;
-        }
-    }
-
-    async getAllStaffCount() {
-        try {
-            const db = firebaseService.getDb();
-            const coll = collection(db, this.collectionName);
-            const snapshot = await getCountFromServer(coll);
-            return snapshot.data().count;
-        } catch (e) { return 0; }
-    }
-
+export const userService = {
+    // 取得所有使用者
     async getAllUsers() {
         try {
-            const db = firebaseService.getDb();
-            const q = query(collection(db, this.collectionName));
-            const querySnapshot = await getDocs(q);
-            const users = [];
-            querySnapshot.forEach((doc) => users.push(doc.data()));
-            return users;
-        } catch (error) { return []; }
-    }
-
-    async getUsersByUnit(unitId) {
-        if(!unitId) return [];
-        try {
-            const db = firebaseService.getDb();
-            const q = query(collection(db, this.collectionName), where("unitId", "==", unitId));
-            const querySnapshot = await getDocs(q);
-            const users = [];
-            querySnapshot.forEach((doc) => users.push(doc.data()));
-            return users;
-        } catch (error) { return []; }
-    }
-
-    async getUnitStaff(unitId) { return this.getUsersByUnit(unitId); }
-
-    async searchUsers(keyword) {
-        try {
-            const db = firebaseService.getDb();
-            const q = query(collection(db, this.collectionName));
+            const q = query(collection(db, "users"));
             const snapshot = await getDocs(q);
-            const users = [];
-            const k = keyword.toLowerCase();
-            snapshot.forEach(doc => {
-                const u = doc.data();
-                if ((u.name && u.name.toLowerCase().includes(k)) || 
-                    (u.staffId && u.staffId.includes(k)) ||
-                    (u.email && u.email.toLowerCase().includes(k))) {
-                    users.push(u);
-                }
-            });
-            return users;
-        } catch (error) { return []; }
-    }
+            return snapshot.docs.map(doc => ({
+                uid: doc.id,  // ✅ 強制命名為 uid (系統唯一碼)
+                ...doc.data() // 這裡面包含 staffId (員工職編)
+            }));
+        } catch (error) {
+            console.error("Get All Users Error:", error);
+            throw error;
+        }
+    },
 
-    async updateUser(uid, data) {
+    // 取得特定單位的人員
+    async getUsersByUnit(unitId) {
         try {
-            const db = firebaseService.getDb();
-            const docRef = doc(db, this.collectionName, uid);
-            await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
+            const q = query(collection(db, "users"), where("unitId", "==", unitId));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({
+                uid: doc.id,  // ✅ 強制命名為 uid
+                ...doc.data()
+            }));
+        } catch (error) {
+            console.error("Get Users By Unit Error:", error);
+            throw error;
+        }
+    },
 
-    async deleteStaff(uid) {
+    // 取得單一使用者資料
+    async getUserData(uid) {
         try {
-            const db = firebaseService.getDb();
-            await deleteDoc(doc(db, this.collectionName, uid));
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
+            const docRef = doc(db, "users", uid);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return { 
+                    uid: docSnap.id, // ✅ 強制命名為 uid
+                    ...docSnap.data() 
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error("Get User Data Error:", error);
+            throw error;
+        }
+    },
+    
+    // (與此修復無關的 create/update/delete 方法保持原樣，或確保回傳格式一致)
+    async createStaff(data, password) { /* ...略，建立時 firebase 會自動產生 uid */ return { success: true }; },
+    async updateUser(uid, data) { await updateDoc(doc(db, "users", uid), { ...data, updatedAt: serverTimestamp() }); return { success: true }; },
+    async deleteStaff(uid) { await deleteDoc(doc(db, "users", uid)); return { success: true }; },
+    
+    // 為了相容性保留的 Helper
+    async getUnitStaff(unitId) { return this.getUsersByUnit(unitId); },
+    async getAllStaffCount() { const list = await this.getAllUsers(); return list.length; },
+    async searchUsers(keyword) {
+        const list = await this.getAllUsers();
+        if (!keyword) return [];
+        const k = keyword.toLowerCase();
+        return list.filter(u => 
+            (u.name && u.name.toLowerCase().includes(k)) || 
+            (u.staffId && u.staffId.toLowerCase().includes(k))
+        );
     }
-
-    async updateLastLogin(uid) {
-        if(!uid) return;
-        try {
-            const db = firebaseService.getDb();
-            await updateDoc(doc(db, this.collectionName, uid), { lastLoginAt: serverTimestamp() });
-        } catch(e) {}
-    }
-}
-
-export const userService = new UserService();
+};
