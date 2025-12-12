@@ -1,4 +1,4 @@
-import { db, auth } from "../../../config/firebase-config.js";
+import { db, auth } from "../../../config/firebase.config.js";
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
     query, where, serverTimestamp 
@@ -74,3 +74,4 @@ export const userService = {
         );
     }
 };
+
