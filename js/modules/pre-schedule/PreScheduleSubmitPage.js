@@ -14,16 +14,19 @@ export class PreScheduleSubmitPage {
         this.year = targetYear;
         this.month = targetMonth;
         
-        this.currentUser = null;
-        this.realUser = null;
-        this.currentUnit = null; 
+        // 核心狀態
+        this.realUser = null;       // 實際登入者 (操作者)
+        this.currentUser = null;    // 預班目標對象 (可能是自己，也可能是被模擬者)
+        this.targetUnitId = null;   // 當前鎖定的單位 ID (Context)
+        this.currentUnit = null;    // 當前單位的完整資料物件
+        
         this.unitStaffMap = {}; 
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
-        
         this.myWishes = {};
         this.unitAggregate = {}; 
         this.unitNames = {}; 
+        
         this.isReadOnly = false;
         this.isAdminMode = false;
         
@@ -43,6 +46,7 @@ export class PreScheduleSubmitPage {
     }
 
     async afterRender() {
+        // 1. 確保 Auth
         let retries = 0;
         while (!authService.getProfile() && retries < 10) { await new Promise(r => setTimeout(r, 200)); retries++; }
         
@@ -51,9 +55,22 @@ export class PreScheduleSubmitPage {
 
         window.routerPage = this;
 
-        // 初始化右鍵選單內容
+        // 2. 初始化 UI 元件
         document.getElementById('user-shift-menu').innerHTML = PreScheduleSubmitTemplate.renderContextMenu(this.shiftTypes);
+        this.bindEvents();
 
+        // 3. 權限分流初始化
+        if (this.realUser.role === 'system_admin' || this.realUser.originalRole === 'system_admin') {
+            this.isAdminMode = true;
+            this.setupAdminUI();
+            document.getElementById('list-view').innerHTML = '<div class="alert alert-warning m-3">請先選擇上方「管理員模式」的單位與人員，進行模擬。</div>';
+            document.getElementById('list-view').style.display = 'block';
+        } else {
+            this.initRegularUser();
+        }
+    }
+
+    bindEvents() {
         document.getElementById('btn-prev-year').addEventListener('click', () => { this.year--; this.updateYearDisplay(); });
         document.getElementById('btn-next-year').addEventListener('click', () => { this.year++; this.updateYearDisplay(); });
         document.getElementById('btn-load').addEventListener('click', () => this.tryLoadSchedule());
@@ -63,86 +80,148 @@ export class PreScheduleSubmitPage {
         document.addEventListener('click', (e) => {
             if(!e.target.closest('#user-shift-menu')) document.getElementById('user-shift-menu').style.display = 'none';
         });
-
-        if (this.realUser.role === 'system_admin' || this.realUser.originalRole === 'system_admin') {
-            this.isAdminMode = true;
-            this.setupAdminUI();
-            document.getElementById('list-view').innerHTML = '<div class="alert alert-warning m-3">請先選擇上方「管理員模式」的單位與人員，進行模擬。</div>';
-            document.getElementById('list-view').style.display = 'block';
-        } else {
-            await this.loadTargetUser(this.realUser.uid);
-        }
     }
 
     updateYearDisplay() {
         document.getElementById('display-year').textContent = this.year;
     }
 
+    // --- 一般使用者初始化 ---
+    async initRegularUser() {
+        this.targetUnitId = this.realUser.unitId;
+        this.currentUser = this.realUser;
+        
+        if (!this.targetUnitId) {
+            alert("您的帳號尚未綁定單位，無法使用預班功能。");
+            return;
+        }
+
+        await this.loadContextData(); // 載入單位與人員名單
+        this.tryLoadSchedule();
+    }
+
+    // --- 管理員 UI 初始化 ---
     async setupAdminUI() {
         const section = document.getElementById('admin-impersonate-section');
         section.style.display = 'block';
+        
         const unitSelect = document.getElementById('admin-unit-select');
         const userSelect = document.getElementById('admin-user-select');
         const btn = document.getElementById('btn-impersonate');
 
+        // 1. 載入所有單位
         const units = await UnitService.getAllUnits();
-        unitSelect.innerHTML = `<option value="">選擇單位</option>` + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+        unitSelect.innerHTML = `<option value="">選擇單位</option>` + units.map(u => `<option value="${u.id}">${u.unitName}</option>`).join('');
 
+        // 2. 單位連動人員
         unitSelect.addEventListener('change', async () => {
             if(!unitSelect.value) return;
             const staff = await userService.getUnitStaff(unitSelect.value);
             userSelect.innerHTML = `<option value="">選擇人員</option>` + staff.map(u => `<option value="${u.uid}">${u.name}</option>`).join('');
         });
 
+        // 3. 執行切換 (Switch Context)
         btn.addEventListener('click', () => {
             const uid = userSelect.value;
+            const unitId = unitSelect.value;
+            
             if(!uid) return alert("請選擇人員");
-            this.loadTargetUser(uid);
+            if(!unitId) return alert("請選擇單位");
+
+            this.handleAdminSwitch(unitId, uid);
         });
     }
 
-    async loadTargetUser(uid) {
+    // --- 管理員切換邏輯 (核心修正) ---
+    async handleAdminSwitch(unitId, userId) {
         try {
-            const userFull = await userService.getUserData(uid);
-            if(!userFull) throw new Error("找不到使用者資料");
-            this.currentUser = userFull; 
-            this.currentUnit = await UnitService.getUnitById(this.currentUser.unitId);
+            // 1. 設定目標單位 (Context)
+            this.targetUnitId = unitId;
             
+            // 2. 取得目標使用者 (Identity)
+            const targetUser = await userService.getUserData(userId);
+            if (!targetUser) throw new Error("找不到該使用者資料");
+            this.currentUser = targetUser;
+
+            // 3. 載入環境資料 & 預班表
+            await this.loadContextData();
+            
+            // UI 切換
             document.getElementById('detail-view').style.display = 'none';
             document.getElementById('list-view').style.display = 'block';
-
-            const staff = await userService.getUnitStaff(this.currentUser.unitId);
-            staff.forEach(s => this.unitStaffMap[s.uid] = s.name);
-
+            
             this.tryLoadSchedule();
-        } catch(e) { console.error(e); alert("載入使用者失敗: " + e.message); }
+
+        } catch (e) {
+            console.error(e);
+            alert("切換身份失敗: " + e.message);
+        }
     }
 
+    // --- 共用：載入單位與人員名單 ---
+    async loadContextData() {
+        // 載入單位資訊
+        this.currentUnit = await UnitService.getUnitById(this.targetUnitId);
+        
+        // 載入該單位人員名單 (用於顯示他人預班名字)
+        const staff = await userService.getUnitStaff(this.targetUnitId);
+        this.unitStaffMap = {};
+        staff.forEach(s => this.unitStaffMap[s.uid] = s.name);
+    }
+
+    // --- 載入預班表列表 ---
     async tryLoadSchedule() {
-        if(!this.currentUser || !this.currentUser.unitId) return;
-        const allSchedules = await PreScheduleService.getPreSchedulesList(this.currentUser.unitId);
+        if(!this.targetUnitId) return;
+
+        // 使用 this.targetUnitId 作為查詢依據
+        const allSchedules = await PreScheduleService.getPreSchedulesList(this.targetUnitId);
         this.preSchedulesList = allSchedules;
         const tbody = document.getElementById('schedule-list-tbody');
 
-        if (allSchedules.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="py-5 text-muted">此單位目前無預班表</td></tr>'; return; }
+        if (allSchedules.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="py-5 text-muted">此單位目前無預班表</td></tr>';
+            return;
+        }
 
         const now = new Date().toISOString().split('T')[0];
+
         tbody.innerHTML = allSchedules.map(p => {
-            if (!p.staffIds.includes(this.currentUser.uid) && !this.isAdminMode) return '';
+            // 權限過濾：
+            // 1. 管理員模式：全部顯示
+            // 2. 一般模式：只顯示自己在名單內的
+            if (!this.isAdminMode && !p.staffIds.includes(this.currentUser.uid)) return '';
+
             const openDate = p.settings?.openDate || '';
             const closeDate = p.settings?.closeDate || '';
             let statusHtml = '';
             let isExpired = false;
 
-            if (p.status === 'closed') { statusHtml = '<span class="badge bg-secondary">已關閉</span>'; isExpired = true; }
-            else if (now < openDate) { statusHtml = '<span class="badge bg-warning text-dark">未開放</span>'; isExpired = true; }
-            else if (now > closeDate) { statusHtml = '<span class="badge bg-danger">已截止</span>'; isExpired = true; }
-            else { statusHtml = '<span class="badge bg-success">進行中</span>'; }
+            if (p.status === 'closed') {
+                statusHtml = '<span class="badge bg-secondary">已關閉</span>'; isExpired = true;
+            } else if (now < openDate) {
+                statusHtml = '<span class="badge bg-warning text-dark">未開放</span>'; isExpired = true;
+            } else if (now > closeDate) {
+                statusHtml = '<span class="badge bg-danger">已截止</span>'; isExpired = true;
+            } else {
+                statusHtml = '<span class="badge bg-success">進行中</span>';
+            }
 
             const btnText = isExpired ? '檢視' : '預班';
             const btnClass = isExpired ? 'btn-outline-secondary' : 'btn-primary';
 
-            return `<tr><td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td><td>${this.currentUnit.unitName}</td><td><small>${openDate} ~ ${closeDate}</small></td><td>${statusHtml}</td><td><button class="btn btn-sm ${btnClass}" onclick="window.routerPage.openSchedule('${p.id}', ${isExpired})">${btnText}</button></td></tr>`;
+            return `
+                <tr>
+                    <td class="fw-bold">${p.year}-${String(p.month).padStart(2,'0')}</td>
+                    <td>${this.currentUnit.unitName}</td>
+                    <td><small>${openDate} ~ ${closeDate}</small></td>
+                    <td>${statusHtml}</td>
+                    <td>
+                        <button class="btn btn-sm ${btnClass}" onclick="window.routerPage.openSchedule('${p.id}', ${isExpired})">
+                            ${btnText}
+                        </button>
+                    </td>
+                </tr>
+            `;
         }).join('');
         
         document.getElementById('list-view').style.display = 'block';
@@ -157,6 +236,7 @@ export class PreScheduleSubmitPage {
     openSchedule(id, isReadOnly) {
         this.currentSchedule = this.preSchedulesList.find(s => s.id === id);
         if (!this.currentSchedule) return;
+        
         this.isReadOnly = isReadOnly || (this.isAdminMode ? false : false);
 
         document.getElementById('list-view').style.display = 'none';
@@ -171,7 +251,7 @@ export class PreScheduleSubmitPage {
         document.getElementById('limit-total').textContent = settings.maxOffDays;
         document.getElementById('limit-holiday').textContent = settings.maxHoliday || 0;
 
-        // 呼叫 Template 渲染偏好 (Logic => View)
+        // 渲染偏好設定
         const canBatch = this.currentUser.constraints?.canBatch;
         const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
         document.getElementById('preference-container').innerHTML = 
@@ -187,149 +267,15 @@ export class PreScheduleSubmitPage {
         this.updateCounters();
     }
 
-    calculateAggregate() {
-        this.unitAggregate = {};
-        this.unitNames = {};
-        const subs = this.currentSchedule.submissions || {};
-        Object.entries(subs).forEach(([uid, sub]) => {
-            if (sub.wishes) {
-                Object.entries(sub.wishes).forEach(([day, type]) => {
-                    this.unitAggregate[day] = (this.unitAggregate[day] || 0) + 1;
-                    if (this.currentSchedule.settings.showOtherNames) {
-                        if (!this.unitNames[day]) this.unitNames[day] = [];
-                        const name = this.unitStaffMap[uid] || '未知';
-                        this.unitNames[day].push(`${name}(${type})`);
-                    }
-                });
-            }
-        });
-    }
-
-    renderCalendar() {
-        const grid = document.getElementById('calendar-container');
-        grid.innerHTML = '';
-        ['日','一','二','三','四','五','六'].forEach(w => grid.innerHTML += `<div class="calendar-header">${w}</div>`);
-
-        const { year, month } = this.currentSchedule;
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const firstDay = new Date(year, month - 1, 1).getDay();
-        
-        const totalStaff = this.currentSchedule.staffIds.length;
-        const reserved = this.currentSchedule.settings.reservedStaff || 0;
-        const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}};
-
-        for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none;"></div>`;
-
-        for(let d=1; d<=daysInMonth; d++) {
-            const date = new Date(year, month - 1, d);
-            const w = date.getDay();
-            const isWeekend = (w === 0 || w === 6);
-            
-            const reqTotal = (reqMatrix.D?.[w]||0) + (reqMatrix.E?.[w]||0) + (reqMatrix.N?.[w]||0);
-            let dailyLimit = totalStaff - reqTotal - reserved;
-            if(dailyLimit < 0) dailyLimit = 0;
-
-            const count = this.unitAggregate[d] || 0;
-            const isFull = count >= dailyLimit;
-            const myType = this.myWishes[d];
-            const cfg = myType ? this.shiftTypes[myType] : null;
-
-            const cell = document.createElement('div');
-            let classes = 'calendar-cell';
-            if(isWeekend) classes += ' weekend';
-            if(myType) classes += ' selected';
-            if(isFull) classes += ' over-limit'; 
-            if(this.isReadOnly && !this.isAdminMode) classes += ' disabled';
-
-            cell.className = classes;
-            
-            let tagHtml = '';
-            if(cfg) {
-                const style = cfg.border ? `background:${cfg.bg}; color:${cfg.text}; border:${cfg.border};` : `background:${cfg.bg}; color:${cfg.text};`;
-                tagHtml = `<span class="shift-badge" style="${style}">${cfg.label}</span>`;
-            }
-
-            if (this.currentSchedule.settings.showOtherNames && this.unitNames[d]) {
-                cell.title = `已預班：${this.unitNames[d].join('、')}`;
-            }
-
-            const bottomInfo = `<div class="bottom-stats ${isFull ? 'full' : ''}"><i class="fas fa-user"></i> ${count}/${dailyLimit}</div>`;
-            cell.innerHTML = `<div class="day-number ${isWeekend ? 'weekend-text' : ''}">${d}</div> ${tagHtml} ${bottomInfo}`;
-
-            if(!this.isReadOnly || this.isAdminMode) {
-                cell.onclick = () => this.toggleDay(d);
-                cell.oncontextmenu = (e) => this.handleRightClick(e, d);
-            }
-            grid.appendChild(cell);
-        }
-    }
-
-    toggleDay(day) {
-        if (this.myWishes[day]) delete this.myWishes[day];
-        else {
-            if (!this.checkLimits(day)) return;
-            this.myWishes[day] = 'OFF';
-        }
-        this.renderCalendar();
-        this.updateCounters();
-    }
-
-    handleRightClick(e, day) {
-        e.preventDefault();
-        this.tempTarget = day;
-        const menu = document.getElementById('user-shift-menu');
-        menu.style.left = `${e.clientX}px`;
-        menu.style.top = `${e.clientY}px`;
-        menu.style.display = 'block';
-    }
-
-    applyShiftFromMenu(type) {
-        if(!this.tempTarget) return;
-        const day = this.tempTarget;
-        if(type) {
-            if (!this.myWishes[day] && !this.checkLimits(day)) return;
-            this.myWishes[day] = type;
-        } else {
-            delete this.myWishes[day];
-        }
-        this.renderCalendar();
-        this.updateCounters();
-        document.getElementById('user-shift-menu').style.display = 'none';
-    }
-
-    checkLimits(day) {
-        if (this.isAdminMode) return true;
-        const settings = this.currentSchedule.settings;
-        const maxOff = parseInt(settings.maxOffDays);
-        const maxHoliday = parseInt(settings.maxHoliday || 0);
-        
-        const currentTotal = Object.keys(this.myWishes).length;
-        if (currentTotal >= maxOff) { alert("已達預班總數上限"); return false; }
-
-        const date = new Date(this.currentSchedule.year, this.currentSchedule.month-1, day);
-        const w = date.getDay();
-        if(w===0 || w===6) {
-            let hCount = 0;
-            Object.keys(this.myWishes).forEach(d => {
-                const dt = new Date(this.currentSchedule.year, this.currentSchedule.month-1, d);
-                if(dt.getDay()===0 || dt.getDay()===6) hCount++;
-            });
-            if(hCount >= maxHoliday) { alert("已達假日預班上限"); return false; }
-        }
-        return true;
-    }
-
-    updateCounters() {
-        const total = Object.keys(this.myWishes).length;
-        let holiday = 0;
-        Object.keys(this.myWishes).forEach(d => {
-            const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d);
-            if(date.getDay() === 0 || date.getDay() === 6) holiday++;
-        });
-        document.getElementById('count-total').textContent = total;
-        document.getElementById('count-holiday').textContent = holiday;
-    }
-
+    // (以下方法保持不變，與 Template 版配合)
+    calculateAggregate() { this.unitAggregate = {}; this.unitNames = {}; const subs = this.currentSchedule.submissions || {}; Object.entries(subs).forEach(([uid, sub]) => { if (sub.wishes) { Object.entries(sub.wishes).forEach(([day, type]) => { this.unitAggregate[day] = (this.unitAggregate[day] || 0) + 1; if (this.currentSchedule.settings.showOtherNames) { if (!this.unitNames[day]) this.unitNames[day] = []; const name = this.unitStaffMap[uid] || '未知'; this.unitNames[day].push(`${name}(${type})`); } }); } }); }
+    renderCalendar() { const grid = document.getElementById('calendar-container'); grid.innerHTML = ''; ['日','一','二','三','四','五','六'].forEach(w => grid.innerHTML += `<div class="calendar-header">${w}</div>`); const { year, month } = this.currentSchedule; const daysInMonth = new Date(year, month, 0).getDate(); const firstDay = new Date(year, month - 1, 1).getDay(); const totalStaff = this.currentSchedule.staffIds.length; const reserved = this.currentSchedule.settings.reservedStaff || 0; const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}}; for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none;"></div>`; for(let d=1; d<=daysInMonth; d++) { const date = new Date(year, month - 1, d); const w = date.getDay(); const isWeekend = (w === 0 || w === 6); const reqTotal = (reqMatrix.D?.[w]||0) + (reqMatrix.E?.[w]||0) + (reqMatrix.N?.[w]||0); let dailyLimit = totalStaff - reqTotal - reserved; if(dailyLimit < 0) dailyLimit = 0; const count = this.unitAggregate[d] || 0; const isFull = count >= dailyLimit; const myType = this.myWishes[d]; const cfg = myType ? this.shiftTypes[myType] : null; const cell = document.createElement('div'); let classes = 'calendar-cell'; if(isWeekend) classes += ' weekend'; if(myType) classes += ' selected'; if(isFull) classes += ' over-limit'; if(this.isReadOnly && !this.isAdminMode) classes += ' disabled'; cell.className = classes; let tagHtml = ''; if(cfg) { const style = cfg.border ? `background:${cfg.bg}; color:${cfg.text}; border:${cfg.border};` : `background:${cfg.bg}; color:${cfg.text};`; tagHtml = `<span class="shift-badge" style="${style}">${cfg.label}</span>`; } if (this.currentSchedule.settings.showOtherNames && this.unitNames[d]) { cell.title = `已預班：${this.unitNames[d].join('、')}`; } const bottomInfo = `<div class="bottom-stats ${isFull ? 'full' : ''}"><i class="fas fa-user"></i> ${count}/${dailyLimit}</div>`; cell.innerHTML = `<div class="day-number ${isWeekend ? 'weekend-text' : ''}">${d}</div> ${tagHtml} ${bottomInfo}`; if(!this.isReadOnly || this.isAdminMode) { cell.onclick = () => this.toggleDay(d); cell.oncontextmenu = (e) => this.handleRightClick(e, d); } grid.appendChild(cell); } }
+    toggleDay(day) { if (this.myWishes[day]) delete this.myWishes[day]; else { if (!this.checkLimits(day)) return; this.myWishes[day] = 'OFF'; } this.renderCalendar(); this.updateCounters(); }
+    handleRightClick(e, day) { e.preventDefault(); this.tempTarget = day; const menu = document.getElementById('user-shift-menu'); menu.style.left = `${e.clientX}px`; menu.style.top = `${e.clientY}px`; menu.style.display = 'block'; }
+    applyShiftFromMenu(type) { if(!this.tempTarget) return; const day = this.tempTarget; if(type) { if (!this.myWishes[day] && !this.checkLimits(day)) return; this.myWishes[day] = type; } else { delete this.myWishes[day]; } this.renderCalendar(); this.updateCounters(); document.getElementById('user-shift-menu').style.display = 'none'; }
+    checkLimits(day) { if (this.isAdminMode) return true; const settings = this.currentSchedule.settings; const maxOff = parseInt(settings.maxOffDays); const maxHoliday = parseInt(settings.maxHoliday || 0); const currentTotal = Object.keys(this.myWishes).length; if (currentTotal >= maxOff) { alert("已達預班總數上限"); return false; } const date = new Date(this.currentSchedule.year, this.currentSchedule.month-1, day); const w = date.getDay(); if(w===0 || w===6) { let hCount = 0; Object.keys(this.myWishes).forEach(d => { const dt = new Date(this.currentSchedule.year, this.currentSchedule.month-1, d); if(dt.getDay()===0 || dt.getDay()===6) hCount++; }); if(hCount >= maxHoliday) { alert("已達假日預班上限"); return false; } } return true; }
+    updateCounters() { const total = Object.keys(this.myWishes).length; let holiday = 0; Object.keys(this.myWishes).forEach(d => { const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d); if(date.getDay() === 0 || date.getDay() === 6) holiday++; }); document.getElementById('count-total').textContent = total; document.getElementById('count-holiday').textContent = holiday; }
+    
     async handleSubmit() {
         const canBatch = this.currentUser.constraints?.canBatch;
         const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
