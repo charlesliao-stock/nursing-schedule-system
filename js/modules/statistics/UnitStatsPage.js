@@ -1,3 +1,4 @@
+import { StatisticsService } from "../../services/StatisticsService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
@@ -20,7 +21,9 @@ export class UnitStatsPage {
                         <div class="d-flex align-items-center gap-3 flex-wrap">
                             <div class="d-flex align-items-center gap-2">
                                 <label class="fw-bold text-nowrap">單位：</label>
-                                <select id="stats-unit-select" class="form-select w-auto"><option value="">載入中...</option></select>
+                                <select id="stats-unit-select" class="form-select w-auto">
+                                    <option value="">載入中...</option>
+                                </select>
                             </div>
                             <div class="vr mx-2"></div>
                             <div class="d-flex align-items-center gap-2">
@@ -66,8 +69,9 @@ export class UnitStatsPage {
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
 
         let units = [];
-        if (isAdmin) units = await UnitService.getAllUnits();
-        else {
+        if (isAdmin) {
+            units = await UnitService.getAllUnits();
+        } else {
             units = await UnitService.getUnitsByManager(user.uid);
             if (units.length === 0 && user.unitId) {
                 const u = await UnitService.getUnitById(user.unitId);
