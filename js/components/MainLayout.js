@@ -1,6 +1,6 @@
 import { router } from "../core/Router.js";
 import { authService } from "../services/firebase/AuthService.js";
-import { userService } from "../services/firebase/UserService.js";
+import { MainLayoutTemplate } from "./templates/MainLayoutTemplate.js"; // 引入 Template
 
 export class MainLayout {
     constructor(user) {
@@ -14,6 +14,17 @@ export class MainLayout {
         this.autoHideTimer = null;
     }
 
+    render() {
+        const menus = this.getMenus(this.currentRole);
+        const menuHtml = MainLayoutTemplate.renderMenuHtml(menus);
+        const displayRoleName = this.getRoleName(this.realRole);
+        
+        const showSwitcher = (this.realRole === 'system_admin');
+        const roleSwitcherHtml = showSwitcher ? MainLayoutTemplate.renderRoleSwitcher(this.currentRole) : '';
+
+        return MainLayoutTemplate.render(this.user, roleSwitcherHtml, menuHtml, displayRoleName);
+    }
+
     getMenus(role) {
         const dashboard = { path: '/dashboard', icon: 'fas fa-tachometer-alt', label: '儀表板' };
 
@@ -24,17 +35,13 @@ export class MainLayout {
             { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
             { path: '/system/units/list', icon: 'fas fa-building', label: '單位管理' },
             { path: '/system/settings', icon: 'fas fa-tools', label: '系統設定' },
-            
             { isHeader: true, label: '排班管理' },
             { path: '/pre-schedule/manage', icon: 'fas fa-calendar-check', label: '預班管理' },
             { path: '/schedule/list', icon: 'fas fa-calendar-alt', label: '排班作業' }, 
-            
             { isHeader: true, label: '參數設定' },
             { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' },
             { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' },
-            // ✅ 修改標題：明確顯示包含評分設定
             { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '規則與評分設定' },
-            
             { isHeader: true, label: '系統紀錄' },
             { path: '/system/logs', icon: 'fas fa-list-alt', label: '操作日誌' }
         ];
@@ -46,13 +53,10 @@ export class MainLayout {
             { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員管理' },
             { path: '/pre-schedule/manage', icon: 'fas fa-calendar-check', label: '預班管理' },
             { path: '/schedule/list', icon: 'fas fa-calendar-alt', label: '排班作業' },
-            
             { isHeader: true, label: '參數設定' },
             { path: '/unit/settings/shifts', icon: 'fas fa-clock', label: '班別設定' },
             { path: '/unit/settings/groups', icon: 'fas fa-layer-group', label: '組別設定' },
-            // ✅ 修改標題
             { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '規則與評分設定' },
-            
             { isHeader: true, label: '審核與統計' },
             { path: '/swaps/review', icon: 'fas fa-check-double', label: '換班審核' },
             { path: '/stats/unit', icon: 'fas fa-chart-bar', label: '單位統計' }
@@ -65,11 +69,8 @@ export class MainLayout {
             { path: '/unit/staff/list', icon: 'fas fa-users', label: '人員檢視' },
             { path: '/pre-schedule/manage', icon: 'fas fa-calendar-check', label: '預班管理' },
             { path: '/schedule/list', icon: 'fas fa-calendar-alt', label: '排班作業' },
-            
             { isHeader: true, label: '參數檢視' },
-            // ✅ 修改標題
             { path: '/unit/settings/rules', icon: 'fas fa-ruler-combined', label: '規則與評分設定' },
-            
             { isHeader: true, label: '其他' },
             { path: '/swaps/review', icon: 'fas fa-exchange-alt', label: '換班審核' },
             { path: '/stats/unit', icon: 'fas fa-chart-bar', label: '單位統計' }
@@ -92,77 +93,6 @@ export class MainLayout {
         return userMenus;
     }
 
-    render() {
-        const menus = this.getMenus(this.currentRole);
-        const menuHtml = this.buildMenuHtml(menus);
-        const displayName = this.user.name || this.user.displayName || '使用者';
-        const displayRoleName = this.getRoleName(this.realRole);
-        
-        const showSwitcher = (this.realRole === 'system_admin');
-        const roleSwitcherHtml = showSwitcher ? `
-            <div class="me-3 d-flex align-items-center bg-white rounded px-2 border shadow-sm" style="height: 32px;">
-                <i class="fas fa-random text-primary me-2" title="視角切換"></i>
-                <select id="role-switcher" class="form-select form-select-sm border-0 bg-transparent p-0 shadow-none fw-bold" style="width: auto; cursor: pointer;">
-                    <option value="system_admin" ${this.currentRole === 'system_admin' ? 'selected' : ''}>👁️ 系統管理員</option>
-                    <option disabled>────────</option>
-                    <option value="unit_manager" ${this.currentRole === 'unit_manager' ? 'selected' : ''}>👁️ 模擬: 單位主管</option>
-                    <option value="unit_scheduler" ${this.currentRole === 'unit_scheduler' ? 'selected' : ''}>👁️ 模擬: 排班者</option>
-                    <option value="user" ${this.currentRole === 'user' ? 'selected' : ''}>👁️ 模擬: 一般人員</option>
-                </select>
-                <i class="fas fa-caret-down text-muted ms-2" style="font-size: 0.8rem;"></i>
-            </div>` : '';
-
-        return `
-            <div class="app-layout">
-                <aside class="layout-sidebar" id="layout-sidebar">
-                    <div class="sidebar-toggle-tab" id="sidebar-toggle-btn" title="切換選單">
-                        <i class="fas fa-chevron-left" id="sidebar-toggle-icon"></i>
-                    </div>
-                    
-                    <div class="sidebar-header" style="cursor:pointer;" onclick="window.location.hash='/dashboard'">
-                        <i class="fas fa-hospital-alt" style="margin-right:10px;"></i> 護理排班系統
-                    </div>
-                    
-                    <nav class="sidebar-menu" id="sidebar-menu-container">
-                        ${menuHtml}
-                    </nav>
-                </aside>
-
-                <header class="layout-header" id="layout-header">
-                    <div class="brand-logo" id="header-logo">
-                        <span id="page-title">儀表板</span>
-                    </div>
-                    <div class="user-info">
-                        ${roleSwitcherHtml}
-                        <span id="user-role-badge" class="badge bg-primary me-2">${displayRoleName}</span>
-                        <span style="margin-right:10px; color:#666;">
-                            <i class="fas fa-user-circle"></i> <span id="header-user-name">${displayName}</span>
-                        </span>
-                        <button id="layout-logout-btn" class="btn-logout" title="登出">
-                            <i class="fas fa-sign-out-alt"></i>
-                        </button>
-                    </div>
-                </header>
-
-                <main id="main-view" class="layout-content"></main>
-            </div>
-        `;
-    }
-
-    buildMenuHtml(menus) {
-        return menus.map(item => {
-            if (item.isHeader) {
-                return `<div class="menu-header text-uppercase text-xs font-weight-bold text-gray-500 mt-3 mb-1 px-3">${item.label}</div>`;
-            }
-            return `
-                <a href="#${item.path}" class="menu-item" data-path="${item.path}">
-                    <i class="${item.icon}" style="width:25px; text-align:center;"></i> 
-                    <span>${item.label}</span>
-                </a>
-            `;
-        }).join('');
-    }
-
     getRoleName(role) { 
         if (!role) return ''; 
         const map = { 'system_admin': '系統管理員', 'unit_manager': '單位護理長', 'unit_scheduler': '排班人員', 'user': '護理師', 'guest': '訪客' }; 
@@ -171,12 +101,8 @@ export class MainLayout {
 
     async afterRender() {
         this.bindEvents();
-        
         const hash = window.location.hash.slice(1) || '/dashboard';
-        const currentPath = hash.split('?')[0]; 
-        
-        this.updateActiveMenu(currentPath);
-        
+        this.updateActiveMenu(hash.split('?')[0]);
         const badgeEl = document.getElementById('user-role-badge');
         if (badgeEl && this.realRole === 'system_admin') badgeEl.className = 'badge bg-danger me-2';
     }
@@ -203,24 +129,21 @@ export class MainLayout {
         const toggleIcon = document.getElementById('sidebar-toggle-icon');
 
         if(toggleBtn && sidebar) {
-            const toggleSidebar = () => {
+            toggleBtn.addEventListener('click', () => {
                 const isCollapsed = sidebar.classList.toggle('collapsed');
                 if(header) header.classList.toggle('expanded');
                 if(content) content.classList.toggle('expanded');
                 if(toggleIcon) toggleIcon.className = isCollapsed ? 'fas fa-chevron-right' : 'fas fa-chevron-left';
-            };
-            toggleBtn.addEventListener('click', toggleSidebar);
+            });
         }
     }
 
     updateActiveMenu(path) {
         document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-        
         let targetPath = path;
         if (path === '/schedule/edit') targetPath = '/schedule/list';
 
         let target = document.querySelector(`.menu-item[data-path="${targetPath}"]`);
-        
         if (!target && path.includes('/edit/')) {
             const mappingPath = path.replace('edit', 'list').split('/').slice(0, 4).join('/');
             target = document.querySelector(`.menu-item[data-path^="${mappingPath}"]`);
