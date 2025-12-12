@@ -12,16 +12,17 @@ export class RuleEngine {
      */
     static validateStaff(assignments, daysInMonth, shiftDefs, rules, staffConstraints = {}) {
         const errors = {}; 
-        if (!assignments) return { errors };
+        // ✅ 安全檢查：若 assignments 為 undefined/null，視為空物件，不報錯
+        const safeAssignments = assignments || {};
 
         // 1. 取得規則參數 (優先使用個人設定，若無則用全域設定)
-        const globalMaxConsecutive = rules.maxConsecutiveWork || 6;
-        const maxConsecutive = staffConstraints.maxConsecutive || globalMaxConsecutive;
-        const maxConsecutiveNights = staffConstraints.maxConsecutiveNights || 4; // 預設連夜上限 4
-        const isPregnant = !!staffConstraints.isPregnant;
+        const globalMaxConsecutive = rules?.maxConsecutiveWork || 6;
+        const maxConsecutive = staffConstraints?.maxConsecutive || globalMaxConsecutive;
+        const maxConsecutiveNights = staffConstraints?.maxConsecutiveNights || 4; // 預設連夜上限 4
+        const isPregnant = !!staffConstraints?.isPregnant;
 
-        const avoidNtoD = rules.avoidNtoD !== false; // 預設開啟
-        const avoidEtoD = rules.avoidEtoD !== false;
+        const avoidNtoD = rules?.avoidNtoD !== false; // 預設開啟
+        const avoidEtoD = rules?.avoidEtoD !== false;
 
         // 建立班別快速查找表
         const shiftMap = {};
@@ -31,7 +32,7 @@ export class RuleEngine {
 
         const shiftArray = [];
         for (let d = 1; d <= daysInMonth; d++) {
-            shiftArray[d] = assignments[d] || '';
+            shiftArray[d] = safeAssignments[d] || '';
         }
 
         let consecutiveDays = 0;
@@ -39,7 +40,7 @@ export class RuleEngine {
 
         for (let d = 1; d <= daysInMonth; d++) {
             const currentCode = shiftArray[d];
-            const isWorking = currentCode && currentCode !== 'OFF';
+            const isWorking = currentCode && currentCode !== 'OFF' && currentCode !== 'M_OFF';
             const isNight = currentCode === 'E' || currentCode === 'N';
 
             // --- 規則 A: 懷孕條款 ---
@@ -99,8 +100,12 @@ export class RuleEngine {
         const dailyCounts = {}; 
         for(let d=1; d<=daysInMonth; d++) dailyCounts[d] = { D:0, E:0, N:0 };
 
+        // ✅ 安全檢查：確保 assignments 存在
+        const allAssignments = scheduleData?.assignments || {};
+
         // 統計所有人
-        Object.values(scheduleData.assignments || {}).forEach(staffShifts => {
+        Object.values(allAssignments).forEach(staffShifts => {
+            if (!staffShifts) return; // 跳過無效資料
             for(let d=1; d<=daysInMonth; d++) {
                 const shift = staffShifts[d];
                 if (shift && dailyCounts[d][shift] !== undefined) {
@@ -110,17 +115,17 @@ export class RuleEngine {
         });
 
         // 取得該月第 d 天是星期幾
-        const year = scheduleData.year;
-        const month = scheduleData.month;
+        const year = scheduleData?.year || new Date().getFullYear();
+        const month = scheduleData?.month || new Date().getMonth() + 1;
 
         // 比對規則
         for(let d=1; d<=daysInMonth; d++) {
             const date = new Date(year, month - 1, d);
             const weekDay = date.getDay(); // 0-6
 
-            const minD = minStaffReq.D[weekDay] || 0;
-            const minE = minStaffReq.E[weekDay] || 0;
-            const minN = minStaffReq.N[weekDay] || 0;
+            const minD = minStaffReq.D?.[weekDay] || 0;
+            const minE = minStaffReq.E?.[weekDay] || 0;
+            const minN = minStaffReq.N?.[weekDay] || 0;
 
             const issues = [];
             if (minD > 0 && dailyCounts[d].D < minD) issues.push(`白缺${minD - dailyCounts[d].D}`);
@@ -140,14 +145,16 @@ export class RuleEngine {
         const shiftDefs = unitSettings?.settings?.shifts || [];
         
         // 1. 檢查個人
-        staffList.forEach(staff => {
-            const staffAssignments = scheduleData.assignments ? scheduleData.assignments[staff.id] : {};
-            // 注意：這裡傳入 staff.constraints 以支援個別限制
-            const result = this.validateStaff(staffAssignments, daysInMonth, shiftDefs, rules, staff.constraints);
-            if (Object.keys(result.errors).length > 0) {
-                staffReport[staff.id] = result;
-            }
-        });
+        if (staffList && Array.isArray(staffList)) {
+            staffList.forEach(staff => {
+                const staffAssignments = scheduleData?.assignments ? scheduleData.assignments[staff.uid || staff.id] : {};
+                // 注意：這裡傳入 staff.constraints 以支援個別限制
+                const result = this.validateStaff(staffAssignments, daysInMonth, shiftDefs, rules, staff.constraints);
+                if (Object.keys(result.errors).length > 0) {
+                    staffReport[staff.uid || staff.id] = result;
+                }
+            });
+        }
 
         // 2. 檢查每日人力
         const { coverageErrors } = this.validateDailyCoverage(scheduleData, daysInMonth, unitSettings);
