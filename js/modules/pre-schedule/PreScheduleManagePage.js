@@ -1,7 +1,3 @@
-{
-type: uploaded file
-fileName: PreScheduleManagePage.js
-fullContent:
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { userService } from "../../services/firebase/UserService.js";
