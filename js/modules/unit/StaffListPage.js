@@ -1,6 +1,7 @@
 import { userService } from "../../services/firebase/UserService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
+import { StaffListTemplate } from "./templates/StaffListTemplate.js"; // 引入 Template
 
 export class StaffListPage {
     constructor() {
@@ -17,195 +18,40 @@ export class StaffListPage {
         const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
         
         let unitOptionsHtml = '<option value="">載入中...</option>';
+        let isOneUnit = false;
+
         try {
+            let units = [];
             if (isAdmin) {
-                const units = await UnitService.getAllUnits();
-                units.forEach(u => this.unitMap[u.unitId] = u.unitName);
-                unitOptionsHtml = `<option value="">全部單位</option>` + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+                units = await UnitService.getAllUnits();
             } else {
-                let units = await UnitService.getUnitsByManager(this.currentUser.uid);
+                units = await UnitService.getUnitsByManager(this.currentUser.uid);
                 if(units.length === 0 && this.currentUser.unitId) {
                     const u = await UnitService.getUnitById(this.currentUser.unitId);
                     if(u) units.push(u);
                 }
-                units.forEach(u => this.unitMap[u.unitId] = u.unitName);
-                unitOptionsHtml = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             }
+            
+            // 建立 unitMap 供顯示用
+            units.forEach(u => this.unitMap[u.unitId] = u.unitName);
+            
+            unitOptionsHtml = (isAdmin ? `<option value="">全部單位</option>` : '') + 
+                              units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            if (!isAdmin && units.length <= 1) isOneUnit = true;
+
         } catch (e) {
             console.error("單位載入失敗:", e);
             unitOptionsHtml = '<option value="">(無法載入單位)</option>';
         }
 
-        return `
-            <div class="container-fluid mt-4">
-                <div class="mb-3">
-                    <h3 class="text-gray-800 fw-bold"><i class="fas fa-users"></i> 人員管理</h3>
-                    <p class="text-muted small mb-0">管理單位內護理人員的資料、職級與系統權限。</p>
-                </div>
-
-                <div class="card shadow-sm mb-4 border-left-primary">
-                    <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
-                        <label class="fw-bold mb-0 text-nowrap">選擇單位：</label>
-                        <select id="unit-filter" class="form-select w-auto" ${!isAdmin && Object.keys(this.unitMap).length <= 1 ? 'disabled' : ''}>
-                            ${unitOptionsHtml}
-                        </select>
-                        
-                        <div class="vr mx-2"></div>
-                        
-                        <button id="btn-add-staff" class="btn btn-primary w-auto text-nowrap">
-                            <i class="fas fa-plus"></i> 新增人員
-                        </button>
-
-                        <div class="ms-auto">
-                            <input type="text" id="keyword-search" class="form-control form-control-sm" placeholder="搜尋姓名/編號...">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card shadow">
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        ${this.renderSortableHeader('單位', 'unitId')}
-                                        ${this.renderSortableHeader('編號', 'staffId')}
-                                        ${this.renderSortableHeader('姓名', 'name')}
-                                        ${this.renderSortableHeader('職級', 'rank')}
-                                        <th>組別</th>
-                                        <th>Email</th>
-                                        <th>角色</th>
-                                        <th class="text-end pe-3">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="staff-tbody">
-                                    <tr><td colspan="8" class="text-center py-5 text-muted">準備載入...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                ${this.renderModal(isAdmin)}
-            </div>
-        `;
-    }
-
-    renderSortableHeader(label, key) {
-        const isActive = this.sortConfig.key === key;
-        const icon = isActive 
-            ? (this.sortConfig.direction === 'asc' ? '<i class="fas fa-sort-up"></i>' : '<i class="fas fa-sort-down"></i>')
-            : '<i class="fas fa-sort text-muted opacity-25"></i>';
-        
-        return `<th class="sortable-th" style="cursor:pointer; user-select:none;" onclick="window.routerPage.handleSort('${key}')">${label} ${icon}</th>`;
-    }
-
-    renderModal(isAdmin) {
-        return `
-            <div class="modal fade" id="staff-modal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title fw-bold" id="modal-title">新增人員</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <form id="staff-form">
-                                <input type="hidden" id="edit-uid">
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">所屬單位</label>
-                                        <select id="edit-unit" class="form-select" ${!isAdmin ? 'disabled' : ''}></select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">員工編號</label>
-                                        <input type="text" id="edit-staffId" class="form-control" required>
-                                    </div>
-                                </div>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">姓名</label>
-                                        <input type="text" id="edit-name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">Email</label>
-                                        <input type="email" id="edit-email" class="form-control" required>
-                                    </div>
-                                </div>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">職級</label>
-                                        <select id="edit-level" class="form-select">
-                                            <option value="N0">N0</option><option value="N1">N1</option><option value="N2">N2</option>
-                                            <option value="N3">N3</option><option value="N4">N4</option><option value="AHN">AHN</option>
-                                            <option value="HN">HN</option><option value="NP">NP</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">組別</label>
-                                        <select id="edit-group" class="form-select">
-                                            <option value="">(載入中...)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold">到職日期</label>
-                                    <input type="date" id="edit-hireDate" class="form-control">
-                                </div>
-
-                                <hr>
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold text-primary">排班參數</label>
-                                    <div class="row g-2 mb-2">
-                                        <div class="col-6">
-                                            <label class="small text-muted">連上上限</label>
-                                            <input type="number" id="edit-maxConsecutive" class="form-control form-control-sm" min="1">
-                                        </div>
-                                        <div class="col-6">
-                                            <label class="small text-muted">連夜上限</label>
-                                            <input type="number" id="edit-maxConsecutiveNights" class="form-control form-control-sm" min="1">
-                                        </div>
-                                    </div>
-                                    <div class="d-flex gap-3">
-                                        <div class="form-check">
-                                            <input type="checkbox" id="edit-isPregnant" class="form-check-input">
-                                            <label class="form-check-label text-danger">懷孕 (不排夜)</label>
-                                        </div>
-                                        <div class="form-check">
-                                            <input type="checkbox" id="edit-canBatch" class="form-check-input">
-                                            <label class="form-check-label">可包班</label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold text-primary">系統權限</label>
-                                    <div class="d-flex gap-3">
-                                        <div class="form-check">
-                                            <input type="checkbox" id="edit-is-manager" class="form-check-input">
-                                            <label class="form-check-label">管理者</label>
-                                        </div>
-                                        <div class="form-check">
-                                            <input type="checkbox" id="edit-is-scheduler" class="form-check-input">
-                                            <label class="form-check-label">排班者</label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary w-auto" data-bs-dismiss="modal">取消</button>
-                            <button type="button" id="btn-save" class="btn btn-primary w-auto">儲存</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        // 組合 Template：主畫面 + Modal
+        return StaffListTemplate.renderLayout(unitOptionsHtml, isAdmin, isOneUnit) + 
+               StaffListTemplate.renderModalHtml(isAdmin);
     }
 
     async afterRender() {
         if(!this.currentUser) return;
-        
         window.routerPage = this;
 
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
@@ -262,25 +108,14 @@ export class StaffListPage {
     }
 
     updateHeaderIcons() {
-        document.querySelectorAll('.sortable-th').forEach(th => {
-            const onclickVal = th.getAttribute('onclick');
-            if(!onclickVal) return;
-            const keyMatch = onclickVal.match(/'([^']+)'/);
-            if (!keyMatch) return;
-            const key = keyMatch[1];
-            
-            const iconContainer = th.querySelector('i');
-            if (iconContainer) iconContainer.className = 'fas fa-sort text-muted small';
-
-            if (this.sortConfig.key === key) {
-                if (iconContainer) {
-                    iconContainer.className = this.sortConfig.direction === 'asc' 
-                        ? 'fas fa-sort-up' 
-                        : 'fas fa-sort-down';
-                    iconContainer.classList.remove('text-muted');
-                }
-            }
+        document.querySelectorAll('.sortable-th i').forEach(icon => {
+            icon.className = 'fas fa-sort text-muted small opacity-25';
         });
+        const activeTh = document.querySelector(`.sortable-th[onclick*="'${this.sortConfig.key}'"] i`);
+        if (activeTh) {
+            activeTh.className = this.sortConfig.direction === 'asc' ? 'fas fa-sort-up text-dark' : 'fas fa-sort-down text-dark';
+            activeTh.classList.remove('opacity-25');
+        }
     }
 
     applySortAndFilter() {
@@ -322,70 +157,35 @@ export class StaffListPage {
         });
 
         this.displayList = filtered;
-        this.renderTable();
-    }
-
-    renderTable() {
-        const tbody = document.getElementById('staff-tbody');
-        if(this.displayList.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">無資料</td></tr>';
-            return;
-        }
-        
-        tbody.innerHTML = this.displayList.map(u => `
-            <tr>
-                <td>${this.unitMap[u.unitId] || u.unitId}</td>
-                <td>${u.staffId || '-'}</td>
-                <td class="fw-bold">${u.name}</td>
-                <td><span class="badge bg-light text-dark border">${u.rank}</span></td>
-                <td>${u.group || '-'}</td>
-                <td>${u.email}</td>
-                <td>${this.getRoleLabel(u.role)}</td>
-                <td class="text-end pe-3">
-                    <button class="btn btn-sm btn-outline-primary me-1" onclick="window.routerPage.openModal('${u.uid}')"><i class="fas fa-edit"></i></button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="window.routerPage.deleteStaff('${u.uid}')"><i class="fas fa-trash"></i></button>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    getRoleLabel(role) {
-        if(role==='unit_manager') return '<span class="badge bg-primary">管理者</span>';
-        if(role==='unit_scheduler') return '<span class="badge bg-info text-dark">排班者</span>';
-        return '<span class="badge bg-secondary">一般</span>';
+        // 使用 Template 渲染
+        document.getElementById('staff-tbody').innerHTML = StaffListTemplate.renderRows(this.displayList, this.unitMap);
     }
 
     async updateGroupOptions(unitId, selectedGroup = '') {
         const groupSelect = document.getElementById('edit-group');
-        groupSelect.innerHTML = '<option value="">載入中...</option>';
-        
-        if (!unitId) {
-            groupSelect.innerHTML = '<option value="">請先選擇單位</option>';
-            return;
-        }
+        groupSelect.innerHTML = '<option value="">载入中...</option>';
+        if (!unitId) { groupSelect.innerHTML = '<option value="">請先選擇單位</option>'; return; }
 
         try {
             const unit = await UnitService.getUnitById(unitId);
             const groups = unit.groups || [];
-            
             let html = '<option value="">(無組別)</option>';
             html += groups.map(g => `<option value="${g}">${g}</option>`).join('');
             groupSelect.innerHTML = html;
-            
             if (selectedGroup) groupSelect.value = selectedGroup;
-        } catch(e) {
-            groupSelect.innerHTML = '<option value="">讀取失敗</option>';
-        }
+        } catch(e) { groupSelect.innerHTML = '<option value="">讀取失敗</option>'; }
     }
 
     async openModal(uid = null) {
         document.getElementById('staff-form').reset();
         
+        // 同步單位選單
         const editUnit = document.getElementById('edit-unit');
         const filterUnit = document.getElementById('unit-filter');
+        // 複製 Filter 的 Options 到 Edit，但如果 Filter 有 "全部單位" (value="") 要拿掉
         editUnit.innerHTML = filterUnit.innerHTML;
         if(editUnit.options.length > 0 && editUnit.options[0].value === "") {
-            editUnit.remove(0);
+            editUnit.remove(0); // 移除 "全部單位" 或 "請選擇"
         }
 
         if(uid) {
@@ -398,8 +198,6 @@ export class StaffListPage {
             document.getElementById('edit-email').value = u.email;
             document.getElementById('edit-email').disabled = true;
             document.getElementById('edit-level').value = u.rank;
-            
-            // ✅ 回填到職日
             document.getElementById('edit-hireDate').value = u.hireDate || '';
 
             await this.updateGroupOptions(u.unitId, u.group);
@@ -416,6 +214,7 @@ export class StaffListPage {
             document.getElementById('edit-uid').value = "";
             document.getElementById('edit-email').disabled = false;
             
+            // 預設選取當前 Filter 的單位
             const currentFilter = filterUnit.value;
             if (currentFilter) {
                 editUnit.value = currentFilter;
@@ -442,14 +241,9 @@ export class StaffListPage {
             staffId: document.getElementById('edit-staffId').value,
             rank: document.getElementById('edit-level').value,
             group: document.getElementById('edit-group').value,
-            // ✅ 儲存到職日
             hireDate: document.getElementById('edit-hireDate').value || null,
             role: newRole,
-            permissions: {
-                canManageUnit: isManager,
-                canEditSchedule: isScheduler || isManager,
-                canViewSchedule: true
-            },
+            permissions: { canManageUnit: isManager, canEditSchedule: isScheduler || isManager, canViewSchedule: true },
             constraints: {
                 isPregnant: document.getElementById('edit-isPregnant').checked,
                 canBatch: document.getElementById('edit-canBatch').checked,
@@ -482,14 +276,6 @@ export class StaffListPage {
         }
     }
 
-    filterData(keyword) {
-        this.applySortAndFilter();
-    }
-    
-    async deleteStaff(uid) { 
-        if(confirm("確定刪除此人員？")) { 
-            await userService.deleteStaff(uid); 
-            this.loadData(); 
-        } 
-    }
+    filterData(keyword) { this.applySortAndFilter(); }
+    async deleteStaff(uid) { if(confirm("確定刪除此人員？")) { await userService.deleteStaff(uid); this.loadData(); } }
 }
