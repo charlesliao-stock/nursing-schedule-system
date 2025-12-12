@@ -261,15 +261,29 @@ export class SchedulePage {
         this.renderVersionsModal(); 
     }
 
-    async applyVersion(index) {
-        const selected = this.generatedVersions[index];
-        this.state.scheduleData.assignments = selected.assignments;
-        await ScheduleService.updateAllAssignments(this.state.currentUnitId, this.state.year, this.state.month, selected.assignments);
-        this.versionsModal.hide();
-        this.renderGrid();
-        this.updateScoreDisplay();
-        alert(`✅ 已成功套用版本 ${selected.id}。`);
-    }
+async applyVersion(index) {
+    const selected = this.generatedVersions[index];
+    
+    // 1. ✅ 關鍵！必須更新本地狀態
+    // 確保 assignments 是完整物件
+    this.state.scheduleData.assignments = JSON.parse(JSON.stringify(selected.assignments));
+
+    // 2. 更新資料庫
+    await ScheduleService.updateAllAssignments(
+        this.state.currentUnitId, 
+        this.state.year, 
+        this.state.month, 
+        selected.assignments
+    );
+
+    this.versionsModal.hide();
+    
+    // 3. 重新渲染 (這時候才會讀到新資料)
+    this.renderGrid();
+    this.updateScoreDisplay();
+    
+    alert(`✅ 已成功套用版本 ${selected.id}。`);
+}
 
     async deleteStaff(uid) {
         if(!confirm("從本月班表中移除此人員？")) return;
