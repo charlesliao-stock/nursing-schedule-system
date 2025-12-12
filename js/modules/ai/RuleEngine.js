@@ -26,7 +26,8 @@ export class RuleEngine {
         const isPregnant = !!staffConstraints?.isPregnant;
         const minConsecutiveSame = constraints.minConsecutiveSame || 2;
         const maxTypesPerWeek = constraints.maxShiftTypesWeek || 3;
-        
+        const firstNRequiresOFF = constraints.firstNRequiresOFF !== false; // 預設 true
+
         // 建立班別陣列
         const shiftArray = [];
         for (let d = 1; d <= daysInMonth; d++) {
@@ -39,7 +40,6 @@ export class RuleEngine {
         for (let d = 1; d <= daysInMonth; d++) {
             const currentCode = shiftArray[d];
             const isWorking = currentCode && currentCode !== 'OFF' && currentCode !== 'M_OFF';
-            // 大夜定義為 N
             
             // --- 1. 懷孕條款 ---
             if (isPregnant && (currentCode === 'N' || currentCode === 'E')) {
@@ -73,20 +73,14 @@ export class RuleEngine {
                     errors[d] = "間隔不足11hr (E接D)";
                 }
                 
-                // N (00-08) -> D (次日08-16): 間隔 24 小時 -> OK (依需求開放)
-                // N (00-08) -> E (次日16-24): 間隔 32 小時 -> OK (依需求開放)
-
                 // B. 大夜前一日限制 (Rule: 前一天必須是 N 或 OFF)
-                // 這條規則同時擋掉了 D->N (間隔8hr) 與 E->N (間隔0hr)
-                if (currentCode === 'N') {
-                    // 若前一天有上班，且不是 N (即前一天是 D 或 E) -> 禁止
+                if (firstNRequiresOFF && currentCode === 'N') {
                     if (prevIsWorking && prevCode !== 'N') {
                         errors[d] = "大夜前需OFF (或連N)";
                     }
                 }
 
                 // C. 同種班最少連續 days (避免花花班)
-                // 當班別改變時 (例如 D D -> E)，檢查前面的 D 是否足夠
                 if (prevIsWorking && prevCode !== currentCode) {
                     let count = 0;
                     for(let back = d-1; back >= 1; back--) {
@@ -165,10 +159,14 @@ export class RuleEngine {
         
         if (staffList && Array.isArray(staffList)) {
             staffList.forEach(staff => {
-                const staffAssignments = scheduleData?.assignments ? scheduleData.assignments[staff.uid || staff.id] : {};
+                // ✅ 嚴格檢查：只使用 uid，不接受其他名稱
+                const uid = staff.uid; 
+                if (!uid) return;
+
+                const staffAssignments = scheduleData?.assignments ? scheduleData.assignments[uid] : {};
                 const result = this.validateStaff(staffAssignments, daysInMonth, shiftDefs, rules, staff.constraints);
                 if (Object.keys(result.errors).length > 0) {
-                    staffReport[staff.uid || staff.id] = result;
+                    staffReport[uid] = result;
                 }
             });
         }
