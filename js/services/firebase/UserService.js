@@ -1,20 +1,26 @@
-import { db, auth } from "../../config/firebase.config.js";
+// ✅ 改為引入 firebaseService，而不是直接引入 db
+import { firebaseService } from "./FirebaseService.js";
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
     query, where, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { 
-    createUserWithEmailAndPassword, deleteUser 
+    createUserWithEmailAndPassword 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+// 輔助函式：確保 DB 已初始化
+const getDb = () => firebaseService.getDb();
+const getAuth = () => firebaseService.getAuth();
 
 export const userService = {
     // 取得所有使用者
     async getAllUsers() {
         try {
+            const db = getDb(); // ✅ 延遲取得 DB
             const q = query(collection(db, "users"));
             const snapshot = await getDocs(q);
             return snapshot.docs.map(doc => ({
-                uid: doc.id,  // ✅ 強制命名為 uid
+                uid: doc.id,
                 ...doc.data()
             }));
         } catch (error) {
@@ -26,10 +32,11 @@ export const userService = {
     // 取得特定單位的人員
     async getUsersByUnit(unitId) {
         try {
+            const db = getDb();
             const q = query(collection(db, "users"), where("unitId", "==", unitId));
             const snapshot = await getDocs(q);
             return snapshot.docs.map(doc => ({
-                uid: doc.id,  // ✅ 強制命名為 uid
+                uid: doc.id,
                 ...doc.data()
             }));
         } catch (error) {
@@ -41,11 +48,12 @@ export const userService = {
     // 取得單一使用者資料
     async getUserData(uid) {
         try {
+            const db = getDb(); // ✅ 這裡原本報錯，現在會確保拿到有效的 db
             const docRef = doc(db, "users", uid);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 return { 
-                    uid: docSnap.id, // ✅ 強制命名為 uid
+                    uid: docSnap.id,
                     ...docSnap.data() 
                 };
             }
@@ -56,27 +64,30 @@ export const userService = {
         }
     },
 
-    // ✅ 新增：更新最後登入時間 (修復 App.js 報錯的問題)
+    // 更新最後登入時間
     async updateLastLogin(uid) {
         try {
+            const db = getDb();
             const userRef = doc(db, "users", uid);
             await updateDoc(userRef, {
                 lastLogin: serverTimestamp()
             });
         } catch (error) {
-            // 登入時間更新失敗不應阻擋主程式，僅紀錄 Log
             console.warn("更新最後登入時間失敗:", error);
         }
     },
     
-    // 建立新員工 (包含 Auth 與 Firestore)
+    // 建立新員工
     async createStaff(data, password) {
         try {
-            // 1. 在 Authentication 建立帳號
+            const db = getDb();
+            const auth = getAuth();
+            
+            // 1. Auth 建立帳號
             const userCredential = await createUserWithEmailAndPassword(auth, data.email, password);
             const uid = userCredential.user.uid;
 
-            // 2. 在 Firestore 建立使用者資料
+            // 2. Firestore 建立資料
             await setDoc(doc(db, "users", uid), {
                 ...data,
                 createdAt: serverTimestamp(),
@@ -93,6 +104,7 @@ export const userService = {
     // 更新使用者資料
     async updateUser(uid, data) {
         try {
+            const db = getDb();
             await updateDoc(doc(db, "users", uid), {
                 ...data,
                 updatedAt: serverTimestamp()
@@ -104,9 +116,10 @@ export const userService = {
         }
     },
 
-    // 刪除使用者 (僅刪除 Firestore 資料，Auth 刪除需 Admin SDK 或雲端函式，前端無法直接刪除他人 Auth)
+    // 刪除使用者
     async deleteStaff(uid) {
         try {
+            const db = getDb();
             await deleteDoc(doc(db, "users", uid));
             return { success: true };
         } catch (error) {
@@ -115,7 +128,6 @@ export const userService = {
         }
     },
     
-    // --- 輔助方法 ---
     async getUnitStaff(unitId) { return this.getUsersByUnit(unitId); },
     
     async getAllStaffCount() { 
