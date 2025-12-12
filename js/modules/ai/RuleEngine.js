@@ -19,7 +19,6 @@ export class RuleEngine {
         const constraints = rules?.constraints || {};
         
         const maxConsecutive = staffConstraints?.maxConsecutive || globalMaxConsecutive;
-        // 使用單位設定的連夜上限，若人員有更嚴格限制(較小值)則取人員的
         const unitMaxNight = constraints.maxConsecutiveNight || 4;
         const staffMaxNight = staffConstraints?.maxConsecutiveNights || 4;
         const maxConsecutiveNights = Math.min(unitMaxNight, staffMaxNight);
@@ -27,8 +26,7 @@ export class RuleEngine {
         const isPregnant = !!staffConstraints?.isPregnant;
         const minConsecutiveSame = constraints.minConsecutiveSame || 2;
         const maxTypesPerWeek = constraints.maxShiftTypesWeek || 3;
-        const firstNRequiresOFF = constraints.firstNRequiresOFF !== false; // 預設 true
-
+        
         // 建立班別陣列
         const shiftArray = [];
         for (let d = 1; d <= daysInMonth; d++) {
@@ -37,20 +35,12 @@ export class RuleEngine {
 
         let consecutiveDays = 0;
         let consecutiveNights = 0;
-        let currentSameShift = 0;
-        
-        // 用於檢查一週班別種類 (假設每7天一週，或滑動視窗)
-        // 這裡採用勞基法常見的「每七日」檢查，這裡簡化為週一至週日區間檢查
-        // 需要知道每月1號是星期幾
-        // 由於此函數未傳入 year/month，我們改用滑動視窗(Rolling 7 days)或暫時略過精確日期檢查
-        // 為了效能與簡化，這裡暫時檢查連續 7 天內的種類
 
         for (let d = 1; d <= daysInMonth; d++) {
             const currentCode = shiftArray[d];
             const isWorking = currentCode && currentCode !== 'OFF' && currentCode !== 'M_OFF';
-            const isNight = currentCode === 'N'; // 只算大夜為連夜限制，E算小夜
-            // 注意：有時 E 也算夜班，視醫院定義。這裡依需求 N 為大夜。
-
+            // 大夜定義為 N
+            
             // --- 1. 懷孕條款 ---
             if (isPregnant && (currentCode === 'N' || currentCode === 'E')) {
                 errors[d] = "懷孕不可排夜班";
@@ -72,44 +62,38 @@ export class RuleEngine {
                 errors[d] = `連大夜${consecutiveNights} (上限${maxConsecutiveNights})`;
             }
 
-            // --- 4. 班別銜接邏輯 (Sequencing & 11 Hours) ---
+            // --- 4. 班別銜接邏輯 (勞基法 11 小時 & 排班順序) ---
             if (d > 1) {
                 const prevCode = shiftArray[d-1];
                 const prevIsWorking = prevCode && prevCode !== 'OFF' && prevCode !== 'M_OFF';
 
-                // (1) 11小時/逆向禁止: OFF -> N -> D -> E
-                // 禁止: E -> D (休息不足), N -> E (休息不足/逆向), D -> N (逆向/需OFF)
-                // 禁止: 任何班 -> N (若 N 需 OFF)
+                // A. 勞基法 11 小時檢查
+                // E (16-24) -> D (08-16): 間隔 8 小時 -> 禁止
+                if (prevCode === 'E' && currentCode === 'D') {
+                    errors[d] = "間隔不足11hr (E接D)";
+                }
                 
-                if (prevCode === 'E' && currentCode === 'D') errors[d] = "禁止小接白(E-D)";
-                if (prevCode === 'N' && currentCode === 'E') errors[d] = "禁止大接小(N-E)";
-                
-                // 逆向檢查 (D->N 其實會被下面的 firstNRequiresOFF 擋住，但 E->N 也需擋)
-                if (prevCode === 'E' && currentCode === 'N') errors[d] = "禁止小接大(E-N)"; 
-                if (prevCode === 'D' && currentCode === 'N') errors[d] = "禁止白接大(D-N)";
+                // N (00-08) -> D (次日08-16): 間隔 24 小時 -> OK (依需求開放)
+                // N (00-08) -> E (次日16-24): 間隔 32 小時 -> OK (依需求開放)
 
-                // (2) 首個大夜前必須 OFF
-                if (firstNRequiresOFF && currentCode === 'N') {
-                    if (prevCode === 'N') {
-                        // 連續大夜，OK
-                    } else if (prevIsWorking) {
-                        // 昨天有上班 (D 或 E)，今天接 N -> 禁止
-                        errors[d] = "大夜前需OFF";
+                // B. 大夜前一日限制 (Rule: 前一天必須是 N 或 OFF)
+                // 這條規則同時擋掉了 D->N (間隔8hr) 與 E->N (間隔0hr)
+                if (currentCode === 'N') {
+                    // 若前一天有上班，且不是 N (即前一天是 D 或 E) -> 禁止
+                    if (prevIsWorking && prevCode !== 'N') {
+                        errors[d] = "大夜前需OFF (或連N)";
                     }
                 }
 
-                // (3) 同種班最少連續 days (避免花花班)
-                // 檢查點：當班別改變時 (例如 D D -> E)，檢查前面的 D 是否足夠
+                // C. 同種班最少連續 days (避免花花班)
+                // 當班別改變時 (例如 D D -> E)，檢查前面的 D 是否足夠
                 if (prevIsWorking && prevCode !== currentCode) {
-                    // 往前追溯 prevCode 連續了幾天
                     let count = 0;
                     for(let back = d-1; back >= 1; back--) {
                         if (shiftArray[back] === prevCode) count++;
                         else break;
                     }
-                    // 如果中斷了且長度不足
                     if (count < minConsecutiveSame) {
-                        // 標記在昨天 (因為是昨天的班別長度不足)
                         if (!errors[d-1]) errors[d-1] = `${prevCode}僅${count}天(需${minConsecutiveSame})`;
                     }
                 }
@@ -117,7 +101,6 @@ export class RuleEngine {
         }
 
         // --- 5. 一週班別種類 (Rolling 7 Days) ---
-        // 簡單檢查：任 7 天區間內，班別種類不可超過設定值
         for (let d = 7; d <= daysInMonth; d++) {
             const types = new Set();
             for (let k = 0; k < 7; k++) {
@@ -134,9 +117,6 @@ export class RuleEngine {
         return { errors };
     }
 
-    /**
-     * 驗證每日人力是否充足
-     */
     static validateDailyCoverage(scheduleData, daysInMonth, unitSettings) {
         const coverageErrors = {}; 
         const minStaffReq = unitSettings?.staffRequirements || { D:{}, E:{}, N:{} };
