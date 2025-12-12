@@ -75,24 +75,35 @@ export class GroupSettingsPage {
     async afterRender() {
         this.modal = new bootstrap.Modal(document.getElementById('group-modal'));
         const unitSelect = document.getElementById('unit-select');
-        window.routerPage = this; // 供 onclick 呼叫
+        window.routerPage = this; 
         
         const user = authService.getProfile();
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
-        let availableUnits = isAdmin ? await UnitService.getAllUnits() : await UnitService.getUnitsByManager(user.uid);
-        if(availableUnits.length === 0 && user.unitId) {
-            const u = await UnitService.getUnitById(user.unitId);
-            if(u) availableUnits.push(u);
+        
+        let units = [];
+        if (isAdmin) {
+            units = await UnitService.getAllUnits();
+        } else {
+            units = await UnitService.getUnitsByManager(user.uid);
+            if(units.length === 0 && user.unitId) {
+                const u = await UnitService.getUnitById(user.unitId);
+                if(u) units.push(u);
+            }
         }
 
-        if (availableUnits.length === 0) { unitSelect.innerHTML = '<option value="">無權限</option>'; unitSelect.disabled = true; }
-        else {
-            unitSelect.innerHTML = availableUnits.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+        if (units.length === 0) { 
+            unitSelect.innerHTML = '<option value="">無權限</option>'; unitSelect.disabled = true; 
+        } else {
+            unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            // ✅ 邏輯：只有一個單位時 Disable
+            if (units.length === 1) unitSelect.disabled = true;
+
             unitSelect.addEventListener('change', () => this.loadData(unitSelect.value));
             document.getElementById('btn-add').addEventListener('click', () => { document.getElementById('new-group-name').value = ''; this.modal.show(); });
             document.getElementById('btn-save-group').addEventListener('click', () => this.addGroup());
             document.getElementById('btn-save-assign').addEventListener('click', () => this.saveAssignments());
-            this.loadData(availableUnits[0].unitId);
+            this.loadData(units[0].unitId);
         }
     }
 
@@ -104,7 +115,7 @@ export class GroupSettingsPage {
             if (!unit) { alert("無法讀取"); return; }
             this.groups = unit.groups || [];
             
-            // ✅ 排序：依職編 (StaffId) 排序
+            // 排序：依職編 (StaffId) 排序
             this.staffList = staff.sort((a, b) => (a.staffId || '').localeCompare(b.staffId || ''));
             
             this.renderGroups(); 
