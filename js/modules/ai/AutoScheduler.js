@@ -2,28 +2,26 @@ import { RuleEngine } from "./RuleEngine.js";
 
 export class AutoScheduler {
 
-    /**
-     * 執行公平性優先的自動排班
-     */
     static run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        // 1. 初始化與深拷貝
         let assignments = JSON.parse(JSON.stringify(currentSchedule.assignments || {}));
         const logs = [];
         
-        // 讀取權重與限制
         const rules = unitSettings.rules || {};
         const weights = rules.scoringConfig ? this.convertScoringToWeights(rules.scoringConfig) : {
             fairness: 100, night: 50, holiday: 200, batch: 5000    
         };
+
         const groupConstraints = preScheduleData?.settings?.groupConstraints || {};
 
-        // 建立統計物件
         const staffStats = {}; 
         staffList.forEach(s => {
-            // ✅ 修正關鍵：統一使用 uid
+            // ✅ 嚴格檢查：只使用 uid
             const uid = s.uid; 
-            
-            // 確保 assignments 物件結構存在
+            if (!uid) {
+                console.warn("Found staff without UID:", s);
+                return; 
+            }
+
             if (!assignments[uid]) assignments[uid] = {};
             
             staffStats[uid] = {
@@ -45,38 +43,34 @@ export class AutoScheduler {
         const staffReq = unitSettings.staffRequirements || { D: {}, E: {}, N: {} };
         const shiftDefs = unitSettings.settings?.shifts || [];
 
-        // 1. 鎖定預班 (Wishes)
+        // 1. 鎖定預班
         if (preScheduleData && preScheduleData.submissions) {
             Object.entries(preScheduleData.submissions).forEach(([uid, sub]) => {
-                // 防呆：確保該員在目前 assignments 中存在
-                if (!assignments[uid]) assignments[uid] = {};
-
-                if (sub.wishes) {
-                    Object.entries(sub.wishes).forEach(([d, wish]) => {
-                        const day = parseInt(d);
-                        if (wish === 'OFF' || wish === 'M_OFF') {
-                            assignments[uid][day] = 'OFF';
-                        } else {
-                            assignments[uid][day] = wish;
-                            // 若預班有上班，更新統計
-                            if(staffStats[uid]) {
+                if (staffStats[uid]) { // 只處理仍在名單內的人員
+                    if (!assignments[uid]) assignments[uid] = {};
+                    if (sub.wishes) {
+                        Object.entries(sub.wishes).forEach(([d, wish]) => {
+                            const day = parseInt(d);
+                            if (wish === 'OFF' || wish === 'M_OFF') {
+                                assignments[uid][day] = 'OFF';
+                            } else {
+                                assignments[uid][day] = wish;
                                 this.updateTempStats(staffStats[uid], wish, this.isHoliday(year, month, day));
                             }
-                        }
-                    });
+                        });
+                    }
                 }
             });
             logs.push("✅ 已鎖定預班需求");
         }
 
-        // 2. 逐日排班 (Day 1 -> Day 30)
+        // 2. 逐日排班
         const shiftPriority = ['N', 'E', 'D']; 
 
         for (let day = 1; day <= daysInMonth; day++) {
             const isHol = this.isHoliday(year, month, day);
             const weekDay = new Date(year, month - 1, day).getDay();
 
-            // 更新昨天的狀態
             this.updateDailyStats(staffStats, assignments, day - 1);
 
             shiftPriority.forEach(shiftCode => {
@@ -94,10 +88,14 @@ export class AutoScheduler {
 
                     // B. 計算分數
                     candidates.forEach(staff => {
-                        // ✅ 修正：使用 uid
-                        staff.score = this.calculateScore(
-                            staffStats[staff.uid], shiftCode, isHol, day, assignments, weights, rules.constraints
-                        );
+                        // ✅ 使用 uid
+                        if (staffStats[staff.uid]) {
+                            staff.score = this.calculateScore(
+                                staffStats[staff.uid], shiftCode, isHol, day, assignments, weights, rules.constraints
+                            );
+                        } else {
+                            staff.score = 999999; // 異常資料墊底
+                        }
                     });
 
                     // C. 排序
@@ -108,9 +106,9 @@ export class AutoScheduler {
                     for (const staff of candidates) {
                         if (filled >= neededCount) break;
                         
-                        // ✅ 修正：寫入正確的 uid
-                        assignments[staff.uid][day] = shiftCode;
-                        this.updateTempStats(staffStats[staff.uid], shiftCode, isHol);
+                        const uid = staff.uid;
+                        assignments[uid][day] = shiftCode;
+                        this.updateTempStats(staffStats[uid], shiftCode, isHol);
                         
                         currentCount++;
                         filled++;
@@ -121,8 +119,6 @@ export class AutoScheduler {
 
         return { assignments, logs };
     }
-
-    // --- 輔助方法 ---
 
     static isHoliday(year, month, day) {
         const date = new Date(year, month - 1, day);
@@ -141,14 +137,16 @@ export class AutoScheduler {
 
     static calculateScore(stats, shiftCode, isHoliday, day, assignments, weights, constraints) {
         if (!stats) return 999999;
-        
         let score = 0;
+
         score += stats.totalShifts * weights.fairness;
         score += stats.nightShifts * weights.night;
         score += stats.holidayShifts * weights.holiday;
 
-        // 連續性獎勵
+        const minConsecutive = constraints?.minConsecutiveSame || 2;
         const yesterdayShift = assignments[stats.uid][day - 1];
+        
+        // 連續性獎勵
         if (yesterdayShift === shiftCode) {
             score -= 1000;
         } else if (yesterdayShift && yesterdayShift !== 'OFF' && yesterdayShift !== 'M_OFF') {
@@ -199,9 +197,8 @@ export class AutoScheduler {
 
     static findValidCandidates(assignments, staffList, day, shiftCode, rules, daysInMonth, shiftDefs, groupConstraints, staffStats) {
         const qualified = [];
-        
-        // 計算當日當班各組別人數
         const currentGroupCounts = {}; 
+        
         Object.values(staffStats).forEach(stat => {
             const assigned = assignments[stat.uid][day];
             if (assigned === shiftCode && stat.group) {
@@ -210,21 +207,19 @@ export class AutoScheduler {
         });
 
         for (const staff of staffList) {
-            // ✅ 修正：使用 uid
+            // ✅ 嚴格檢查：只使用 uid
             const uid = staff.uid;
-            
+            if (!uid) continue;
+
             if (assignments[uid][day]) continue;
 
-            // 組別限制檢查
             const group = staff.group;
             if (group && groupConstraints[group]) {
                 const limit = this.getGroupMaxLimit(groupConstraints[group], shiftCode);
                 const current = currentGroupCounts[group] || 0;
-                // 若設定為 0 或更小，表示該組不能上此班
                 if (limit !== null && current >= limit) continue;
             }
 
-            // 規則引擎檢查
             const mockAssignments = { ...assignments[uid] };
             mockAssignments[day] = shiftCode;
 
@@ -240,7 +235,6 @@ export class AutoScheduler {
     }
 
     static getGroupMaxLimit(constraints, shift) {
-        // 確保回傳數字，若為空字串或未定義則回傳 null (不限制)
         if (shift === 'E' && constraints.maxE !== undefined && constraints.maxE !== '') return parseInt(constraints.maxE);
         if (shift === 'N' && constraints.maxN !== undefined && constraints.maxN !== '') return parseInt(constraints.maxN);
         return null;
