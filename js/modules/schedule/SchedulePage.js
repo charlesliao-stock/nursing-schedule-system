@@ -111,7 +111,7 @@ export class SchedulePage {
 
         document.getElementById('btn-auto-schedule').addEventListener('click', () => this.runMultiVersionAI());
         document.getElementById('btn-clear').addEventListener('click', () => this.resetToPreSchedule());
-        document.getElementById('btn-validate').addEventListener('click', () => { this.renderGrid(); alert("驗證完成，違規項目已標示紅框。"); });
+        document.getElementById('btn-validate').addEventListener('click', () => { this.renderGrid(); alert("驗證完成"); });
         document.getElementById('btn-publish').addEventListener('click', () => this.togglePublish());
 
         document.removeEventListener('click', this.handleGlobalClick); 
@@ -151,22 +151,20 @@ export class SchedulePage {
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
             
             if (!schedule) {
-                // 初始化 State
+                // 初始化 State (尚未寫入 DB，由 resetToPreSchedule 觸發寫入)
                 this.state.scheduleData = {
                     unitId: this.state.currentUnitId, year: this.state.year, month: this.state.month,
                     status: 'draft', assignments: {}
                 };
-                // 每個員工初始化空物件 (Fix: 使用 uid)
                 staffList.forEach(s => this.state.scheduleData.assignments[s.uid] = {});
                 
                 await this.resetToPreSchedule(false);
             } else {
                 this.state.scheduleData = schedule;
+                this.renderGrid();
+                this.updateStatusBadge();
+                this.updateScoreDisplay();
             }
-            
-            this.renderGrid();
-            this.updateStatusBadge();
-            this.updateScoreDisplay();
 
         } catch (error) {
             console.error(error);
@@ -176,6 +174,7 @@ export class SchedulePage {
         }
     }
 
+    // ✅ 使用 Service 的 updateAllAssignments (底層已改為 setDoc)
     async resetToPreSchedule(showConfirm = true) {
         if(showConfirm && !confirm("確定重置？\n這將清除所有已排的班別，並重新載入預班資料。")) return;
         
@@ -199,10 +198,9 @@ export class SchedulePage {
 
             this.state.scheduleData.assignments = newAssignments;
             
-            // 使用 saveSchedule (merge)
-            await ScheduleService.saveSchedule(
-                this.state.currentUnitId, this.state.year, this.state.month, 
-                { assignments: newAssignments, status: 'draft' }
+            // ✅ 這裡現在安全了，Service 會處理文件不存在的情況
+            await ScheduleService.updateAllAssignments(
+                this.state.currentUnitId, this.state.year, this.state.month, newAssignments
             );
             
             this.renderGrid();
@@ -217,17 +215,58 @@ export class SchedulePage {
         }
     }
 
+    renderGrid() {
+        const container = document.getElementById('schedule-grid-container');
+        container.innerHTML = this.generateTableHtml(this.state.scheduleData.assignments, true, false);
+        this.bindMenu();
+    }
+
+    bindMenu() {
+        document.querySelectorAll('.shift-cell').forEach(c => c.addEventListener('click', e => { 
+            e.stopPropagation(); 
+            this.openShiftMenu(c, this.state.unitSettings?.settings?.shifts||[]); 
+        }));
+    }
+
+    openShiftMenu(target, shifts) {
+        this.closeMenu();
+        const menu = document.createElement('div');
+        menu.className = 'shift-menu shadow rounded border bg-white';
+        menu.style.position = 'absolute'; menu.style.zIndex = '1000'; menu.style.padding = '5px';
+        const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }, ...shifts];
+        opts.forEach(s => {
+            const item = document.createElement('div');
+            item.className = 'shift-menu-item p-1'; item.style.cursor = 'pointer';
+            item.innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${s.color};margin-right:5px;"></span> ${s.code}`;
+            item.onclick = () => this.handleShiftSelect(target, s.code);
+            menu.appendChild(item);
+        });
+        const rect = target.getBoundingClientRect();
+        menu.style.top = `${rect.bottom + window.scrollY}px`; menu.style.left = `${rect.left + window.scrollX}px`;
+        document.body.appendChild(menu);
+        this.state.activeMenu = menu;
+    }
+
+    async handleShiftSelect(cell, code) {
+        this.closeMenu();
+        const uid = cell.dataset.staffId;
+        const day = cell.dataset.day;
+        if (!this.state.scheduleData.assignments[uid]) this.state.scheduleData.assignments[uid] = {};
+        this.state.scheduleData.assignments[uid][day] = code;
+        this.renderGrid();
+        await ScheduleService.updateShift(this.state.currentUnitId, this.state.year, this.state.month, uid, day, code);
+        this.updateScoreDisplay();
+    }
+
     async updateScoreDisplay() {
         const { scheduleData, staffList, unitSettings, year, month } = this.state;
         if (!scheduleData || !scheduleData.assignments) return;
-
         const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, year, month);
         const result = ScoringService.calculate(scheduleData, staffList, unitSettings, preSchedule);
         this.state.scoreResult = result;
-
-        const scoreEl = document.getElementById('score-display');
-        scoreEl.textContent = result.totalScore;
-        scoreEl.className = `h4 mb-0 fw-bold ${result.totalScore>=90?'text-success':(result.totalScore>=70?'text-primary':'text-danger')}`;
+        const el = document.getElementById('score-display');
+        el.textContent = result.totalScore;
+        el.className = `h4 mb-0 fw-bold ${result.totalScore>=90?'text-success':(result.totalScore>=70?'text-primary':'text-danger')}`;
     }
 
     showScoreDetails() {
@@ -260,21 +299,6 @@ export class SchedulePage {
         this.scoreModal.show();
     }
 
-    renderGrid() {
-        const container = document.getElementById('schedule-grid-container');
-        // 主畫面: isInteractive=true, isDropZone=false
-        container.innerHTML = this.generateTableHtml(this.state.scheduleData.assignments, true, false);
-        this.bindMenu();
-    }
-
-    bindMenu() {
-        document.querySelectorAll('.shift-cell').forEach(c => c.addEventListener('click', e => { 
-            e.stopPropagation(); 
-            this.openShiftMenu(c, this.state.unitSettings?.settings?.shifts||[]); 
-        }));
-    }
-
-    // 核心表格生成邏輯 (完整版)
     generateTableHtml(assignments, isInteractive, isDropZone, versionIdx = null) {
         const { year, month, daysInMonth, staffList, unitSettings } = this.state;
         const shiftDefs = unitSettings?.settings?.shifts || [];
@@ -335,41 +359,6 @@ export class SchedulePage {
         return `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
     }
 
-    // ... 其他輔助方法 (openShiftMenu, handleShiftSelect, runMultiVersionAI, renderVersionsModal, handleDragStart, handleDrop, applyVersion, deleteStaff, togglePublish, updateStatusBadge)
-    // 為確保完整性，請將上一次回覆中的這些方法直接複製到此處
-    // (例如 openShiftMenu, handleShiftSelect, runMultiVersionAI 等)
-    // 這裡我已將 generateTableHtml 完整寫入，這是修復 UI 渲染的關鍵
-    
-    openShiftMenu(target, shifts) {
-        this.closeMenu();
-        const menu = document.createElement('div');
-        menu.className = 'shift-menu shadow rounded border bg-white';
-        menu.style.position = 'absolute'; menu.style.zIndex = '1000'; menu.style.padding = '5px';
-        const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }, ...shifts];
-        opts.forEach(s => {
-            const item = document.createElement('div');
-            item.className = 'shift-menu-item p-1'; item.style.cursor = 'pointer';
-            item.innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${s.color};margin-right:5px;"></span> ${s.code}`;
-            item.onclick = () => this.handleShiftSelect(target, s.code);
-            menu.appendChild(item);
-        });
-        const rect = target.getBoundingClientRect();
-        menu.style.top = `${rect.bottom + window.scrollY}px`; menu.style.left = `${rect.left + window.scrollX}px`;
-        document.body.appendChild(menu);
-        this.state.activeMenu = menu;
-    }
-
-    async handleShiftSelect(cell, code) {
-        this.closeMenu();
-        const uid = cell.dataset.staffId;
-        const day = cell.dataset.day;
-        if (!this.state.scheduleData.assignments[uid]) this.state.scheduleData.assignments[uid] = {};
-        this.state.scheduleData.assignments[uid][day] = code;
-        this.renderGrid();
-        await ScheduleService.updateShift(this.state.currentUnitId, this.state.year, this.state.month, uid, day, code);
-        this.updateScoreDisplay(); // 更新分數
-    }
-
     async runMultiVersionAI() {
         if (!confirm("確定執行智慧排班？\n這將計算 3 個版本供您選擇。")) return;
         const loading = document.getElementById('loading-indicator');
@@ -396,7 +385,6 @@ export class SchedulePage {
             const scoreBadge = v.score.passed ? `<span class="badge bg-success fs-5">${v.score.totalScore} 分</span>` : `<span class="badge bg-danger fs-5">不合格</span>`;
             const infoHtml = `<div class="alert alert-light border d-flex justify-content-between align-items-center mb-2"><div class="d-flex align-items-center gap-3">${scoreBadge}<div class="small text-muted border-start ps-3"><div>公平性: ${v.score.details.fairness.score.toFixed(0)}</div><div>滿意度: ${v.score.details.satisfaction.score.toFixed(0)}</div></div></div><button class="btn btn-primary" onclick="window.routerPage.applyVersion(${idx})">套用此版本</button></div>`;
             
-            // 缺班池
             let poolHtml = '';
             if (missing.length > 0) {
                 poolHtml = '<div class="card mb-2 border-danger"><div class="card-header bg-danger text-white py-1 small">缺班池 (請拖曳補班)</div><div class="card-body p-2 d-flex flex-wrap gap-2">';
@@ -444,7 +432,7 @@ export class SchedulePage {
         this.versionsModal.hide();
         this.renderGrid();
         this.updateScoreDisplay();
-        alert(`✅ 已成功套用版本 ${selected.id} (分數: ${selected.score.totalScore})。`);
+        alert(`✅ 已成功套用版本 ${selected.id}。`);
     }
 
     async deleteStaff(uid) {
