@@ -1,5 +1,7 @@
-// ✅ 改為引入 firebaseService，而不是直接引入 db
-import { firebaseService } from "./FirebaseService.js";
+// ✅ 1. 改回直接從設定檔引入 db 和 auth (注意路徑與檔名)
+import { db, auth } from "../../config/firebase.config.js";
+
+// ✅ 2. 引入 Firestore 與 Auth 的操作函式
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
     query, where, serverTimestamp 
@@ -8,15 +10,11 @@ import {
     createUserWithEmailAndPassword 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// 輔助函式：確保 DB 已初始化
-const getDb = () => firebaseService.getDb();
-const getAuth = () => firebaseService.getAuth();
-
 export const userService = {
     // 取得所有使用者
     async getAllUsers() {
         try {
-            const db = getDb(); // ✅ 延遲取得 DB
+            // ✅ 直接使用引入的 db，不再需要 getDb()
             const q = query(collection(db, "users"));
             const snapshot = await getDocs(q);
             return snapshot.docs.map(doc => ({
@@ -32,7 +30,6 @@ export const userService = {
     // 取得特定單位的人員
     async getUsersByUnit(unitId) {
         try {
-            const db = getDb();
             const q = query(collection(db, "users"), where("unitId", "==", unitId));
             const snapshot = await getDocs(q);
             return snapshot.docs.map(doc => ({
@@ -48,7 +45,9 @@ export const userService = {
     // 取得單一使用者資料
     async getUserData(uid) {
         try {
-            const db = getDb(); // ✅ 這裡原本報錯，現在會確保拿到有效的 db
+            // ✅ 防呆檢查：如果 db 真的是 undefined，這裡會先報錯，方便除錯
+            if (!db) throw new Error("Firestore DB 未初始化，請檢查 firebase.config.js");
+
             const docRef = doc(db, "users", uid);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
@@ -67,7 +66,7 @@ export const userService = {
     // 更新最後登入時間
     async updateLastLogin(uid) {
         try {
-            const db = getDb();
+            if (!db) return;
             const userRef = doc(db, "users", uid);
             await updateDoc(userRef, {
                 lastLogin: serverTimestamp()
@@ -80,9 +79,6 @@ export const userService = {
     // 建立新員工
     async createStaff(data, password) {
         try {
-            const db = getDb();
-            const auth = getAuth();
-            
             // 1. Auth 建立帳號
             const userCredential = await createUserWithEmailAndPassword(auth, data.email, password);
             const uid = userCredential.user.uid;
@@ -104,7 +100,6 @@ export const userService = {
     // 更新使用者資料
     async updateUser(uid, data) {
         try {
-            const db = getDb();
             await updateDoc(doc(db, "users", uid), {
                 ...data,
                 updatedAt: serverTimestamp()
@@ -119,7 +114,6 @@ export const userService = {
     // 刪除使用者
     async deleteStaff(uid) {
         try {
-            const db = getDb();
             await deleteDoc(doc(db, "users", uid));
             return { success: true };
         } catch (error) {
