@@ -70,11 +70,16 @@ export class ShiftSettingsPage {
         const user = authService.getProfile();
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
         
-        let availableUnits = isAdmin ? await UnitService.getAllUnits() : await UnitService.getUnitsByManager(user.uid);
-        // Fallback
-        if(availableUnits.length === 0 && user.unitId) {
-            const u = await UnitService.getUnitById(user.unitId);
-            if(u) availableUnits.push(u);
+        let availableUnits = [];
+        if (isAdmin) {
+            availableUnits = await UnitService.getAllUnits();
+        } else {
+            availableUnits = await UnitService.getUnitsByManager(user.uid);
+            // Fallback
+            if(availableUnits.length === 0 && user.unitId) {
+                const u = await UnitService.getUnitById(user.unitId);
+                if(u) availableUnits.push(u);
+            }
         }
 
         if (availableUnits.length === 0) {
@@ -82,6 +87,10 @@ export class ShiftSettingsPage {
             unitSelect.disabled = true;
         } else {
             unitSelect.innerHTML = availableUnits.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            // ✅ 邏輯：只有一個單位時 Disable
+            if (availableUnits.length === 1) unitSelect.disabled = true;
+
             unitSelect.addEventListener('change', () => this.loadData(unitSelect.value));
             document.getElementById('btn-add').addEventListener('click', () => this.openModal());
             document.getElementById('btn-save').addEventListener('click', () => this.saveShift());
