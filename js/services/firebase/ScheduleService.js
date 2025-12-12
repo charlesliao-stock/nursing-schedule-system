@@ -1,6 +1,6 @@
 import { firebaseService } from "./FirebaseService.js";
 import { 
-    doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs
+    doc, getDoc, setDoc, updateDoc, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export class ScheduleService {
@@ -19,26 +19,23 @@ export class ScheduleService {
         } catch (error) { throw error; }
     }
 
-    // ✅ 新增：通用儲存方法 (Create or Update)
-    static async saveSchedule(unitId, year, month, data) {
+    static async createEmptySchedule(unitId, year, month, staffList = []) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
+            const assignments = {};
+            staffList.forEach(staffId => { assignments[staffId] = {}; });
             
-            const payload = {
-                ...data,
-                unitId, year, month,
-                updatedAt: serverTimestamp()
+            const initData = {
+                unitId, year, month, status: "draft", assignments: assignments,
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
             };
             
-            // 使用 merge: true，若文件不存在則建立，存在則更新
-            await setDoc(docRef, payload, { merge: true });
-            return true;
-        } catch (error) { 
-            console.error("Save Schedule Error:", error);
-            throw error; 
-        }
+            // 使用 setDoc 確保建立
+            await setDoc(docRef, initData, { merge: true });
+            return initData;
+        } catch (error) { throw error; }
     }
 
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
@@ -47,22 +44,51 @@ export class ScheduleService {
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
             const fieldPath = `assignments.${staffId}.${day}`;
-            // 這裡仍維持 updateDoc，因為通常是在班表已存在時操作
-            // 若需防呆，可改用 setDoc merge
+            
+            // 單一更新仍可用 updateDoc，但若擔心文件遺失，可改用 setDoc merge
+            // 這裡為了效能維持 updateDoc，但前端需確保 Schedule 已初始化
             await updateDoc(docRef, { [fieldPath]: shiftCode, updatedAt: serverTimestamp() });
             return true;
         } catch (error) { throw error; }
     }
 
+    // ✅ 修正：使用 setDoc + merge 解決 "No document to update"
     static async updateAllAssignments(unitId, year, month, assignments) {
-        // ✅ 改用 saveSchedule 以防止文件不存在時報錯
-        return await this.saveSchedule(unitId, year, month, { assignments });
+        try {
+            const db = firebaseService.getDb();
+            const scheduleId = this.getScheduleId(unitId, year, month);
+            const docRef = doc(db, "schedules", scheduleId);
+            
+            await setDoc(docRef, { 
+                unitId, year, month, // 確保基本欄位存在
+                assignments: assignments, 
+                updatedAt: serverTimestamp() 
+            }, { merge: true });
+            
+            return true;
+        } catch (error) { 
+            console.error("Update Assignments Error:", error);
+            throw error; 
+        }
     }
 
+    // ✅ 修正：同樣使用 setDoc + merge
     static async updateStatus(unitId, year, month, status) {
-        return await this.saveSchedule(unitId, year, month, { 
-            status, 
-            publishedAt: status === 'published' ? serverTimestamp() : null 
-        });
+        try {
+            const db = firebaseService.getDb();
+            const scheduleId = this.getScheduleId(unitId, year, month);
+            const docRef = doc(db, "schedules", scheduleId);
+
+            await setDoc(docRef, {
+                status: status,
+                publishedAt: status === 'published' ? serverTimestamp() : null,
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+            
+            return true;
+        } catch (error) {
+            console.error("Update Status Error:", error);
+            throw error;
+        }
     }
 }
