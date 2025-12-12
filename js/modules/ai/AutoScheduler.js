@@ -3,6 +3,16 @@ import { RuleEngine } from "./RuleEngine.js";
 export class AutoScheduler {
 
     static run(currentSchedule, staffList, unitSettings, preScheduleData) {
+        console.log("🚀 AI 開始排班");
+    console.log("📋 傳入人員數量:", staffList.length);
+    
+    // --- 診斷用 Log (請加入這段) ---
+    if (staffList.length > 0) {
+        console.log("🔍 檢查第一位人員資料:", staffList[0]);
+        if (!staffList[0].uid) console.error("❌ 嚴重錯誤：人員資料缺少 uid，AI 將無法運作！");
+        else console.log("✅ 人員資料包含 uid，格式正確。");
+    }
+        
         // 深拷貝目前的排班表
         let assignments = JSON.parse(JSON.stringify(currentSchedule.assignments || {}));
         const logs = [];
