@@ -10,7 +10,7 @@ export class RuleSettings {
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-ruler-combined"></i> 規則與評分設定</h3>
-                    <p class="text-muted small mb-0">設定每日人力需求，以及自定義排班品質的評分權重。</p>
+                    <p class="text-muted small mb-0">設定每日人力需求、勞基法規範及排班品質評分權重。</p>
                 </div>
 
                 <div class="card shadow-sm mb-4 border-left-primary">
@@ -33,6 +33,11 @@ export class RuleSettings {
                             </button>
                         </li>
                         <li class="nav-item">
+                            <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-constraints">
+                                <i class="fas fa-traffic-light"></i> 排班設定 (Rules)
+                            </button>
+                        </li>
+                        <li class="nav-item">
                             <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-scoring">
                                 <i class="fas fa-chart-pie"></i> 評分權重 (Soft)
                             </button>
@@ -41,27 +46,83 @@ export class RuleSettings {
 
                     <div class="tab-content">
                         <div class="tab-pane fade show active" id="tab-min">
+                            <div class="card shadow mb-4">
+                                <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-primary">每日最低人力 (Min Staff)</h6></div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered text-center table-sm align-middle">
+                                            <thead class="table-light"><tr><th style="width:10%">班別</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th class="text-danger">六</th><th class="text-danger">日</th></tr></thead>
+                                            <tbody>${this.renderRow('D', '白班')}${this.renderRow('E', '小夜')}${this.renderRow('N', '大夜')}</tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade" id="tab-constraints">
                             <div class="row">
-                                <div class="col-lg-8">
-                                    <div class="card shadow mb-4">
-                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-primary">每日最低人力 (Min Staff)</h6></div>
+                                <div class="col-lg-6">
+                                    <div class="card shadow mb-4 h-100 border-left-danger">
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-danger"><i class="fas fa-gavel"></i> 勞基法與硬性規範 (不可違反)</h6></div>
                                         <div class="card-body">
-                                            <div class="table-responsive">
-                                                <table class="table table-bordered text-center table-sm align-middle">
-                                                    <thead class="table-light"><tr><th style="width:10%">班別</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th class="text-danger">六</th><th class="text-danger">日</th></tr></thead>
-                                                    <tbody>${this.renderRow('D', '白班')}${this.renderRow('E', '小夜')}${this.renderRow('N', '大夜')}</tbody>
-                                                </table>
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-min-11h" checked disabled>
+                                                <label class="form-check-label fw-bold">班與班間隔至少 11 小時</label>
+                                                <div class="form-text text-danger small">依據勞基法規定，系統將強制禁止「小接白 (E-D)」與「大接小 (N-E)」等逆向或休息不足的排法。</div>
+                                            </div>
+                                            <hr>
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold">一週內班別種類上限</label>
+                                                <select class="form-select" id="rule-max-types-week">
+                                                    <option value="2">最多 2 種 (如: D/E 或 D/N)</option>
+                                                    <option value="3">最多 3 種 (如: D/E/N 皆有)</option>
+                                                </select>
+                                                <div class="form-text small">一週內 (週一至週日) 混合班別的種類限制。</div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-lg-4">
-                                    <div class="card shadow mb-4">
-                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-dark">限制參數</h6></div>
+
+                                <div class="col-lg-6">
+                                    <div class="card shadow mb-4 h-100 border-left-info">
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-info"><i class="fas fa-sliders-h"></i> 單位排班原則 (軟性設定)</h6></div>
                                         <div class="card-body">
                                             <div class="mb-3">
-                                                <label class="form-label fw-bold">最大連續上班天數</label>
-                                                <input type="number" id="maxConsecutiveDays" class="form-control" value="6">
+                                                <label class="form-label fw-bold">接班順序 (輪班方向)</label>
+                                                <input type="text" class="form-control bg-light" value="OFF ➝ 大(N) ➝ 白(D) ➝ 小(E)" disabled>
+                                                <div class="form-text small">順向可接，逆向禁止。</div>
+                                            </div>
+                                            
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-first-n-off" checked>
+                                                <label class="form-check-label fw-bold">首個大夜 (N) 前必須 OFF</label>
+                                                <div class="form-text small">若昨日非 N，今日排 N，則昨日必須為 OFF。</div>
+                                            </div>
+
+                                            <div class="row g-3">
+                                                <div class="col-6">
+                                                    <label class="form-label fw-bold">同種班最少連續</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="rule-min-consecutive" class="form-control" value="2" min="1">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                    <div class="form-text small">避免花花班 (如: D-OFF-D)</div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label fw-bold">夜班最多連續</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="rule-max-night" class="form-control" value="4" min="1">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                    <div class="form-text small">單位原則 (E/N)</div>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label fw-bold">最大連續上班天數</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -193,11 +254,20 @@ export class RuleSettings {
             }
         });
 
+        // 1. 回填人力需求
         document.querySelectorAll('.req-input').forEach(input => {
             input.value = staffReq[input.dataset.shift]?.[input.dataset.day] || 0;
         });
-        document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
 
+        // 2. 回填排班設定 (Constraints)
+        const constraints = savedRules.constraints || {};
+        document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
+        document.getElementById('rule-max-types-week').value = constraints.maxShiftTypesWeek || 3;
+        document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false; // 預設 true
+        document.getElementById('rule-min-consecutive').value = constraints.minConsecutiveSame || 2;
+        document.getElementById('rule-max-night').value = constraints.maxConsecutiveNight || 4;
+
+        // 3. 回填評分權重
         const container = document.getElementById('scoring-config-container');
         container.innerHTML = '';
         const categories = ['fairness', 'satisfaction', 'efficiency', 'health', 'quality', 'cost'];
@@ -235,11 +305,24 @@ export class RuleSettings {
         btn.disabled = true;
 
         try {
+            // 1. 收集人力需求
             const staffReq = { D:{}, E:{}, N:{} };
             document.querySelectorAll('.req-input').forEach(input => {
                 staffReq[input.dataset.shift][input.dataset.day] = parseInt(input.value) || 0;
             });
 
+            // 2. 收集排班設定 (Constraints)
+            const constraints = {
+                maxShiftTypesWeek: parseInt(document.getElementById('rule-max-types-week').value),
+                firstNRequiresOFF: document.getElementById('rule-first-n-off').checked,
+                minConsecutiveSame: parseInt(document.getElementById('rule-min-consecutive').value) || 2,
+                maxConsecutiveNight: parseInt(document.getElementById('rule-max-night').value) || 4,
+                // 硬性設定 (預設開啟)
+                minInterval11h: true,
+                shiftSequence: ['OFF', 'N', 'D', 'E'] // 隱含邏輯：順向可接，逆向不可
+            };
+
+            // 3. 收集評分權重
             const newConfig = { hard: { enabled: true, weight: 0 } };
             const categories = ['fairness', 'satisfaction', 'efficiency', 'health', 'quality', 'cost'];
             
@@ -257,6 +340,7 @@ export class RuleSettings {
 
             const rulesData = { 
                 maxConsecutiveWork: parseInt(document.getElementById('maxConsecutiveDays').value) || 6,
+                constraints: constraints, // ✅ 儲存新設定
                 scoringConfig: newConfig
             };
 
