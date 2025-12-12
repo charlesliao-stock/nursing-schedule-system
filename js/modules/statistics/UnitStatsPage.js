@@ -1,66 +1,17 @@
-import { StatisticsService } from "../../services/StatisticsService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
+import { UnitStatsTemplate } from "./templates/UnitStatsTemplate.js"; // 引入 Template
 
 export class UnitStatsPage {
     constructor() {
         const today = new Date();
         this.startMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`;
         this.endMonth = this.startMonth;
-        this.targetUnitId = null;
     }
 
     async render() {
-        return `
-            <div class="container-fluid mt-4">
-                <h2 class="mb-4"><i class="fas fa-chart-bar"></i> 單位區間統計</h2>
-                
-                <div class="card shadow mb-4 border-left-primary">
-                    <div class="card-body bg-light">
-                        <div class="d-flex align-items-center gap-3 flex-wrap">
-                            <div class="d-flex align-items-center gap-2">
-                                <label class="fw-bold text-nowrap">單位：</label>
-                                <select id="stats-unit-select" class="form-select w-auto">
-                                    <option value="">載入中...</option>
-                                </select>
-                            </div>
-                            <div class="vr mx-2"></div>
-                            <div class="d-flex align-items-center gap-2">
-                                <label class="fw-bold text-nowrap">區間：</label>
-                                <input type="month" id="start-month" class="form-control w-auto" value="${this.startMonth}">
-                                <span>~</span>
-                                <input type="month" id="end-month" class="form-control w-auto" value="${this.endMonth}">
-                                <button id="btn-unit-query" class="btn btn-primary ms-2"><i class="fas fa-search"></i> 查詢</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card shadow">
-                    <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">統計結果</h6></div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-striped mb-0 text-center">
-                                <thead class="table-dark">
-                                    <tr>
-                                        <th>日期</th>
-                                        <th class="bg-primary text-white">白班 (D)</th>
-                                        <th class="bg-warning text-dark">小夜 (E)</th>
-                                        <th class="bg-danger text-white">大夜 (N)</th>
-                                        <th class="bg-secondary text-white">休假 (OFF)</th>
-                                        <th>總上班數</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="unit-stats-tbody">
-                                    <tr><td colspan="6" class="p-5 text-muted">請選擇區間並查詢</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        return UnitStatsTemplate.renderLayout(this.startMonth, this.endMonth);
     }
 
     async afterRender() {
@@ -132,19 +83,7 @@ export class UnitStatsPage {
         }
 
         const sortedKeys = Object.keys(aggregate).sort();
-        if(sortedKeys.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="p-5 text-muted">該區間無班表資料</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = sortedKeys.map(date => {
-            const d = aggregate[date];
-            return `
-                <tr>
-                    <td class="fw-bold">${date}</td>
-                    <td>${d.D}</td><td>${d.E}</td><td>${d.N}</td>
-                    <td class="text-muted">${d.OFF}</td><td class="fw-bold">${d.Total}</td>
-                </tr>`;
-        }).join('');
+        // 使用 Template 渲染
+        tbody.innerHTML = UnitStatsTemplate.renderRows(sortedKeys, aggregate);
     }
 }
