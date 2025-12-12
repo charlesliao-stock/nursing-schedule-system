@@ -89,16 +89,18 @@ export const SchedulePageTemplate = {
         `;
     },
 
-    // 2. 渲染主表格 Grid (核心邏輯分離)
+    // 2. 渲染主表格 Grid (核心修正區塊)
     renderGrid(dataCtx, validationResult, options = {}) {
         const { year, month, daysInMonth, staffList, unitSettings } = dataCtx;
-        const { assignments } = dataCtx.scheduleData;
+        // 確保 assignments 存在，避免報錯
+        const assignments = dataCtx.scheduleData?.assignments || {};
         const { staffReport, coverageErrors } = validationResult;
         const { isInteractive = true, isDropZone = false, versionIdx = null } = options;
 
         const shiftDefs = unitSettings?.settings?.shifts || [];
         const shiftMap = {};
         shiftDefs.forEach(s => shiftMap[s.code] = s);
+        // 加入預設班別顏色
         shiftMap['OFF'] = { color: '#e5e7eb', name: '休' };
         shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' };
 
@@ -114,8 +116,12 @@ export const SchedulePageTemplate = {
 
         let bodyHtml = '<tbody>';
         staffList.forEach(staff => {
+            // ✅ 關鍵修正：確保這裡使用的是 uid，因為 AI 排班和資料庫都是存 uid
             const uid = staff.uid;
+            
+            // ✅ 防呆讀取：用 uid 去 assignments 查表，如果沒有就給空物件
             const staffAssignments = assignments[uid] || {};
+            
             const staffErrors = staffReport[uid]?.errors || {};
             
             // 互動模式才顯示刪除按鈕
@@ -134,16 +140,27 @@ export const SchedulePageTemplate = {
             for (let d = 1; d <= daysInMonth; d++) {
                 const code = staffAssignments[d] || '';
                 let style = '';
-                if(code === 'M_OFF') style = 'background-color:#6f42c1; color:white;';
-                else if (code && shiftMap[code]) style = `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}`;
                 
+                // 處理顏色顯示
+                if(code === 'M_OFF') {
+                    style = 'background-color:#6f42c1; color:white;';
+                } else if (code && shiftMap[code]) {
+                    // 使用半透明背景色，讓視覺更柔和
+                    style = `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}`;
+                }
+                
+                // 處理錯誤顯示 (紅色邊框)
                 const errorMsg = staffErrors[d];
                 const borderStyle = errorMsg ? 'border: 2px solid red !important;' : '';
                 const title = errorMsg ? `title="${errorMsg}"` : '';
+                
                 const cellClass = isInteractive ? 'shift-cell' : ''; 
                 const cursor = isInteractive ? 'cursor:pointer;' : '';
+                
+                // 處理拖曳放置 (Drop Zone)
                 const dropAttrs = isDropZone ? `ondragover="event.preventDefault()" ondrop="window.routerPage.handleDrop(event, '${uid}', ${d}, ${versionIdx})"` : '';
 
+                // ✅ 這裡的 data-staff-id="${uid}" 非常重要，點擊選單會用到
                 bodyHtml += `<td class="${cellClass}" data-staff-id="${uid}" data-day="${d}" style="${cursor} ${style}; ${borderStyle}" ${title} ${dropAttrs}>${code === 'M_OFF' ? 'OFF' : code}</td>`;
             }
             bodyHtml += '</tr>';
@@ -154,11 +171,16 @@ export const SchedulePageTemplate = {
 
     // 3. 渲染評分詳情
     renderScoreDetails(result) {
+        if(!result || !result.details) return '<div class="p-3 text-center">尚無評分資料</div>';
+
         const d = result.details;
         const renderItem = (label, obj, extra='') => `
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 <span>${label}</span>
-                <div class="text-end"><span class="badge bg-primary rounded-pill">${obj.score.toFixed(0)}分</span><small class="text-muted ms-2">${extra}</small></div>
+                <div class="text-end">
+                    <span class="badge bg-primary rounded-pill">${obj && obj.score ? obj.score.toFixed(0) : 0}分</span>
+                    <small class="text-muted ms-2">${extra}</small>
+                </div>
             </li>`;
 
         return `
@@ -168,9 +190,9 @@ export const SchedulePageTemplate = {
                 ${result.passed ? '<span class="badge bg-success">Hard Constraints Pass</span>' : '<span class="badge bg-danger">Hard Constraints Fail</span>'}
             </div>
             <ul class="list-group list-group-flush">
-                ${renderItem('公平性', d.fairness, `SD:${d.fairness.hoursSD||'-'}`)}
+                ${renderItem('公平性', d.fairness, d.fairness && d.fairness.hoursSD ? `SD:${d.fairness.hoursSD}` : '')}
                 ${renderItem('滿意度', d.satisfaction)}
-                ${renderItem('效率', d.efficiency, d.efficiency.coverage)}
+                ${renderItem('效率', d.efficiency, d.efficiency && d.efficiency.coverage ? d.efficiency.coverage : '')}
                 ${renderItem('健康', d.health)}
                 ${renderItem('品質', d.quality)}
                 ${renderItem('成本', d.cost)}
@@ -180,7 +202,7 @@ export const SchedulePageTemplate = {
 
     // 4. 渲染缺班池 (Drop Zone)
     renderMissingPool(missing) {
-        if (missing.length === 0) return '<div class="alert alert-success py-1 mb-2 small"><i class="fas fa-check"></i> 人力需求已全數滿足</div>';
+        if (!missing || missing.length === 0) return '<div class="alert alert-success py-1 mb-2 small"><i class="fas fa-check"></i> 人力需求已全數滿足</div>';
         
         let poolHtml = '<div class="card mb-2 border-danger"><div class="card-header bg-danger text-white py-1 small">缺班池 (請拖曳補班)</div><div class="card-body p-2 d-flex flex-wrap gap-2">';
         missing.forEach(m => { 
