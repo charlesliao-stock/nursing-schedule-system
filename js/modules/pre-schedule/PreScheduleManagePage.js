@@ -712,4 +712,3 @@ export class PreScheduleManagePage {
         this.loadList(this.targetUnitId);
     }
 }
-}
