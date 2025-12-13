@@ -1,5 +1,5 @@
-// ✅ 關鍵修改：在檔名後加上 ?v=2.1 強制瀏覽器重抓檔案，避開快取
-import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js?v=2.1"; 
+// ✅ 關鍵修改： ?v=2.2 (再次強制更新)
+import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js?v=2.2"; 
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
@@ -32,7 +32,7 @@ export class PreScheduleManagePage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger">無效的單位參數</div>';
 
-        console.log("🚀 [System] Render 啟動 (v2.1)");
+        console.log("🚀 [System] Render 啟動 (v2.2)");
         return PreScheduleManageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
@@ -40,11 +40,12 @@ export class PreScheduleManagePage {
         window.routerPage = this; 
         console.log("🚀 [System] AfterRender 啟動");
 
-        // 1. 抓取 Modal (加入重試機制，防止 DOM 渲染延遲)
+        // 1. 抓取 Modal
+        // 增加一個簡單的重試，但通常如果 Template 載入正確，這裡一定抓得到
         let modalEl = document.getElementById('detail-modal');
         if (!modalEl) {
-            console.warn("⚠️ 尚未偵測到 Modal，嘗試延遲抓取 (100ms)...");
-            await new Promise(r => setTimeout(r, 100)); // 等 0.1 秒
+            console.warn("⚠️ 第一次抓不到 Modal，嘗試微小延遲...");
+            await new Promise(r => setTimeout(r, 50));
             modalEl = document.getElementById('detail-modal');
         }
 
@@ -52,8 +53,8 @@ export class PreScheduleManagePage {
             this.detailModal = new bootstrap.Modal(modalEl);
             console.log("✅ Modal 初始化成功");
         } else {
-            console.error("❌ 嚴重錯誤：畫面樣板 (Template) 仍是舊版！請務必清除瀏覽器快取。");
-            // 這裡不 return，繼續嘗試執行其他邏輯
+            console.error("❌ [嚴重錯誤] Template 仍然是舊版！請檢查 Template 檔案是否確實存檔。");
+            return;
         }
 
         // 2. 權限判斷與載入單位
@@ -93,7 +94,7 @@ export class PreScheduleManagePage {
                 container.style.display = 'block';
                 console.log("✅ 單位選單載入完成");
             } else {
-                console.error("❌ 找不到單位選單 DOM (#unit-selector)，確認是舊版 Template。");
+                console.error("❌ 找不到單位選單 DOM，確認是舊版 Template。");
             }
         } catch (error) {
             console.error("載入單位失敗:", error);
@@ -103,7 +104,6 @@ export class PreScheduleManagePage {
     handleUnitChange(newUnitId) {
         if (!newUnitId) return;
         window.location.hash = `/preschedule/manage?unitId=${newUnitId}&year=${this.state.year}&month=${this.state.month}`;
-        // 強制重新整理以確保參數生效
         setTimeout(() => location.reload(), 100);
     }
 
@@ -303,15 +303,13 @@ export class PreScheduleManagePage {
             `;
             this.detailModal.show();
         } else {
-            console.error("Modal 尚未初始化，請重新整理");
-            // 嘗試手動顯示
-            const modalEl = document.getElementById('detail-modal');
-            if(modalEl) {
-                const tempModal = new bootstrap.Modal(modalEl);
-                tempModal.show();
-            } else {
-                alert("無法開啟視窗，請重新整理頁面");
-            }
+            // 如果到這一步還是失敗，嘗試手動顯示
+             const modalEl = document.getElementById('detail-modal');
+             if(modalEl) {
+                 new bootstrap.Modal(modalEl).show();
+             } else {
+                 alert("Modal 初始化失敗，請重新整理頁面");
+             }
         }
     }
     
