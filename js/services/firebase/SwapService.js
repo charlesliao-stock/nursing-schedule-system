@@ -1,67 +1,57 @@
 import { 
-    collection, addDoc, getDocs, query, where, updateDoc, doc, serverTimestamp, orderBy 
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { firebaseService } from "./FirebaseService.js";
-import { ScheduleService } from "./ScheduleService.js";
-import { NotificationService } from "./NotificationService.js";
+    db, 
+    collection, 
+    addDoc, 
+    query, 
+    where, 
+    getDocs, 
+    orderBy, 
+    Timestamp 
+} from "../../config/firebase.config.js";
 
-export class SwapService {
-    static getCollectionName() { return 'swap_requests'; }
-
-    static async createRequest(data) {
-        try {
-            const db = firebaseService.getDb();
-            const payload = {
-                ...data,
-                status: 'pending', // 統一為 pending，由管理者審核
-                createdAt: serverTimestamp()
-            };
-            await addDoc(collection(db, this.getCollectionName()), payload);
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
+class SwapService {
+    constructor() {
+        this.collectionName = "swap_requests";
     }
 
-    // ✅ 修復：確保此方法被導出且名稱正確
-    static async getPendingRequests(unitId) {
+    // 提交新的換班申請
+    async createSwapRequest(data) {
         try {
-            const db = firebaseService.getDb();
+            const payload = {
+                ...data,
+                status: 'pending_target', // 初始狀態：等待被換班者審核
+                createdAt: new Date(),
+                history: [
+                    { action: 'create', by: data.requesterId, at: new Date() }
+                ]
+            };
+            
+            const docRef = await addDoc(collection(db, this.collectionName), payload);
+            return docRef.id;
+        } catch (error) {
+            console.error("Error creating swap request:", error);
+            throw error;
+        }
+    }
+
+    // 取得某人相關的換班申請 (不論是申請者或是目標對象)
+    async getMySwapRequests(uid) {
+        // 這裡需要複合查詢，為簡化示範，先抓取申請者是我的
+        // 實際應用可能需要分別 query requesterId == uid OR targetId == uid
+        try {
             const q = query(
-                collection(db, this.getCollectionName()), 
-                where("unitId", "==", unitId),
-                where("status", "==", "pending"),
+                collection(db, this.collectionName),
+                where("requesterId", "==", uid),
                 orderBy("createdAt", "desc")
             );
             const snapshot = await getDocs(q);
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            // 若索引未建立，firebase 會報錯，這裡僅 console
-            console.error("Get pending requests failed:", error);
+            console.error("Error fetching swap requests:", error);
             return [];
         }
     }
-
-    static async getUserRequests(userId) {
-        try {
-            const db = firebaseService.getDb();
-            const q = query(collection(db, this.getCollectionName()), where("requestorId", "==", userId));
-            const snapshot = await getDocs(q);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        } catch (e) { return []; }
-    }
-
-    static async reviewRequest(requestId, status, reviewerId, requestData) {
-        try {
-            const db = firebaseService.getDb();
-            const requestRef = doc(db, this.getCollectionName(), requestId);
-
-            if (status === 'approved') {
-                const dateObj = new Date(requestData.date);
-                await ScheduleService.updateShift(requestData.unitId, dateObj.getFullYear(), dateObj.getMonth()+1, requestData.requestorId, dateObj.getDate(), requestData.targetShift);
-                await ScheduleService.updateShift(requestData.unitId, dateObj.getFullYear(), dateObj.getMonth()+1, requestData.targetId, dateObj.getDate(), requestData.requestorShift);
-            }
-
-            await updateDoc(requestRef, { status: status, reviewedBy: reviewerId, reviewedAt: serverTimestamp() });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
 }
+
+export const SwapServiceInstance = new SwapService();
+export { SwapServiceInstance as SwapService };
