@@ -13,8 +13,8 @@ export class ScheduleListPage {
                 
                 <div class="card shadow-sm mb-3 border-left-primary">
                     <div class="card-body py-2 d-flex align-items-center gap-2">
-                        <label class="fw-bold text-nowrap">選擇單位：</label>
-                        <select id="schedule-unit-select" class="form-select w-auto">
+                        <label class="fw-bold text-nowrap"><i class="fas fa-hospital-user me-1"></i>選擇單位：</label>
+                        <select id="schedule-unit-select" class="form-select w-auto fw-bold text-primary">
                             <option value="">載入中...</option>
                         </select>
                     </div>
@@ -50,44 +50,48 @@ export class ScheduleListPage {
         const unitSelect = document.getElementById('schedule-unit-select');
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
 
-        // 1. 取得可用單位列表
         let units = [];
         if (isAdmin) {
             units = await UnitService.getAllUnits();
         } else {
             units = await UnitService.getUnitsByManager(user.uid);
-            // Fallback: 若非管理職但有綁定單位，加入該單位
             if (units.length === 0 && user.unitId) {
                 const u = await UnitService.getUnitById(user.unitId);
                 if (u) units.push(u);
             }
         }
 
-        // 2. 渲染選單
         if (units.length === 0) {
             unitSelect.innerHTML = '<option value="">無權限</option>';
             unitSelect.disabled = true;
             return;
         }
 
-        unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-
-        // 3. 邏輯控制：只有一個單位時 Disable
-        if (units.length === 1) {
-            unitSelect.disabled = true;
-            this.loadSchedules(units[0].unitId);
-        } else {
+        // ✅ 修正權限邏輯：
+        // 系統管理員：強制手動選擇，不預設載入
+        if (isAdmin) {
+            unitSelect.innerHTML = '<option value="" disabled selected>請選擇單位...</option>' + 
+                                   units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             unitSelect.disabled = false;
-            // 若有之前選過的或預設第一個
-            this.loadSchedules(units[0].unitId);
+        } else {
+            // 一般管理者
+            unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            
+            // 只有一個單位時，自動選取並載入
+            if (units.length === 1) {
+                this.loadSchedules(units[0].unitId);
+            } else {
+                // 多個單位時，選第一個但也載入 (這是一般管理者的預期行為)
+                this.loadSchedules(units[0].unitId);
+            }
         }
 
-        // 4. 綁定事件
         unitSelect.addEventListener('change', (e) => {
             if (e.target.value) this.loadSchedules(e.target.value);
         });
     }
 
+    // loadSchedules 方法保持不變...
     async loadSchedules(unitId) {
         this.targetUnitId = unitId;
         const tbody = document.getElementById('schedule-list-tbody');
@@ -106,19 +110,16 @@ export class ScheduleListPage {
             const rows = await Promise.all(preSchedules.map(async (pre) => {
                 const schedule = await ScheduleService.getSchedule(unitId, pre.year, pre.month);
                 
-                // 1. 預班狀態
                 let preStatus = '';
                 if (now >= pre.settings.openDate && now <= pre.settings.closeDate) preStatus = '<span class="badge bg-success">開放中</span>';
                 else if (now > pre.settings.closeDate) preStatus = '<span class="badge bg-secondary">已截止</span>';
                 else preStatus = '<span class="badge bg-warning text-dark">未開放</span>';
 
-                // 2. 審核狀態
                 let approvedStatus = '<span class="text-muted">-</span>';
                 if (now > pre.settings.closeDate || pre.status === 'closed') {
                     approvedStatus = '<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> 審核通過</span>';
                 }
 
-                // 3. 排班狀態
                 let schStatus = '<span class="badge bg-light text-dark border">未開始</span>';
                 let btnClass = 'btn-outline-primary';
                 let btnText = '開始排班';
