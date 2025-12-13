@@ -5,7 +5,7 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { RuleEngine } from "../ai/RuleEngine.js";
 import { AutoScheduler } from "../ai/AutoScheduler.js";
 import { ScoringService } from "../../services/ScoringService.js";
-import { SchedulePageTemplate } from "./templates/SchedulePageTemplate.js"; // 引入 Template
+import { SchedulePageTemplate } from "./templates/SchedulePageTemplate.js"; 
 
 export class SchedulePage {
     constructor() {
@@ -29,7 +29,6 @@ export class SchedulePage {
 
         if(!this.state.currentUnitId) return `<div class="alert alert-danger m-4">無效的參數，請從列表頁進入。</div>`;
 
-        // 直接使用 Template
         return SchedulePageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
@@ -122,13 +121,11 @@ export class SchedulePage {
         } catch(e) { console.error(e); alert("重置失敗: " + e.message); } finally { if(loading) loading.style.display = 'none'; }
     }
 
-    // 核心渲染邏輯：先運算規則，再呼叫 Template 產生 HTML
     renderGrid() {
         const validation = RuleEngine.validateAll(
             this.state.scheduleData, this.state.daysInMonth, this.state.staffList, this.state.unitSettings, this.state.unitSettings?.rules
         );
         const container = document.getElementById('schedule-grid-container');
-        // 呼叫 Template
         container.innerHTML = SchedulePageTemplate.renderGrid(this.state, validation, { isInteractive: true });
         this.bindMenu();
     }
@@ -187,22 +184,44 @@ export class SchedulePage {
         this.scoreModal.show();
     }
 
+    // 🔥 修正重點：加入 async/await 確保等待運算完成
     async runMultiVersionAI() {
         if (!confirm("確定執行智慧排班？\n這將計算 3 個版本供您選擇。")) return;
         const loading = document.getElementById('loading-indicator');
         loading.style.display = 'block';
+        
         try {
             const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, this.state.year, this.state.month);
-            const currentData = { ...this.state.scheduleData };
+            const currentData = { ...this.state.scheduleData }; // 複製當前狀態作為起點
             this.generatedVersions = [];
+
             for (let i = 1; i <= 3; i++) {
-                const result = AutoScheduler.run(currentData, this.state.staffList, this.state.unitSettings, preSchedule);
-                const scoreRes = ScoringService.calculate({ assignments: result.assignments, year: this.state.year, month: this.state.month }, this.state.staffList, this.state.unitSettings, preSchedule);
-                this.generatedVersions.push({ id: i, assignments: result.assignments, logs: result.logs, score: scoreRes });
+                // ✅ FIX: 這裡必須加 await，否則 result 是 Promise，會導致後面出錯
+                const result = await AutoScheduler.run(currentData, this.state.staffList, this.state.unitSettings, preSchedule);
+                
+                if (result && result.assignments) {
+                    const scoreRes = ScoringService.calculate(
+                        { assignments: result.assignments, year: this.state.year, month: this.state.month }, 
+                        this.state.staffList, 
+                        this.state.unitSettings, 
+                        preSchedule
+                    );
+                    this.generatedVersions.push({ id: i, assignments: result.assignments, logs: result.logs, score: scoreRes });
+                }
             }
+
+            if (this.generatedVersions.length === 0) {
+                throw new Error("無法產生有效的排班結果，請檢查規則設定。");
+            }
+
             this.renderVersionsModal();
             this.versionsModal.show();
-        } catch (e) { alert("演算失敗: " + e.message); } finally { loading.style.display = 'none'; }
+        } catch (e) { 
+            console.error("AI Schedule Error:", e);
+            alert("演算失敗: " + e.message); 
+        } finally { 
+            loading.style.display = 'none'; 
+        }
     }
 
     renderVersionsModal() {
@@ -210,22 +229,16 @@ export class SchedulePage {
             const tabPane = document.getElementById(`v${v.id}`);
             if(!tabPane) return;
             
-            // 計算缺班
             const missing = this.calculateMissingShifts(v.assignments);
-            
-            // 驗證規則
             const validation = RuleEngine.validateAll(
                 { year: this.state.year, month: this.state.month, assignments: v.assignments },
                 this.state.daysInMonth, this.state.staffList, this.state.unitSettings, this.state.unitSettings?.rules
             );
 
-            // 組合 UI
             const scoreBadge = v.score.passed ? `<span class="badge bg-success fs-5">${v.score.totalScore} 分</span>` : `<span class="badge bg-danger fs-5">不合格</span>`;
             const infoHtml = `<div class="alert alert-light border d-flex justify-content-between align-items-center mb-2"><div class="d-flex align-items-center gap-3">${scoreBadge}<div class="small text-muted border-start ps-3"><div>公平性: ${v.score.details.fairness.score.toFixed(0)}</div><div>滿意度: ${v.score.details.satisfaction.score.toFixed(0)}</div></div></div><button class="btn btn-primary" onclick="window.routerPage.applyVersion(${idx})">套用此版本</button></div>`;
             const poolHtml = SchedulePageTemplate.renderMissingPool(missing);
             
-            // 呼叫 Template 的 Grid 渲染 (isDropZone = true)
-            // 這裡需要造一個 fake Context 給 Template
             const fakeCtx = { ...this.state, scheduleData: { assignments: v.assignments } };
             const gridHtml = `<div style="max-height:60vh; overflow:auto;">${SchedulePageTemplate.renderGrid(fakeCtx, validation, { isInteractive: false, isDropZone: true, versionIdx: idx })}</div>`;
             
@@ -261,34 +274,41 @@ export class SchedulePage {
         this.renderVersionsModal(); 
     }
 
-async applyVersion(index) {
-    const selected = this.generatedVersions[index];
-    
-    // 1. ✅ 關鍵！必須更新本地狀態
-    // 確保 assignments 是完整物件
-    this.state.scheduleData.assignments = JSON.parse(JSON.stringify(selected.assignments));
+    async applyVersion(index) {
+        const selected = this.generatedVersions[index];
+        if (!selected) return;
 
-    // 2. 更新資料庫
-    await ScheduleService.updateAllAssignments(
-        this.state.currentUnitId, 
-        this.state.year, 
-        this.state.month, 
-        selected.assignments
-    );
+        const loading = document.getElementById('loading-indicator');
+        if(loading) loading.style.display = 'block';
 
-    this.versionsModal.hide();
-    
-    // 3. 重新渲染 (這時候才會讀到新資料)
-    this.renderGrid();
-    this.updateScoreDisplay();
-    
-    alert(`✅ 已成功套用版本 ${selected.id}。`);
-}
+        try {
+            // 1. 更新本地狀態
+            this.state.scheduleData.assignments = JSON.parse(JSON.stringify(selected.assignments));
+
+            // 2. 寫入資料庫
+            await ScheduleService.updateAllAssignments(
+                this.state.currentUnitId, 
+                this.state.year, 
+                this.state.month, 
+                selected.assignments
+            );
+
+            this.versionsModal.hide();
+            this.renderGrid();
+            this.updateScoreDisplay();
+            
+            alert(`✅ 已成功套用版本 ${selected.id} 並儲存至資料庫。`);
+        } catch(e) {
+            console.error(e);
+            alert("套用失敗: " + e.message);
+        } finally {
+            if(loading) loading.style.display = 'none';
+        }
+    }
 
     async deleteStaff(uid) {
         if(!confirm("從本月班表中移除此人員？")) return;
         delete this.state.scheduleData.assignments[uid];
-        // 這裡僅從前端 List 移除顯示，並更新 DB (不刪除 User)
         this.state.staffList = this.state.staffList.filter(s => s.uid !== uid);
         await ScheduleService.updateAllAssignments(this.state.currentUnitId, this.state.year, this.state.month, this.state.scheduleData.assignments);
         this.renderGrid();
