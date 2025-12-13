@@ -27,7 +27,6 @@ export class PreScheduleEditPage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger m-4">參數錯誤：缺少單位 ID</div>';
         
-        // 1. 取得單位設定
         this.state.unitSettings = await UnitService.getUnitById(this.state.unitId);
         const unitName = this.state.unitSettings ? this.state.unitSettings.unitName : '未知單位';
 
@@ -60,7 +59,7 @@ export class PreScheduleEditPage {
                             <span class="fw-bold text-primary"><i class="fas fa-th me-1"></i> 排班工作台</span>
                             
                             <div class="alert alert-info py-0 px-2 mb-0 border-0" style="font-size: 0.85rem;">
-                                <i class="fas fa-mouse-pointer me-1"></i> <strong>提示：</strong>在格子上按 <b>右鍵</b> 可選擇班別 (白/小/大/勿排...)
+                                <i class="fas fa-mouse-pointer me-1"></i> <strong>提示：</strong>在格子上按 <b>右鍵</b> 可選擇班別
                             </div>
 
                             <div class="border-start ps-2 text-muted d-flex align-items-center gap-2">
@@ -130,7 +129,6 @@ export class PreScheduleEditPage {
             
             let staffList = [];
             if (preSchedule && preSchedule.staffIds && preSchedule.staffIds.length > 0) {
-                // 批次取得完整 User 物件，確保拿到 isPregnant 等最新狀態
                 const promises = preSchedule.staffIds.map(uid => userService.getUserData(uid));
                 const users = await Promise.all(promises);
                 staffList = users.filter(u => u);
@@ -142,7 +140,6 @@ export class PreScheduleEditPage {
             
             this.state.staffList = staffList.map(u => {
                 u.isSupport = supportIds.includes(u.uid) || u.unitId !== this.state.unitId;
-                // 確保讀取到懷孕狀態
                 u.isPregnant = !!u.isPregnant; 
                 return u;
             });
@@ -216,23 +213,22 @@ export class PreScheduleEditPage {
 
         const getSortIcon = (k) => sortKey !== k ? '<i class="fas fa-sort text-muted opacity-25 ms-1"></i>' : (sortDir === 'asc' ? '<i class="fas fa-sort-up text-dark ms-1"></i>' : '<i class="fas fa-sort-down text-dark ms-1"></i>');
 
-        // 讀取班別種類上限
         const maxShiftTypes = this.state.unitSettings?.rules?.constraints?.maxShiftTypesWeek || 3;
         
         // --- 1. 表頭 ---
-        // 1. 調整姓名欄寬度：改為 90px
+        // ✅ 修正：縮小欄寬，姓名改為 60px
         let headerHtml = `
             <th class="sticky-col col-1 bg-light text-center px-1" style="width: 70px; cursor:pointer;" onclick="window.routerPage.handleSort('staffId')">
                 <small>職編</small>${getSortIcon('staffId')}
             </th>
-            <th class="sticky-col col-2 bg-light text-center px-1" style="width: 90px;">姓名</th>
+            <th class="sticky-col col-2 bg-light text-center px-1" style="width: 60px;">姓名</th>
             <th class="sticky-col col-3 bg-light text-center px-1" style="width: 40px;" title="特殊註記">註</th>
             <th class="sticky-col col-4 bg-light text-center px-1" style="width: ${maxShiftTypes===3?'140px':'110px'};">
                 <small>排班偏好</small>
             </th>
         `;
 
-        // 上月 (管理者可編輯)
+        // 上月
         this.state.prevMonthLast6Days.forEach(d => {
             headerHtml += `
                 <th class="text-center p-0 bg-secondary bg-opacity-10 text-muted border-bottom border-secondary" style="width: 28px;">
@@ -265,14 +261,11 @@ export class PreScheduleEditPage {
             const prefs = sub.preferences || {};
             const isSubmitted = sub.isSubmitted;
 
-            // 支援人員標記
             const isSupport = staff.isSupport ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.5rem; padding: 2px 3px;">支</span>' : '';
             
-            // 6. 未提交者標示粉紅色
-            const nameCellClass = isSubmitted ? 'bg-white' : 'table-danger'; // table-danger 是淡粉紅
+            const nameCellClass = isSubmitted ? 'bg-white' : 'table-danger'; 
             const nameCellTitle = isSubmitted ? '' : '此人尚未提交預班';
 
-            // 2. 特殊註記：與人員管理同步 (懷孕)
             let noteBadge = '';
             if (staff.isPregnant) {
                 noteBadge = `<span class="badge bg-danger rounded-circle p-1 d-flex align-items-center justify-content-center" title="懷孕" style="width:20px;height:20px;font-size:0.7rem;">孕</span>`;
@@ -280,17 +273,14 @@ export class PreScheduleEditPage {
                 noteBadge = `<span class="badge bg-info rounded-circle p-1 d-flex align-items-center justify-content-center" title="${staff.specialNote}" style="width:20px;height:20px;">!</span>`;
             }
 
-            // 2. 包班顯示 (包+班別)
             let bundleHtml = '';
             if (prefs.batch) {
-                // prefs.batch 可能是 'N' 或 'E'
                 const label = prefs.batch === 'N' ? '大' : (prefs.batch === 'E' ? '小' : prefs.batch);
                 bundleHtml = `<span class="badge bg-primary" style="font-size:0.7rem;" title="包班:${label}">包${label}</span>`;
             } else {
                 bundleHtml = `<span class="text-muted small">-</span>`;
             }
 
-            // 下拉選單產生器
             const genSelect = (val, key) => `
                 <select class="form-select form-select-sm p-0 text-center border-0 bg-transparent fw-bold" 
                         style="height: 24px; font-size: 0.8rem; cursor: pointer;"
@@ -310,12 +300,12 @@ export class PreScheduleEditPage {
                     ${maxShiftTypes === 3 ? `<div style="width: 25px;">${genSelect(prefs.priority3, 'priority3')}</div>` : ''}
                 </div>`;
 
-            // 組合列
+            // ✅ 修正：姓名欄 max-width 設定為 60px
             let rowHtml = `
                 <td class="sticky-col col-1 text-center fw-bold text-secondary bg-white"><small>${staff.staffId || ''}</small></td>
                 
                 <td class="sticky-col col-2 text-start p-0 ps-1 align-middle text-truncate ${nameCellClass}" 
-                    title="${nameCellTitle}" style="max-width: 90px; font-size: 0.85rem;">
+                    title="${nameCellTitle}" style="max-width: 60px; font-size: 0.85rem;">
                     ${staff.name} ${isSupport}
                 </td>
                 
@@ -323,7 +313,6 @@ export class PreScheduleEditPage {
                 <td class="sticky-col col-4 bg-white p-0 align-middle border-end">${prefHtml}</td>
             `;
 
-            // 3. 上月班表 (可編輯 - 右鍵選單或點擊)
             this.state.prevMonthLast6Days.forEach(d => {
                 const shift = (this.state.prevMonthData[staff.uid] || {})[d] || ''; 
                 rowHtml += `
@@ -335,15 +324,12 @@ export class PreScheduleEditPage {
                     </td>`;
             });
 
-            // 本月格子
             let offCount = 0;
             for (let d = 1; d <= daysInMonth; d++) {
                 const wish = wishes[d] || '';
                 
                 let cellClass = '';
                 let cellText = wish;
-                
-                // 4. 字體變小，M_FF 改名
                 const smallFont = 'font-size: 0.75rem;';
 
                 if (wish === 'OFF') {
@@ -352,7 +338,7 @@ export class PreScheduleEditPage {
                     offCount++;
                 } else if (wish === 'M_OFF') {
                     cellClass = 'bg-dark text-white'; 
-                    cellText = 'M_FF'; // 4. 修改文字
+                    cellText = 'M_FF';
                     offCount++;
                 } else if (['D','E','N'].includes(wish)) {
                     cellClass = 'bg-info text-white fw-bold'; 
@@ -395,8 +381,9 @@ export class PreScheduleEditPage {
         const style = document.createElement('style');
         style.id = 'matrix-sticky-style';
         
-        // 調整寬度
-        const w1 = 70, w2 = 90, w3 = 40; // w2 改為 90
+        // ✅ 修正：重新計算 left 位置
+        // w1(職編)=70, w2(姓名)=60, w3(註)=40
+        const w1 = 70, w2 = 60, w3 = 40; 
         const w4 = maxTypes === 3 ? 140 : 110; 
         
         style.innerHTML = `
@@ -478,21 +465,17 @@ export class PreScheduleEditPage {
         this.renderMatrixGrid();
     }
 
-    // 3. 上月班表編輯 (即時更新)
     async editPrevMonthCell(uid, day, currentVal) {
         const newVal = prompt(`修改上個月 ${day} 日班別 (D, E, N, OFF):`, currentVal);
         if (newVal !== null) {
             const val = newVal.trim().toUpperCase();
             
-            // 計算上個月的年份月份
             let prevY = this.state.year, prevM = this.state.month - 1;
             if (prevM === 0) { prevM = 12; prevY--; }
 
             try {
-                // 直接寫入資料庫 (假設 ScheduleService 有此方法，若無請實作 updateShift)
                 await ScheduleService.updateShift(this.state.unitId, prevY, prevM, uid, day, val);
                 
-                // 更新本地暫存並重繪
                 if (!this.state.prevMonthData[uid]) this.state.prevMonthData[uid] = {};
                 this.state.prevMonthData[uid][day] = val;
                 this.renderMatrixGrid();
@@ -567,7 +550,6 @@ export class PreScheduleEditPage {
         } catch(e) { alert("加入失敗: " + e.message); }
     }
     
-    // 6. 催繳名單列表
     remindUnsubmitted() {
         const unsubmitted = this.state.staffList.filter(s => {
             const sub = this.state.submissions[s.uid];
