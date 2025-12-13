@@ -1,13 +1,15 @@
 export const PreScheduleManageTemplate = {
     renderLayout(year, month) {
-        // 使用 page-wrapper 包裹所有內容
+        // ✅ [驗證] 如果沒看到這行 Log，代表瀏覽器快取沒清掉
+        console.log(`%c 🎨 Template v2.2 正在渲染... (單位選單應已加入)`, "color: #fff; background: #d9534f; font-size: 14px; padding: 4px;");
+
         return `
         <div class="page-wrapper">
             <div class="container-fluid p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
                         <h2 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核 (v2.1)
+                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核 (v2.2)
                         </h2>
                         
                         <div id="unit-selector-container" class="ms-4" style="display:none;">
