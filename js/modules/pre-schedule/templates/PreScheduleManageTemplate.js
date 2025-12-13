@@ -8,6 +8,14 @@ export const PreScheduleManageTemplate = {
                         <h2 class="mb-0 fw-bold text-dark">
                             <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核
                         </h2>
+                        
+                        <div id="unit-selector-container" class="ms-4" style="display:none;">
+                            <select id="unit-selector" class="form-select fw-bold border-primary text-primary" 
+                                    onchange="window.routerPage.handleUnitChange(this.value)">
+                                <option value="" disabled selected>切換單位...</option>
+                            </select>
+                        </div>
+
                         <span class="badge bg-white text-dark border ms-3 fs-6">
                             ${year}年 ${month}月
                         </span>
@@ -66,7 +74,7 @@ export const PreScheduleManageTemplate = {
                 </div>
             </div>
 
-            <div class="modal fade" id="detail-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal fade" id="detail-modal" tabindex="-1">
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content">
                         <div class="modal-header">
@@ -141,7 +149,6 @@ export const PreScheduleManageTemplate = {
                     : `<span class="badge bg-secondary-subtle text-secondary border px-2 py-1">未填寫</span>`;
                 const updateTime = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleDateString() : '';
 
-                // 特註與偏好摘要
                 let noteHtml = '';
                 if (sub.note) {
                     noteHtml += `<div class="mb-1 text-dark" style="white-space: pre-wrap; font-size: 0.9rem;">${sub.note}</div>`;
@@ -152,7 +159,6 @@ export const PreScheduleManageTemplate = {
                 }
                 if (!noteHtml) noteHtml = '<span class="text-muted small">-</span>';
 
-                // 產生格子
                 const gridHtml = this.renderGridVisual(staff, wishes, year, month);
 
                 html += `
@@ -199,7 +205,6 @@ export const PreScheduleManageTemplate = {
     renderGridVisual(staff, wishes, year, month) {
         let html = '<div class="d-flex align-items-center overflow-auto pb-1" style="max-width: 450px;">';
 
-        // A. 上個月月底 6 天
         const prevDays = staff.prevMonthDays || []; 
         const prevShifts = staff.prevMonthShifts || {};
 
@@ -225,7 +230,6 @@ export const PreScheduleManageTemplate = {
             html += '<div class="border-end mx-2" style="height: 30px; border-color: #ddd;"></div>';
         }
 
-        // B. 本月預班
         let hasWishes = false;
         for (let d = 1; d <= 31; d++) {
             if (wishes[d]) {
