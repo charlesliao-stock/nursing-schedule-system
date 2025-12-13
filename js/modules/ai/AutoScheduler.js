@@ -3,21 +3,21 @@ import { RuleEngine } from "./RuleEngine.js";
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (歷史數據整合版)
+     * 啟動排班引擎 (v3.1 穩定版)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v3.0 歷史數據整合版)");
+        console.log("🚀 AI 排班引擎啟動 (v3.1 歷史數據整合版)");
 
         try {
             // --- 1. 上下文準備 ---
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
             
             // --- 2. 包班預填 ---
-            console.log("🔹 執行包班預填...");
+            // console.log("🔹 執行包班預填...");
             this.prefillBatchShifts(context);
 
             // --- 3. 步進式排班 ---
-            console.log("🔹 開始每日步進排班...");
+            // console.log("🔹 開始每日步進排班...");
             const success = await this.solveDay(1, context);
 
             if (success) {
@@ -36,10 +36,10 @@ export class AutoScheduler {
     }
 
     // ============================================================
-    //  核心邏輯 1: 上下文準備 (整合 History)
+    //  核心邏輯 1: 上下文準備 (修復 Null 錯誤 + 歷史 OFF 邏輯)
     // ============================================================
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
-        // 1. 基礎物件防呆 (處理 null 與 undefined)
+        // 1. 基礎物件防呆
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
         preScheduleData = preScheduleData || {}; 
@@ -47,9 +47,9 @@ export class AutoScheduler {
         const rules = unitSettings.rules || {};
         const settings = unitSettings.settings || {};
         
-        // 🔥 關鍵修復：Object.entries(null) 會報錯，必須確保是物件
-        const submissions = (preScheduleData.submissions && typeof preScheduleData.submissions === 'object') ? preScheduleData.submissions : {};
-        const historyData = (preScheduleData.history && typeof preScheduleData.history === 'object') ? preScheduleData.history : {};
+        // 🔥 關鍵修復：簡單使用 || {} 即可防止 null，避免 typeof null === 'object' 陷阱
+        const submissions = preScheduleData.submissions || {};
+        const historyData = preScheduleData.history || {};
 
         // 2. 人員清洗
         const validStaffList = (staffList || [])
@@ -66,18 +66,19 @@ export class AutoScheduler {
         // 3. 初始化容器
         const assignments = {};
         const wishes = {}; 
-        // 新增：上個月最後一天的班別 (用於 Day 1 檢查)
         const lastMonthShifts = {}; 
 
         validStaffList.forEach(s => {
             assignments[s.uid] = {};
             wishes[s.uid] = {};
-            lastMonthShifts[s.uid] = null; // 預設無資料
+            // ✅ 設定：預設上個月最後一天為 'OFF' (若無資料或空白，視為 OFF)
+            lastMonthShifts[s.uid] = 'OFF'; 
         });
 
         // 4. 載入預班 (Wishes)
         try {
-            Object.entries(submissions).forEach(([uid, sub]) => {
+            // 使用 || {} 雙重保險
+            Object.entries(submissions || {}).forEach(([uid, sub]) => {
                 if (assignments[uid] && sub && sub.wishes) {
                     Object.entries(sub.wishes || {}).forEach(([d, wish]) => {
                         const day = parseInt(d);
@@ -88,16 +89,20 @@ export class AutoScheduler {
             });
         } catch(e) { console.warn("預班讀取警告:", e); }
 
-        // 5. 載入歷史資料 (History) - 找出上個月最後一天
+        // 5. 載入歷史資料 (History)
         // historyData 結構: { uid: { 26: 'D', ... 30: 'N' } }
         try {
-            Object.entries(historyData).forEach(([uid, history]) => {
+            Object.entries(historyData || {}).forEach(([uid, history]) => {
                 if (assignments[uid] && history) {
                     // 找出 key 最大的一天 (即上個月最後一天)
-                    const days = Object.keys(history).map(k => parseInt(k)).sort((a,b)=>b-a);
+                    const days = Object.keys(history || {}).map(k => parseInt(k)).sort((a,b)=>b-a);
                     if (days.length > 0) {
                         const lastDay = days[0];
-                        lastMonthShifts[uid] = history[lastDay];
+                        const lastShift = history[lastDay];
+                        // ✅ 設定：若有資料且不為空字串，則使用；否則維持預設的 'OFF'
+                        if (lastShift && lastShift.trim() !== '') {
+                            lastMonthShifts[uid] = lastShift;
+                        }
                     }
                 }
             });
@@ -123,13 +128,13 @@ export class AutoScheduler {
             staffList: validStaffList,
             assignments: assignments,
             wishes: wishes, 
-            lastMonthShifts: lastMonthShifts, // ✅ 傳遞歷史資料
+            lastMonthShifts: lastMonthShifts, // 已包含「空白視為OFF」的邏輯
             rules: rules,
             staffReq: staffReq,
             shiftDefs: shiftDefs,
             shiftPriority: ['N', 'E', 'D', 'OFF'], 
             logs: [],
-            maxBacktrack: 50000, 
+            maxBacktrack: 30000, // 稍微降低回溯上限以提升多版本生成速度
             backtrackCount: 0
         };
     }
@@ -163,7 +168,9 @@ export class AutoScheduler {
         if (await this.solveStaffForDay(day, pendingStaff, 0, context)) {
             const check = this.checkDailyManpower(day, context);
             if (check.isValid) {
+                // UI 效能優化
                 if (day % 3 === 0) await new Promise(r => setTimeout(r, 0));
+
                 if (await this.solveDay(day + 1, context)) return true;
             }
         }
@@ -179,30 +186,25 @@ export class AutoScheduler {
         if (index >= staffList.length) return true;
 
         context.backtrackCount++;
-        if (context.backtrackCount > context.maxBacktrack) throw new Error("運算超載");
+        if (context.backtrackCount > context.maxBacktrack) return false; // 溫和退出而非拋錯，讓外層捕捉
 
         const staff = staffList[index];
         let candidates = [...context.shiftPriority];
 
         // --- 判斷前一天 (Prev Day) ---
-        let prevAssignment = null;
+        let prevAssignment = 'OFF'; // 預設為 OFF
         let prevWish = null;
 
         if (day === 1) {
-            // ✅ Day 1 特殊處理：讀取上個月最後一天 (History)
-            prevAssignment = context.lastMonthShifts[staff.uid]; 
-            // 上個月的預班我們通常不追溯，設為 null 或依需求擴充
-            prevWish = null; 
+            // ✅ Day 1：讀取 History (若無資料已在 prepareContext 預設為 OFF)
+            prevAssignment = context.lastMonthShifts[staff.uid] || 'OFF';
         } else {
-            // Day 2+：讀取本月前一天
-            prevAssignment = context.assignments[staff.uid][day - 1];
+            prevAssignment = context.assignments[staff.uid][day - 1] || 'OFF';
             prevWish = context.wishes[staff.uid][day - 1];
         }
 
         // --- 規則：預休 OFF 不接 N ---
         if (candidates.includes('N')) {
-            // 只有在本月內 (Day > 1) 才能判斷是否為「預休」
-            // Day 1 無法判斷上個月是否為預休，故暫時忽略此規則，或視為系統休
             if (day > 1 && prevAssignment === 'OFF' && (prevWish === 'OFF' || prevWish === 'M_OFF')) {
                 candidates = candidates.filter(c => c !== 'N');
             }
@@ -212,19 +214,15 @@ export class AutoScheduler {
         for (const shift of candidates) {
             context.assignments[staff.uid][day] = shift;
             
-            // 呼叫 RuleEngine (需支援 Day 1 邊界檢查)
-            // 為了讓 Day 1 能檢查間隔 (例如上月30是E，今日不能D)
-            // 我們需要在 RuleEngine 內部處理，或者在這裡做簡易的 Hard Check
-            
             // 簡易 Hard Check: E 接 D, D 接 N
             let hardCheckPassed = true;
-            if (context.rules.constraints?.minInterval11h && prevAssignment) {
+            if (context.rules.constraints?.minInterval11h) {
                 if (prevAssignment === 'E' && shift === 'D') hardCheckPassed = false;
                 if (prevAssignment === 'D' && shift === 'N') hardCheckPassed = false;
             }
 
             if (hardCheckPassed) {
-                // 執行完整檢查
+                // 執行完整檢查 (RuleEngine)
                 const result = RuleEngine.validateStaff(
                     context.assignments[staff.uid], 
                     context.daysInMonth, 
@@ -260,7 +258,6 @@ export class AutoScheduler {
 
         const missing = [];
         ['D', 'E', 'N'].forEach(s => {
-            // ✅ 防呆：確保 staffReq[s] 存在
             const reqObj = context.staffReq[s] || {};
             const req = reqObj[w] || 0;
             if (counts[s] < req) missing.push(s);
