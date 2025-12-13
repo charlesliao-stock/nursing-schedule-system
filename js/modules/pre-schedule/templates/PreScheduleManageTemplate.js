@@ -73,7 +73,9 @@ export const PreScheduleManageTemplate = {
                             <h5 class="modal-title">預班詳細內容</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
-                        <div class="modal-body" id="modal-body-content"></div>
+                        <div class="modal-body" id="modal-body-content">
+                            <div class="text-center text-muted py-3">載入中...</div>
+                        </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
                             <button type="button" class="btn btn-primary" onclick="window.routerPage.saveDetail()">儲存變更</button>
@@ -84,7 +86,7 @@ export const PreScheduleManageTemplate = {
         `;
     },
 
-    // 2. 渲染審核表格 (包含排序、拖曳、新欄位)
+    // 2. 渲染審核表格
     renderReviewTable(staffList, submissions, year, month, options = {}) {
         const { sortKey = 'staffId', sortDir = 'asc' } = options;
 
@@ -100,7 +102,9 @@ export const PreScheduleManageTemplate = {
             <table class="table table-hover align-middle mb-0" id="review-table">
                 <thead class="bg-light sticky-top" style="z-index: 10;">
                     <tr>
-                        <th style="width: 50px;" class="text-center">#</th> <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">
+                        <th style="width: 50px;" class="text-center">#</th>
+                        
+                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">
                             員編 ${getSortIcon('staffId')}
                         </th>
                         
@@ -131,14 +135,13 @@ export const PreScheduleManageTemplate = {
                 const sub = submissions[staff.uid] || {};
                 const wishes = sub.wishes || {};
                 
-                // 狀態顯示
                 const isSubmitted = sub.isSubmitted;
                 const statusBadge = isSubmitted 
                     ? `<span class="badge bg-success-subtle text-success border border-success px-2 py-1">已送出</span>` 
                     : `<span class="badge bg-secondary-subtle text-secondary border px-2 py-1">未填寫</span>`;
                 const updateTime = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleDateString() : '';
 
-                // 特註與偏好摘要 (修正: 即使能包班也要顯示 wishes)
+                // 特註與偏好摘要
                 let noteHtml = '';
                 if (sub.note) {
                     noteHtml += `<div class="mb-1 text-dark" style="white-space: pre-wrap; font-size: 0.9rem;">${sub.note}</div>`;
@@ -149,7 +152,7 @@ export const PreScheduleManageTemplate = {
                 }
                 if (!noteHtml) noteHtml = '<span class="text-muted small">-</span>';
 
-                // 產生格子 (包含上個月)
+                // 產生格子
                 const gridHtml = this.renderGridVisual(staff, wishes, year, month);
 
                 html += `
@@ -163,25 +166,18 @@ export const PreScheduleManageTemplate = {
                         <td class="text-center text-muted" style="cursor: grab;" title="拖曳排序">
                             <i class="fas fa-grip-vertical"></i>
                         </td>
-
                         <td class="fw-bold text-secondary">${staff.staffId || ''}</td>
-
                         <td>
                             <div class="fw-bold text-dark">${staff.name}</div>
                             <div class="small text-muted">${staff.rank || ''}</div>
                         </td>
-
                         <td><span class="badge bg-light text-dark border">${staff.group || '-'}</span></td>
-
                         <td class="py-2">${gridHtml}</td>
-
                         <td class="text-start align-top py-3">${noteHtml}</td>
-
                         <td class="text-center">
                             ${statusBadge}
                             <div class="small text-muted mt-1" style="font-size:0.75rem">${updateTime}</div>
                         </td>
-
                         <td class="text-center">
                             <button class="btn btn-sm btn-outline-primary rounded-circle" 
                                     style="width:32px; height:32px;"
@@ -199,23 +195,20 @@ export const PreScheduleManageTemplate = {
         return html;
     },
 
-    // 3. 視覺化格子 (上月月底 6 天 + 本月預班)
+    // 3. 視覺化格子
     renderGridVisual(staff, wishes, year, month) {
         let html = '<div class="d-flex align-items-center overflow-auto pb-1" style="max-width: 450px;">';
 
-        // --- A. 上個月月底 6 天 ---
-        // 這些資料來自 Logic 層計算並注入到 staff 物件中
+        // A. 上個月月底 6 天
         const prevDays = staff.prevMonthDays || []; 
         const prevShifts = staff.prevMonthShifts || {};
 
         prevDays.forEach(d => {
             const shift = prevShifts[d] || '';
-            // 若有值顯示灰色，若無值顯示虛線 (提示可填)
             let styleClass = shift 
                 ? 'bg-secondary text-white opacity-50 border-secondary' 
                 : 'bg-white text-muted border-secondary border-dashed';
             
-            // 點擊事件：手動補填前月班表
             const onClick = `onclick="window.routerPage.editPrevShift('${staff.uid}', ${d})"`
             
             html += `
@@ -232,9 +225,8 @@ export const PreScheduleManageTemplate = {
             html += '<div class="border-end mx-2" style="height: 30px; border-color: #ddd;"></div>';
         }
 
-        // --- B. 本月預班 (只顯示有填寫的日期) ---
+        // B. 本月預班
         let hasWishes = false;
-        // 簡單遍歷 1~31 日
         for (let d = 1; d <= 31; d++) {
             if (wishes[d]) {
                 hasWishes = true;
@@ -267,7 +259,6 @@ export const PreScheduleManageTemplate = {
             counts[w] = (counts[w] || 0) + 1;
         });
         const parts = [];
-        // 優先顯示 OFF
         if (counts['OFF']) parts.push(`OFF:${counts['OFF']}`);
         if (counts['M_OFF']) parts.push(`管休:${counts['M_OFF']}`);
         
