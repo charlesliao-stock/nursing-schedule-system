@@ -1,144 +1,177 @@
 import { 
-    collection, doc, setDoc, getDoc, updateDoc, deleteDoc, 
-    getDocs, query, where, serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { firebaseService } from "./FirebaseService.js";
+    db, 
+    collection, 
+    doc, 
+    getDoc, 
+    getDocs, 
+    setDoc, 
+    updateDoc, 
+    deleteDoc,
+    query, 
+    where, 
+    orderBy, 
+    Timestamp,
+    arrayUnion
+} from "../../config/firebase.config.js";
 
-export class PreScheduleService {
-    static COLLECTION = 'pre_schedules';
-
-    // 檢查是否存在
-    static async checkPreScheduleExists(unitId, year, month) {
-        try {
-            const db = firebaseService.getDb();
-            const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-            const docRef = doc(db, this.COLLECTION, docId);
-            const snap = await getDoc(docRef);
-            return snap.exists();
-        } catch (e) { return false; }
+class PreScheduleService {
+    constructor() {
+        this.collectionName = "pre_schedules";
     }
 
-    // 建立 (初始化 submissions)
-    static async createPreSchedule(data) {
+    // 取得特定單位的預班表清單
+    async getPreSchedulesList(unitId) {
         try {
-            const db = firebaseService.getDb();
-            const docId = `${data.unitId}_${data.year}_${String(data.month).padStart(2,'0')}`;
-            const docRef = doc(db, this.COLLECTION, docId);
-
-            const submissions = {};
-            data.staffIds.forEach(uid => {
-                submissions[uid] = { submitted: false, wishes: {}, preferences: {} };
-            });
-
-            await setDoc(docRef, {
-                ...data,
-                submissions, 
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
+            const q = query(
+                collection(db, this.collectionName),
+                where("unitId", "==", unitId),
+                orderBy("year", "desc"),
+                orderBy("month", "desc")
+            );
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error getting pre-schedules list:", error);
+            throw error;
+        }
     }
 
-    // 更新設定 (不覆蓋 submissions)
-    static async updatePreScheduleSettings(docId, data) {
+    // 取得單一預班表詳細資料
+    async getPreSchedule(unitId, year, month) {
         try {
-            const db = firebaseService.getDb();
-            const docRef = doc(db, this.COLLECTION, docId);
+            const q = query(
+                collection(db, this.collectionName),
+                where("unitId", "==", unitId),
+                where("year", "==", parseInt(year)),
+                where("month", "==", parseInt(month))
+            );
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) return null;
             
+            const docSnap = snapshot.docs[0];
+            return { id: docSnap.id, ...docSnap.data() };
+        } catch (error) {
+            console.error("Error getting pre-schedule:", error);
+            throw error;
+        }
+    }
+
+    // 檢查是否已存在
+    async checkPreScheduleExists(unitId, year, month) {
+        const schedule = await this.getPreSchedule(unitId, year, month);
+        return !!schedule;
+    }
+
+    // 建立新預班表
+    async createPreSchedule(data) {
+        try {
+            // 使用 unitId_year_month 作為 ID，確保唯一性且好搜尋
+            const docId = `${data.unitId}_${data.year}_${data.month}`;
+            const docRef = doc(db, this.collectionName, docId);
+            
+            const payload = {
+                ...data,
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            };
+            
+            await setDoc(docRef, payload);
+            return docId;
+        } catch (error) {
+            console.error("Error creating pre-schedule:", error);
+            throw error;
+        }
+    }
+
+    // 更新設定 (ManagePage 用)
+    async updatePreScheduleSettings(id, data) {
+        try {
+            const docRef = doc(db, this.collectionName, id);
             await updateDoc(docRef, {
                 settings: data.settings,
                 staffIds: data.staffIds,
                 staffSettings: data.staffSettings,
-                updatedAt: serverTimestamp()
+                // supportStaffIds: data.supportStaffIds, // 視情況是否要整批更新
+                updatedAt: Timestamp.now()
             });
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
-    }
-
-    // 更新提交內容 (管理者審核用)
-    static async updateSubmissions(docId, submissions) {
-        try {
-            const db = firebaseService.getDb();
-            const docRef = doc(db, this.COLLECTION, docId);
-            
-            await updateDoc(docRef, {
-                submissions: submissions,
-                updatedAt: serverTimestamp()
-            });
-            return { success: true };
-        } catch (e) { 
-            console.error("更新 Submissions 失敗:", e);
-            throw e; 
+        } catch (error) {
+            console.error("Error updating settings:", error);
+            throw error;
         }
     }
 
-    // 更新狀態 (發布/關閉)
-    static async updateStatus(unitId, year, month, status) {
+    // 刪除
+    async deletePreSchedule(id) {
         try {
-            const db = firebaseService.getDb();
-            const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-            const docRef = doc(db, this.COLLECTION, docId);
+            await deleteDoc(doc(db, this.collectionName, id));
+        } catch (error) {
+            console.error("Error deleting pre-schedule:", error);
+            throw error;
+        }
+    }
+
+    // 個人提交預班 (SubmitPage 用)
+    async submitPersonalWish(unitId, year, month, uid, wishes, notes = "", preferences = {}) {
+        try {
+            const schedule = await this.getPreSchedule(unitId, year, month);
+            if (!schedule) throw new Error("預班表不存在");
+
+            const docRef = doc(db, this.collectionName, schedule.id);
+            const key = `submissions.${uid}`;
             
             await updateDoc(docRef, {
-                status: status,
-                updatedAt: serverTimestamp()
+                [`${key}.wishes`]: wishes,
+                [`${key}.note`]: notes,
+                [`${key}.preferences`]: preferences,
+                [`${key}.isSubmitted`]: true,
+                [`${key}.updatedAt`]: Timestamp.now()
             });
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
+        } catch (error) {
+            console.error("Error submitting wish:", error);
+            throw error;
+        }
     }
 
-    static async getPreSchedulesList(unitId) {
+    // ✅ [補上] 管理者儲存預班審核結果 (EditPage 用)
+    async updatePreScheduleSubmissions(unitId, year, month, submissions) {
         try {
-            const db = firebaseService.getDb();
-            const q = query(collection(db, this.COLLECTION), where("unitId", "==", unitId));
-            const snapshot = await getDocs(q);
-            const list = [];
-            snapshot.forEach(d => list.push({ id: d.id, ...d.data() }));
-            list.sort((a, b) => (b.year * 100 + b.month) - (a.year * 100 + a.month));
-            return list;
-        } catch (error) { return []; }
-    }
+            const schedule = await this.getPreSchedule(unitId, year, month);
+            if (!schedule) throw new Error("找不到該預班表，無法儲存");
 
-    static async checkHasSubmissions(docId) {
-        try {
-            const db = firebaseService.getDb();
-            const snap = await getDoc(doc(db, this.COLLECTION, docId));
-            if (!snap.exists()) return false;
-            const subs = snap.data().submissions || {};
-            return Object.values(subs).some(s => s.submitted === true);
-        } catch (e) { return false; }
-    }
-
-    static async deletePreSchedule(docId) {
-        try {
-            const db = firebaseService.getDb();
-            await deleteDoc(doc(db, this.COLLECTION, docId));
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
-    }
-
-    static async getPreSchedule(unitId, year, month) {
-        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-        const db = firebaseService.getDb();
-        const snap = await getDoc(doc(db, this.COLLECTION, docId));
-        return snap.exists() ? snap.data() : null;
-    }
-
-    // ✅ 新增 preferences 參數並寫入 DB
-    static async submitPersonalWish(unitId, year, month, uid, wishes, notes, preferences = {}) {
-        const docId = `${unitId}_${year}_${String(month).padStart(2,'0')}`;
-        try {
-            const db = firebaseService.getDb();
-            const updatePath = `submissions.${uid}`;
-            await updateDoc(doc(db, this.COLLECTION, docId), {
-                [`${updatePath}.wishes`]: wishes,
-                [`${updatePath}.notes`]: notes,
-                [`${updatePath}.preferences`]: preferences, // 寫入偏好
-                [`${updatePath}.submitted`]: true,
-                [`${updatePath}.submittedAt`]: serverTimestamp()
+            const docRef = doc(db, this.collectionName, schedule.id);
+            
+            // 全量更新 submissions 欄位
+            await updateDoc(docRef, {
+                submissions: submissions,
+                updatedAt: Timestamp.now()
             });
-            return { success: true };
-        } catch (e) { return { success: false, error: e.message }; }
+        } catch (error) {
+            console.error("Error updating submissions:", error);
+            throw error;
+        }
+    }
+
+    // ✅ [補上] 加入跨單位支援人員
+    async addSupportStaff(unitId, year, month, uid) {
+        try {
+            const schedule = await this.getPreSchedule(unitId, year, month);
+            if (!schedule) throw new Error("預班表不存在");
+
+            const docRef = doc(db, this.collectionName, schedule.id);
+            
+            // 使用 arrayUnion 避免重複加入
+            await updateDoc(docRef, {
+                staffIds: arrayUnion(uid),        // 確保他出現在總名單
+                supportStaffIds: arrayUnion(uid), // 標記為支援
+                updatedAt: Timestamp.now()
+            });
+        } catch (error) {
+            console.error("Error adding support staff:", error);
+            throw error;
+        }
     }
 }
+
+export const PreScheduleServiceInstance = new PreScheduleService();
+// 為了相容您目前的 import 方式 (import { PreScheduleService } ...)，我們 export instance 作為 named export
+export { PreScheduleServiceInstance as PreScheduleService };
