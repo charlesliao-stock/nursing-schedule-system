@@ -3,7 +3,6 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { UnitService } from "../../services/firebase/UnitService.js"; 
-// ✅ 引入 auth，修正 ReferenceError
 import { auth } from "../../config/firebase.config.js"; 
 
 export class PreScheduleManagePage {
@@ -32,22 +31,38 @@ export class PreScheduleManagePage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger">無效的單位參數</div>';
 
+        // Log 1: 確認 render 有被呼叫
+        console.log("🚀 [Debug] Page.render() 被呼叫，準備回傳 HTML String");
         return PreScheduleManageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
     async afterRender() {
         window.routerPage = this; 
-        
-        // 1. 初始化 Modal (因 Template 已修正，這裡應該一定找得到了)
-        const modalEl = document.getElementById('detail-modal');
-        if (modalEl) {
-            this.detailModal = new bootstrap.Modal(modalEl);
-        } else {
-            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素。");
+        console.log("🚀 [Debug] Page.afterRender() 開始執行");
+
+        // Log 2: 檢查當下 DOM 狀態
+        let modalEl = document.getElementById('detail-modal');
+        console.log("🔍 [Debug] 第一次嘗試抓取 #detail-modal:", modalEl);
+
+        // --- 解決方案：給瀏覽器一點時間渲染 DOM ---
+        if (!modalEl) {
+            console.warn("⚠️ [Debug] 第一次抓不到 Modal，嘗試等待 50ms...");
+            await new Promise(r => setTimeout(r, 50)); // 等待 50 毫秒
+            modalEl = document.getElementById('detail-modal');
+            console.log("🔍 [Debug] 延遲後第二次抓取 #detail-modal:", modalEl);
         }
 
-        // 2. 判斷權限，若是 Admin 則顯示單位選擇器
-        // ✅ 使用 auth.currentUser 而非 firebase.auth().currentUser
+        // 初始化 Modal
+        if (modalEl) {
+            this.detailModal = new bootstrap.Modal(modalEl);
+            console.log("✅ [Debug] Modal 初始化成功");
+        } else {
+            console.error("❌ [Debug] 嚴重錯誤：等待後依然找不到 ID 為 'detail-modal' 的元素。請檢查 Template 是否正確輸出 HTML。");
+            // 印出當前 body 的內容長度，協助判斷是否整個頁面都沒渲染
+            console.log("📄 [Debug] 當前 Body 內容長度:", document.body.innerHTML.length);
+        }
+
+        // 權限判斷與載入單位
         if (auth.currentUser) {
             try {
                 const userDoc = await userService.getUserData(auth.currentUser.uid);
@@ -61,17 +76,20 @@ export class PreScheduleManagePage {
             }
         }
 
-        // 3. 載入資料
         await this.loadData();
     }
 
-    // --- 新功能：載入單位列表 ---
+    // --- 其餘邏輯保持不變 ---
+
     async loadUnits() {
         try {
             const units = await UnitService.getAllUnits();
             const selector = document.getElementById('unit-selector');
             const container = document.getElementById('unit-selector-container');
             
+            // Log 3: 檢查單位選單元素
+            if (!selector) console.warn("⚠️ [Debug] 找不到 #unit-selector 下拉選單");
+
             if (selector && container) {
                 selector.innerHTML = '<option value="" disabled>切換單位...</option>';
                 units.forEach(unit => {
@@ -83,17 +101,15 @@ export class PreScheduleManagePage {
                     }
                     selector.appendChild(option);
                 });
-                container.style.display = 'block'; // 顯示選單
+                container.style.display = 'block';
             }
         } catch (error) {
             console.error("載入單位列表失敗:", error);
         }
     }
 
-    // --- 新功能：處理單位切換 ---
     handleUnitChange(newUnitId) {
         if (!newUnitId) return;
-        // 重新導向，這會觸發 Router 重新渲染頁面
         window.location.hash = `/preschedule/manage?unitId=${newUnitId}&year=${this.state.year}&month=${this.state.month}`;
     }
 
@@ -297,7 +313,9 @@ export class PreScheduleManagePage {
             `;
             this.detailModal.show();
         } else {
-            console.error("Modal 尚未初始化，請重新整理");
+            // 這邊如果再跳錯，代表延遲也沒用，可能是 Template 真的沒寫進去
+            console.error("❌ [Debug] openDetailModal 失敗: detailModal 物件不存在");
+            alert("系統錯誤：無法開啟視窗，請按 F12 查看 Log 並截圖回報。");
         }
     }
     
