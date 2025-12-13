@@ -1,594 +1,415 @@
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
-import { ScheduleService } from "../../services/firebase/ScheduleService.js";
+import { ScheduleService } from "../../services/firebase/ScheduleService.js"; // 新增引用
+import { authService } from "../../services/firebase/AuthService.js";
 import { userService } from "../../services/firebase/UserService.js";
-import { UnitService } from "../../services/firebase/UnitService.js"; 
+import { UnitService } from "../../services/firebase/UnitService.js";
+import { PreScheduleEditTemplate } from "./templates/PreScheduleEditTemplate.js";
 
 export class PreScheduleEditPage {
     constructor() {
-        this.state = { 
-            unitId: null, 
-            year: null, 
-            month: null, 
-            staffList: [], 
-            submissions: {}, 
-            prevMonthData: {}, 
-            prevMonthLast6Days: [],
-            unitSettings: null, 
-            sortConfig: { key: 'staffId', dir: 'asc' } 
-        };
-        this.activeContextMenu = null; 
-        this.contextTarget = null; 
+        this.scheduleId = null;
+        this.scheduleData = null;
+        this.unitData = null;
+        this.staffList = [];
+        this.isDirty = false;
+        
+        // 用於儲存上個月最後 6 天的資料
+        // 結構: { uid: { 26: 'D', 27: 'OFF'... } }
+        this.historyData = {}; 
+        this.prevYear = 0;
+        this.prevMonth = 0;
+        this.prevMonthDays = 0;
+        this.historyRange = []; // [25, 26, 27, 28, 29, 30]
     }
 
     async render() {
-        const params = new URLSearchParams(window.location.hash.split('?')[1]);
-        this.state.unitId = params.get('unitId');
-        this.state.year = parseInt(params.get('year'));
-        this.state.month = parseInt(params.get('month'));
-
-        if (!this.state.unitId) return '<div class="alert alert-danger m-4">參數錯誤：缺少單位 ID</div>';
-        
-        this.state.unitSettings = await UnitService.getUnitById(this.state.unitId);
-        const unitName = this.state.unitSettings ? this.state.unitSettings.unitName : '未知單位';
-
-        document.addEventListener('click', (e) => this.closeContextMenu(e));
+        // 先解析 URL 參數取得 ID
+        const hash = window.location.hash;
+        const params = new URLSearchParams(hash.split('?')[1]);
+        this.scheduleId = params.get('id');
 
         return `
-        <div class="page-wrapper">
-            <div class="container-fluid p-3">
+            <div class="container-fluid mt-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="d-flex align-items-center">
-                        <h4 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-edit text-primary me-2"></i>預班內容編輯
-                        </h4>
-                        <span class="badge bg-primary fs-6 ms-3"><i class="fas fa-hospital me-1"></i> ${unitName}</span>
-                        <span class="badge bg-white text-dark border ms-2 fs-6 shadow-sm">${this.state.year}年 ${this.state.month}月</span>
+                    <div class="d-flex align-items-center gap-3">
+                        <h4 class="mb-0 fw-bold" id="page-title"><i class="fas fa-edit me-2"></i>預班內容編輯</h4>
+                        <span id="status-badge" class="badge bg-secondary">載入中...</span>
                     </div>
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary me-2 shadow-sm" onclick="window.history.back()">
-                            <i class="fas fa-arrow-left"></i> 回列表
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="window.history.back()">
+                            <i class="fas fa-arrow-left"></i> 返回
                         </button>
-                        <button class="btn btn-sm btn-primary shadow-sm" onclick="window.routerPage.saveReview()">
+                        <button id="btn-save" class="btn btn-primary" disabled>
                             <i class="fas fa-save"></i> 儲存變更
                         </button>
+                        <button id="btn-auto-schedule" class="btn btn-success" disabled>
+                            <i class="fas fa-robot"></i> 產生排班
+                        </button>
                     </div>
                 </div>
 
-                <div class="card shadow border-0">
-                    <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-3 small">
-                            <span class="fw-bold text-primary"><i class="fas fa-th me-1"></i> 排班工作台</span>
-                            
-                            <div class="alert alert-info py-0 px-2 mb-0 border-0" style="font-size: 0.85rem;">
-                                <i class="fas fa-mouse-pointer me-1"></i> <strong>提示：</strong>左鍵切換 OFF，右鍵選擇詳細班別 (支援上月資料修改)
-                            </div>
+                <div class="alert alert-info py-2 small d-flex align-items-center">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <span>提示：灰色底色區域為「上個月月底資料」，修改後請儲存，將作為排班時的連續性檢查依據 (如：換班間隔)。</span>
+                </div>
 
-                            <div class="border-start ps-2 text-muted d-flex align-items-center gap-2">
-                                <span class="badge bg-warning text-dark border" style="font-size: 0.7rem;">OFF</span>預休
-                                <span class="badge bg-dark text-white border" style="font-size: 0.7rem;">M_FF</span>強休
-                                <span class="badge bg-danger text-white border" style="font-size: 0.7rem;">X</span>勿排
-                                <span class="ms-2 d-flex align-items-center"><div style="width:12px;height:12px;background:#f8d7da;border:1px solid #f5c6cb;margin-right:4px;"></div>未交</span>
-                            </div>
+                <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                        <div class="table-responsive" id="schedule-container">
+                            <div class="text-center p-5"><span class="spinner-border text-primary"></span> 資料載入中...</div>
                         </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-success btn-sm py-0" onclick="window.routerPage.openAddSupportModal()">
-                                <i class="fas fa-user-plus"></i> 支援
-                            </button>
-                            <button class="btn btn-outline-primary btn-sm py-0" onclick="window.routerPage.exportExcel()">
-                                <i class="fas fa-file-excel"></i> 匯出
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm py-0" onclick="window.routerPage.remindUnsubmitted()">
-                                <i class="fas fa-bell"></i> 催繳
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="card-body p-0 position-relative">
-                        <div id="schedule-grid-container" class="table-responsive" style="max-height: 80vh; overflow: auto;">
-                            <div class="text-center py-5">
-                                <div class="spinner-border text-primary"></div>
-                                <div class="mt-2 text-muted">正在載入資料...</div>
-                            </div>
-                        </div>
-                        
-                        <div id="context-menu" class="dropdown-menu shadow" style="display:none; position:fixed; z-index:10000;"></div>
                     </div>
                 </div>
             </div>
 
-            <div class="modal fade" id="add-support-modal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header bg-success text-white">
-                            <h5 class="modal-title">加入跨單位支援</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="input-group mb-3">
-                                <input type="text" id="support-search-input" class="form-control" placeholder="輸入員編或姓名">
-                                <button class="btn btn-outline-secondary" onclick="window.routerPage.searchStaff()">搜尋</button>
-                            </div>
-                            <div id="search-result-area" class="list-group"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
+            <div id="context-menu" class="dropdown-menu shadow" style="display:none; position:fixed; z-index:9999;"></div>
+        `;
     }
 
     async afterRender() {
-        window.routerPage = this; 
-        const m = document.getElementById('add-support-modal');
-        if(m) this.supportModal = new bootstrap.Modal(m);
+        const user = authService.getProfile();
+        if (!user) { alert("請先登入"); window.location.hash = '/login'; return; }
+
+        if (!this.scheduleId) { alert("無效的預班表 ID"); window.history.back(); return; }
+
+        window.routerPage = this;
+        document.getElementById('btn-save').addEventListener('click', () => this.saveData());
+        document.getElementById('btn-auto-schedule').addEventListener('click', () => this.goToAutoSchedule());
+        
+        // 點擊空白處關閉選單
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('context-menu');
+            if (menu && !e.target.closest('#context-menu')) menu.style.display = 'none';
+        });
+
+        // 綁定視窗關閉前的提示
+        window.onbeforeunload = (e) => {
+            if (this.isDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
         await this.loadData();
     }
 
     async loadData() {
-        const container = document.getElementById('schedule-grid-container');
         try {
-            const preSchedule = await PreScheduleService.getPreSchedule(this.state.unitId, this.state.year, this.state.month);
-            
-            let staffList = [];
-            if (preSchedule && preSchedule.staffIds && preSchedule.staffIds.length > 0) {
-                const promises = preSchedule.staffIds.map(uid => userService.getUserData(uid));
-                const users = await Promise.all(promises);
-                staffList = users.filter(u => u);
-            } else {
-                staffList = await userService.getUnitStaff(this.state.unitId);
-            }
+            // 1. 載入預班表資料
+            this.scheduleData = await PreScheduleService.getPreScheduleById(this.scheduleId);
+            if (!this.scheduleData) throw new Error("找不到預班表資料");
 
-            const supportIds = preSchedule?.supportStaffIds || [];
-            
-            this.state.staffList = staffList.map(u => {
-                u.isSupport = supportIds.includes(u.uid) || u.unitId !== this.state.unitId;
-                u.isPregnant = !!u.isPregnant; 
-                return u;
-            });
+            this.unitData = await UnitService.getUnitById(this.scheduleData.unitId);
+            const staff = await userService.getUnitStaff(this.scheduleData.unitId);
+            // 排序人員 (依職級或自訂順序)
+            this.staffList = staff.sort((a, b) => (a.rank || 'Z').localeCompare(b.rank || 'Z'));
 
-            this.state.submissions = preSchedule ? preSchedule.submissions || {} : {};
+            // 2. 更新標題
+            document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}年${this.scheduleData.month}月 預班編輯`;
+            this.updateStatusBadge(this.scheduleData.status);
 
-            await this.loadPrevMonthData();
-            this.handleSort('staffId', false);
+            // 3. 處理「上個月最後6天」的邏輯
+            await this.ensureHistoryData();
+
+            // 4. 渲染表格
+            this.renderTable();
+
+            // 5. 解鎖按鈕
+            document.getElementById('btn-save').disabled = false;
+            document.getElementById('btn-auto-schedule').disabled = false;
 
         } catch (e) {
             console.error(e);
-            container.innerHTML = `<div class="alert alert-danger m-4">載入失敗: ${e.message}</div>`;
+            alert("載入失敗: " + e.message);
         }
     }
 
-    async loadPrevMonthData() {
-        let prevYear = this.state.year;
-        let prevMonth = this.state.month - 1;
-        if (prevMonth === 0) { prevMonth = 12; prevYear--; }
-        
-        const daysInPrevMonth = new Date(prevYear, prevMonth, 0).getDate();
-        const last6Days = [];
-        for (let i = 5; i >= 0; i--) { last6Days.push(daysInPrevMonth - i); }
-        this.state.prevMonthLast6Days = last6Days;
+    // 🔥 核心邏輯：確保有上個月的資料
+    async ensureHistoryData() {
+        const currentYear = this.scheduleData.year;
+        const currentMonth = this.scheduleData.month;
 
-        const promises = this.state.staffList.map(async (staff) => {
+        // 計算上個月是幾年幾月
+        let py = currentYear;
+        let pm = currentMonth - 1;
+        if (pm === 0) { pm = 12; py--; }
+        
+        this.prevYear = py;
+        this.prevMonth = pm;
+        
+        // 取得上個月總天數
+        this.prevMonthDays = new Date(py, pm, 0).getDate();
+        
+        // 定義我們要抓取的範圍 (最後 6 天)
+        // 例如若上個月30天，範圍是 [25, 26, 27, 28, 29, 30]
+        this.historyRange = [];
+        for (let i = 5; i >= 0; i--) {
+            this.historyRange.push(this.prevMonthDays - i);
+        }
+
+        // 檢查資料庫是否已儲存過 history (若有，就用儲存的；若無，才去抓正式班表)
+        if (this.scheduleData.history && Object.keys(this.scheduleData.history).length > 0) {
+            console.log("🔹 讀取已儲存的歷史班表資料");
+            this.historyData = this.scheduleData.history;
+        } else {
+            console.log("🔸 初次載入，抓取上個月正式班表...");
             try {
-                const schedule = await ScheduleService.getPersonalSchedule(staff.uid, prevYear, prevMonth);
-                let shifts = {};
-                if (schedule && schedule.assignments) shifts = schedule.assignments; 
-                else if (schedule) shifts = schedule;
-                return { uid: staff.uid, shifts: shifts };
-            } catch { return { uid: staff.uid, shifts: {} }; }
-        });
-
-        const results = await Promise.all(promises);
-        const map = {};
-        results.forEach(res => { map[res.uid] = res.shifts; });
-        this.state.prevMonthData = map;
-    }
-
-    handleSort(key, toggle = true) {
-        if (toggle && this.state.sortConfig.key === key) {
-            this.state.sortConfig.dir = this.state.sortConfig.dir === 'asc' ? 'desc' : 'asc';
-        } else {
-            this.state.sortConfig.key = key;
-            if (toggle) this.state.sortConfig.dir = 'asc';
-        }
-        
-        const { key: sortKey, dir } = this.state.sortConfig;
-        const multiplier = dir === 'asc' ? 1 : -1;
-
-        this.state.staffList.sort((a, b) => {
-            let valA = a[sortKey] || '';
-            let valB = b[sortKey] || '';
-            if (sortKey === 'staffId') {
-                const numA = parseFloat(valA); const numB = parseFloat(valB);
-                if (!isNaN(numA) && !isNaN(numB)) return (numA - numB) * multiplier;
-            }
-            return String(valA).localeCompare(String(valB), 'zh-Hant') * multiplier;
-        });
-
-        this.renderMatrixGrid();
-    }
-
-    renderMatrixGrid() {
-        const container = document.getElementById('schedule-grid-container');
-        const daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
-        const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-        const { key: sortKey, dir: sortDir } = this.state.sortConfig;
-
-        const getSortIcon = (k) => sortKey !== k ? '<i class="fas fa-sort text-muted opacity-25 ms-1"></i>' : (sortDir === 'asc' ? '<i class="fas fa-sort-up text-dark ms-1"></i>' : '<i class="fas fa-sort-down text-dark ms-1"></i>');
-
-        const maxShiftTypes = this.state.unitSettings?.rules?.constraints?.maxShiftTypesWeek || 3;
-        
-        // --- 1. 表頭 ---
-        let headerHtml = `
-            <th class="sticky-col col-1 bg-light text-center px-1" style="width: 70px; cursor:pointer;" onclick="window.routerPage.handleSort('staffId')">
-                <small>職編</small>${getSortIcon('staffId')}
-            </th>
-            <th class="sticky-col col-2 bg-light text-center px-1" style="width: 60px;">姓名</th>
-            <th class="sticky-col col-3 bg-light text-center px-1" style="width: 40px;" title="特殊註記">註</th>
-            <th class="sticky-col col-4 bg-light text-center px-1" style="width: ${maxShiftTypes===3?'140px':'110px'};">
-                <small>排班偏好</small>
-            </th>
-        `;
-
-        this.state.prevMonthLast6Days.forEach(d => {
-            headerHtml += `
-                <th class="text-center p-0 bg-secondary bg-opacity-10 text-muted border-bottom border-secondary" style="width: 28px;">
-                    <div style="font-size: 0.65rem; transform: scale(0.9);">上月</div>
-                    <div style="font-size: 0.75rem;">${d}</div>
-                </th>`;
-        });
-
-        for (let d = 1; d <= daysInMonth; d++) {
-            const date = new Date(this.state.year, this.state.month - 1, d);
-            const dayOfWeek = date.getDay();
-            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-            const colorClass = isWeekend ? 'text-danger fw-bold' : 'text-dark';
-            
-            headerHtml += `
-                <th class="text-center p-0 bg-light border-bottom border-dark" style="width: 32px;">
-                    <div class="${colorClass}" style="font-size: 0.75rem;">${weekDays[dayOfWeek]}</div>
-                    <div class="${colorClass}" style="font-size: 0.9rem;">${d}</div>
-                </th>`;
-        }
-        headerHtml += `<th class="text-center bg-light px-1" style="width: 40px;"><small>預休</small></th>`;
-
-        // --- 2. 內容 ---
-        let bodyHtml = '';
-        this.state.staffList.forEach(staff => {
-            if (!this.state.submissions[staff.uid]) this.state.submissions[staff.uid] = { wishes: {}, preferences: {} };
-            const sub = this.state.submissions[staff.uid];
-            const wishes = sub.wishes || {};
-            const prefs = sub.preferences || {};
-            const isSubmitted = sub.isSubmitted;
-
-            const isSupport = staff.isSupport ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.5rem; padding: 2px 3px;">支</span>' : '';
-            
-            const nameCellClass = isSubmitted ? 'bg-white' : 'table-danger'; 
-            const nameCellTitle = isSubmitted ? '' : '此人尚未提交預班';
-
-            let noteBadge = '';
-            if (staff.isPregnant) {
-                noteBadge = `<span class="badge bg-danger rounded-circle p-1 d-flex align-items-center justify-content-center" title="懷孕" style="width:20px;height:20px;font-size:0.7rem;">孕</span>`;
-            } else if (staff.specialNote) {
-                noteBadge = `<span class="badge bg-info rounded-circle p-1 d-flex align-items-center justify-content-center" title="${staff.specialNote}" style="width:20px;height:20px;">!</span>`;
-            }
-
-            let bundleHtml = '';
-            if (prefs.batch) {
-                const label = prefs.batch === 'N' ? '大' : (prefs.batch === 'E' ? '小' : prefs.batch);
-                bundleHtml = `<span class="badge bg-primary" style="font-size:0.7rem;" title="包班:${label}">包${label}</span>`;
-            } else {
-                bundleHtml = `<span class="text-muted small">-</span>`;
-            }
-
-            const genSelect = (val, key) => `
-                <select class="form-select form-select-sm p-0 text-center border-0 bg-transparent fw-bold" 
-                        style="height: 24px; font-size: 0.8rem; cursor: pointer;"
-                        onchange="window.routerPage.updatePreference('${staff.uid}', '${key}', this.value)">
-                    <option value="" ${!val?'selected':''}></option>
-                    <option value="D" ${val==='D'?'selected':''}>D</option>
-                    <option value="E" ${val==='E'?'selected':''}>E</option>
-                    <option value="N" ${val==='N'?'selected':''}>N</option>
-                </select>`;
-
-            let prefHtml = `
-                <div class="d-flex align-items-center justify-content-between px-1" style="height: 100%;">
-                    <div style="width: 35px; text-align: center;">${bundleHtml}</div>
-                    <div style="width: 1px; height: 16px; background: #ddd;"></div>
-                    <div style="width: 25px;">${genSelect(prefs.priority1, 'priority1')}</div>
-                    <div style="width: 25px;">${genSelect(prefs.priority2, 'priority2')}</div>
-                    ${maxShiftTypes === 3 ? `<div style="width: 25px;">${genSelect(prefs.priority3, 'priority3')}</div>` : ''}
-                </div>`;
-
-            let rowHtml = `
-                <td class="sticky-col col-1 text-center fw-bold text-secondary bg-white"><small>${staff.staffId || ''}</small></td>
+                // 呼叫 ScheduleService 抓取上個月的正式班表
+                const prevSchedule = await ScheduleService.getSchedule(this.scheduleData.unitId, py, pm);
                 
-                <td class="sticky-col col-2 text-start p-0 ps-1 align-middle text-truncate ${nameCellClass}" 
-                    title="${nameCellTitle}" style="max-width: 60px; font-size: 0.85rem;">
-                    ${staff.name} ${isSupport}
-                </td>
-                
-                <td class="sticky-col col-3 text-center bg-white p-0 align-middle">${noteBadge}</td>
-                <td class="sticky-col col-4 bg-white p-0 align-middle border-end">${prefHtml}</td>
-            `;
+                // 初始化 historyData 結構
+                this.historyData = {};
+                this.staffList.forEach(s => this.historyData[s.uid] = {});
 
-            this.state.prevMonthLast6Days.forEach(d => {
-                const shift = (this.state.prevMonthData[staff.uid] || {})[d] || ''; 
-                
-                let prevClass = 'bg-secondary bg-opacity-10 text-muted';
-                if(shift === 'OFF') prevClass = 'bg-warning bg-opacity-25 text-dark';
-                else if(['D','E','N'].includes(shift)) prevClass = 'bg-info bg-opacity-25 text-dark fw-bold';
-
-                rowHtml += `
-                    <td class="text-center p-0 align-middle ${prevClass} border-end border-light" 
-                        style="border:1px solid #e0e0e0; font-size:0.75rem; cursor:pointer;"
-                        onclick="window.routerPage.editPrevMonthCell('${staff.uid}', ${d}, '${shift}')"
-                        oncontextmenu="window.routerPage.handlePrevCellRightClick(event, '${staff.uid}', ${d})"
-                        title="上月 ${d} 日: ${shift || '空'} (點擊修改)">
-                        ${shift}
-                    </td>`;
-            });
-
-            let offCount = 0;
-            for (let d = 1; d <= daysInMonth; d++) {
-                const wish = wishes[d] || '';
-                
-                let cellClass = '';
-                let cellText = wish;
-                const smallFont = 'font-size: 0.75rem;';
-
-                if (wish === 'OFF') {
-                    cellClass = 'bg-warning text-dark opacity-75'; 
-                    cellText = 'OFF';
-                    offCount++;
-                } else if (wish === 'M_OFF') {
-                    cellClass = 'bg-dark text-white'; 
-                    cellText = 'M_FF';
-                    offCount++;
-                } else if (['D','E','N'].includes(wish)) {
-                    cellClass = 'bg-info text-white fw-bold'; 
-                } else if (wish.startsWith('NO_')) {
-                    cellClass = 'bg-danger text-white fw-bold'; 
-                    cellText = 'X'; 
-                } else if (wish) {
-                    cellClass = 'bg-primary text-white'; 
+                if (prevSchedule && prevSchedule.assignments) {
+                    this.staffList.forEach(s => {
+                        const uid = s.uid;
+                        const userAssign = prevSchedule.assignments[uid] || {};
+                        
+                        this.historyRange.forEach(day => {
+                            // 填入資料，若無則留空
+                            this.historyData[uid][day] = userAssign[day] || '';
+                        });
+                    });
                 }
-
-                const date = new Date(this.state.year, this.state.month - 1, d);
-                const isWeekend = (date.getDay() === 0 || date.getDay() === 6);
-                if (isWeekend && !wish) cellClass = 'bg-light';
-
-                rowHtml += `
-                    <td class="text-center p-0 align-middle ${cellClass}" 
-                        style="cursor: pointer; height: 32px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; user-select: none;"
-                        onclick="window.routerPage.handleCellClick('${staff.uid}', ${d})"
-                        oncontextmenu="window.routerPage.handleCellRightClick(event, '${staff.uid}', ${d})">
-                        <div style="${smallFont} font-weight: 500;">${cellText}</div>
-                    </td>
-                `;
+                // 標記為已修改，這樣使用者第一次進來就會被提示要儲存
+                this.isDirty = true;
+            } catch (e) {
+                console.warn("無法抓取上月班表 (可能是該月尚未排班):", e);
+                // 即使失敗，也要初始化空物件，避免渲染錯誤
+                this.historyData = {};
+                this.staffList.forEach(s => this.historyData[s.uid] = {});
             }
-
-            rowHtml += `<td class="text-center fw-bold small bg-light">${offCount}</td>`;
-            bodyHtml += `<tr>${rowHtml}</tr>`;
-        });
-
-        container.innerHTML = `
-            <table class="table table-sm mb-0" style="min-width: 100%; border-collapse: separate; border-spacing: 0;">
-                <thead class="sticky-top" style="z-index: 20;"><tr>${headerHtml}</tr></thead>
-                <tbody>${bodyHtml}</tbody>
-            </table>`;
-        
-        this.addStickyStyles(maxShiftTypes);
+        }
     }
 
-    addStickyStyles(maxTypes) {
-        if (document.getElementById('matrix-sticky-style')) document.getElementById('matrix-sticky-style').remove();
-        const style = document.createElement('style');
-        style.id = 'matrix-sticky-style';
-        
-        const w1 = 70, w2 = 60, w3 = 40; 
-        const w4 = maxTypes === 3 ? 140 : 110; 
-        
-        style.innerHTML = `
-            .sticky-col { position: -webkit-sticky; position: sticky; z-index: 10; border-right: 1px solid #dee2e6; }
-            .col-1 { left: 0; width: ${w1}px; }
-            .col-2 { left: ${w1}px; width: ${w2}px; }
-            .col-3 { left: ${w1+w2}px; width: ${w3}px; }
-            .col-4 { left: ${w1+w2+w3}px; width: ${w4}px; box-shadow: 4px 0 5px -2px rgba(0,0,0,0.1); }
-            thead .sticky-col { z-index: 30 !important; }
-            .dropdown-item:hover { background-color: #f8f9fa; color: #0d6efd; }
+    renderTable() {
+        const daysInMonth = new Date(this.scheduleData.year, this.scheduleData.month, 0).getDate();
+        const submissions = this.scheduleData.submissions || {};
+
+        let html = `
+        <table class="table table-bordered table-sm text-center align-middle schedule-table user-select-none">
+            <thead class="table-light sticky-top" style="z-index: 5;">
+                <tr>
+                    <th rowspan="2" style="min-width:80px; width:80px;">職編</th>
+                    <th rowspan="2" style="min-width:90px; width:90px;">姓名</th>
+                    <th rowspan="2" style="width:40px;">註</th>
+                    <th rowspan="2" style="width:120px;">排班偏好</th>
+                    
+                    <th colspan="6" class="bg-secondary bg-opacity-10 border-end border-2">上月 (${this.prevMonth}月)</th>
+                    
+                    <th colspan="${daysInMonth}">本月 (${this.scheduleData.month}月)</th>
+                </tr>
+                <tr>
+                    ${this.historyRange.map(d => `<th class="bg-secondary bg-opacity-10 text-muted small">${d}</th>`).join('')}
+                    
+                    ${Array.from({length: daysInMonth}, (_, i) => {
+                        const d = i + 1;
+                        const weekDay = new Date(this.scheduleData.year, this.scheduleData.month - 1, d).getDay();
+                        const isWeekend = weekDay === 0 || weekDay === 6;
+                        return `<th class="${isWeekend ? 'text-danger' : ''}">${d}<br><span class="small">${this.getWeekName(weekDay)}</span></th>`;
+                    }).join('')}
+                </tr>
+            </thead>
+            <tbody>
         `;
-        document.head.appendChild(style);
+
+        this.staffList.forEach(staff => {
+            const uid = staff.uid;
+            const sub = submissions[uid] || {};
+            const wishes = sub.wishes || {};
+            const pref = sub.preferences || {};
+            const history = this.historyData[uid] || {};
+
+            // 偏好顯示字串
+            let prefStr = '';
+            if (pref.batch) prefStr += `<span class="badge bg-primary me-1">包${pref.batch}</span>`;
+            if (pref.priority1) prefStr += `<small class="text-muted">${pref.priority1} > ${pref.priority2 || '-'}</small>`;
+            if (!prefStr) prefStr = '-';
+
+            html += `
+                <tr>
+                    <td class="text-muted small">${staff.staffId || ''}</td>
+                    <td class="fw-bold text-start ps-2">${staff.name}</td>
+                    <td>${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill">孕</span>' : ''}</td>
+                    <td>${prefStr}</td>
+
+                    ${this.historyRange.map(d => {
+                        const val = history[d] || '';
+                        return `<td class="history-cell bg-secondary bg-opacity-10" 
+                                    data-uid="${uid}" 
+                                    data-day="${d}" 
+                                    data-type="history"
+                                    onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    style="cursor:pointer; border-right: ${d===this.historyRange[this.historyRange.length-1] ? '2px solid #dee2e6' : ''}">
+                                    ${this.renderShiftBadge(val)}
+                                </td>`;
+                    }).join('')}
+
+                    ${Array.from({length: daysInMonth}, (_, i) => {
+                        const d = i + 1;
+                        const val = wishes[d] || '';
+                        return `<td class="wish-cell" 
+                                    data-uid="${uid}" 
+                                    data-day="${d}" 
+                                    data-type="current"
+                                    onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    style="cursor:pointer;">
+                                    ${this.renderShiftBadge(val)}
+                                </td>`;
+                    }).join('')}
+                </tr>
+            `;
+        });
+
+        html += `</tbody></table>`;
+        document.getElementById('schedule-container').innerHTML = html;
     }
 
-    // --- 互動邏輯 ---
-
-    handleCellClick(uid, day) {
-        if (!this.state.submissions[uid].wishes) this.state.submissions[uid].wishes = {};
-        const current = this.state.submissions[uid].wishes[day];
-        if (current === 'OFF') delete this.state.submissions[uid].wishes[day];
-        else this.state.submissions[uid].wishes[day] = 'OFF';
-        this.renderMatrixGrid();
-    }
-
-    handleCellRightClick(e, uid, day) {
-        e.preventDefault();
-        this.contextTarget = { uid, day, type: 'CURR' };
-        this.showContextMenu(e, day);
-    }
-
-    // 上月編輯邏輯
-    async handlePrevCellClick(uid, day, currentVal) {
-        // ✅ 修正：使用 prompt 讓使用者輸入 (或用右鍵選單)
-        // 這裡為了方便，點擊直接觸發 prompt，右鍵觸發選單
-        const newVal = prompt(`修改上個月 ${day} 日班別 (D, E, N, OFF):`, currentVal);
-        if (newVal !== null) {
-            const val = newVal.trim().toUpperCase();
-            await this.updatePrevShift(uid, day, val);
+    renderShiftBadge(code) {
+        if (!code) return '';
+        const map = {
+            'D': 'bg-primary',
+            'E': 'bg-warning text-dark',
+            'N': 'bg-dark',
+            'OFF': 'bg-warning',
+            'M_OFF': 'bg-dark text-white',
+        };
+        // 處理勿排 (NO_D, NO_E...)
+        if (code.startsWith('NO_')) {
+            return `<i class="fas fa-ban text-danger"></i> ${code.replace('NO_', '')}`;
         }
+        const bg = map[code] || 'bg-secondary';
+        const label = code === 'M_OFF' ? '強休' : (code === 'OFF' ? '預休' : code);
+        return `<span class="badge ${bg} w-100">${label}</span>`;
     }
 
-    handlePrevCellRightClick(e, uid, day) {
-        e.preventDefault();
-        this.contextTarget = { uid, day, type: 'PREV' };
-        this.showContextMenu(e, day);
+    getWeekName(day) {
+        return ['日', '一', '二', '三', '四', '五', '六'][day];
     }
 
-    showContextMenu(e, day) {
-        this.closeContextMenu();
-        const menu = document.getElementById('context-menu');
-        const shifts = this.state.unitSettings?.settings?.shifts || [
-            {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
-        ];
+    updateStatusBadge(status) {
+        const el = document.getElementById('status-badge');
+        const map = {
+            'draft': { text: '草稿', cls: 'bg-secondary' },
+            'open': { text: '開放填寫中', cls: 'bg-success' },
+            'closed': { text: '已截止 / 排班中', cls: 'bg-warning text-dark' },
+            'published': { text: '已發布', cls: 'bg-primary' }
+        };
+        const s = map[status] || { text: status, cls: 'bg-secondary' };
+        el.className = `badge ${s.cls}`;
+        el.textContent = s.text;
+    }
 
-        let menuHtml = `<h6 class="dropdown-header bg-light py-1">設定 ${day} 日 (${this.contextTarget.type === 'PREV' ? '上月' : '本月'})</h6>`;
-        
-        menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
-        
-        if (this.contextTarget.type === 'CURR') {
-            menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('M_OFF')"><span class="badge bg-dark text-white w-25 me-2">M</span> 強迫預休</button>`;
+    // 處理點擊 (包含歷史資料與本月預班)
+    handleCellClick(cell, currentVal) {
+        // 防止重複開啟
+        const existing = document.getElementById('context-menu');
+        if (existing.style.display === 'block') {
+            existing.style.display = 'none';
+            return;
         }
+
+        const type = cell.dataset.type; // 'history' or 'current'
+        const uid = cell.dataset.uid;
+        const day = cell.dataset.day;
+
+        this.currentEditTarget = { uid, day, type, cell };
+
+        // 產生選單
+        let menuHtml = '';
+        const shifts = ['D', 'E', 'N'];
         
-        menuHtml += `<div class="dropdown-divider my-1"></div>`;
+        menuHtml += `<h6 class="dropdown-header">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
+        
+        // 歷史資料也可設定 OFF 或 班別，但不需設定「預休/強休」的區別，統一為 OFF 即可
+        // 但為了格式統一，我們允許 OFF, D, E, N
+        menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 休假</button>`;
+        
+        if (type === 'current') {
+            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge bg-dark text-white w-25 me-2">M</span> 強迫預休</button>`;
+        }
+        menuHtml += `<div class="dropdown-divider"></div>`;
+
         shifts.forEach(s => {
-            menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('${s.code}')"><span class="badge bg-info text-white w-25 me-2">${s.code}</span> ${s.name}</button>`;
+            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('${s}')"><span class="badge bg-secondary w-25 me-2">${s}</span> ${s}</button>`;
         });
 
-        if (this.contextTarget.type === 'CURR') {
-            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+        // 只有本月可以設定 "勿排"
+        if (type === 'current') {
+            menuHtml += `<div class="dropdown-divider"></div>`;
             shifts.forEach(s => {
-                menuHtml += `<button class="dropdown-item py-1 text-danger" onclick="window.routerPage.applyMenuShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
+                menuHtml += `<button class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s}</button>`;
             });
         }
 
-        menuHtml += `<div class="dropdown-divider my-1"></div>`;
-        menuHtml += `<button class="dropdown-item py-1 text-secondary" onclick="window.routerPage.applyMenuShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</button>`;
+        menuHtml += `<div class="dropdown-divider"></div>`;
+        menuHtml += `<button class="dropdown-item text-muted" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</button>`;
 
-        menu.innerHTML = menuHtml;
-        menu.style.display = 'block';
-        
-        const menuWidth = 150; 
-        let left = e.pageX;
-        if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 10;
-        menu.style.left = `${left}px`;
-        menu.style.top = `${e.pageY}px`;
-        
-        this.activeContextMenu = menu;
-    }
-
-    async applyMenuShift(val) {
-        if (!this.contextTarget) return;
-        const { uid, day, type } = this.contextTarget;
-
-        if (type === 'CURR') {
-            if (!this.state.submissions[uid].wishes) this.state.submissions[uid].wishes = {};
-            if (val === '') delete this.state.submissions[uid].wishes[day];
-            else this.state.submissions[uid].wishes[day] = val;
-            this.renderMatrixGrid();
-        } else {
-            await this.updatePrevShift(uid, day, val);
-        }
-        this.closeContextMenu();
-    }
-
-    async updatePrevShift(uid, day, val) {
-        let prevY = this.state.year, prevM = this.state.month - 1;
-        if (prevM === 0) { prevM = 12; prevY--; }
-
-        try {
-            await ScheduleService.updateShift(this.state.unitId, prevY, prevM, uid, day, val);
-        } catch (e) {
-            // ✅ 修正：若無文件，僅更新前端
-            if (e.message.includes("No document to update") || e.code === 'not-found') {
-                console.log("上月班表文件不存在，僅更新前端畫面供參考。");
-            } else {
-                alert("更新失敗: " + e.message);
-                return;
-            }
-        }
-
-        // 更新本地暫存
-        if (!this.state.prevMonthData[uid]) this.state.prevMonthData[uid] = {};
-        this.state.prevMonthData[uid][day] = val;
-        this.renderMatrixGrid();
-    }
-
-    closeContextMenu() {
         const menu = document.getElementById('context-menu');
-        if (menu) menu.style.display = 'none';
-    }
-
-    updatePreference(uid, field, value) {
-        if (!this.state.submissions[uid]) this.state.submissions[uid] = { wishes: {}, preferences: {} };
-        if (!this.state.submissions[uid].preferences) this.state.submissions[uid].preferences = {};
-        this.state.submissions[uid].preferences[field] = value.trim();
-    }
-
-    async saveReview() {
-        if(!confirm("確定儲存所有變更？")) return;
-        try {
-            await PreScheduleService.updatePreScheduleSubmissions(
-                this.state.unitId, 
-                this.state.year, 
-                this.state.month, 
-                this.state.submissions
-            );
-            alert("✅ 儲存成功");
-        } catch(e) {
-            alert("儲存失敗: " + e.message);
-        }
-    }
-
-    openAddSupportModal() { if(this.supportModal) this.supportModal.show(); }
-    
-    async searchStaff() {
-        const input = document.getElementById('support-search-input').value.trim();
-        const resultArea = document.getElementById('search-result-area');
-        if(!input) return alert("請輸入關鍵字");
+        menu.innerHTML = menuHtml;
         
-        resultArea.innerHTML = '<div class="text-center p-2 text-muted">搜尋中...</div>';
-        try {
-            const allUsers = await userService.getAllUsers(); 
-            const found = allUsers.filter(u => (u.staffId && u.staffId.includes(input)) || (u.name && u.name.includes(input)));
-
-            resultArea.innerHTML = '';
-            if (found.length === 0) {
-                resultArea.innerHTML = '<div class="text-center p-2 text-muted">找不到符合的人員</div>';
-                return;
-            }
-
-            found.forEach(u => {
-                if (this.state.staffList.find(s => s.uid === u.uid)) return; 
-                const item = document.createElement('button');
-                item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
-                item.innerHTML = `<div><span class="fw-bold">${u.name}</span> <small class="text-muted">(${u.staffId})</small></div><span class="badge bg-primary"><i class="fas fa-plus"></i></span>`;
-                item.onclick = () => this.addSupportStaff(u);
-                resultArea.appendChild(item);
-            });
-        } catch(e) { console.error(e); }
+        // 定位
+        const rect = cell.getBoundingClientRect();
+        menu.style.left = `${rect.left}px`;
+        menu.style.top = `${rect.bottom + 5}px`;
+        menu.style.display = 'block';
     }
 
-    async addSupportStaff(user) {
-        if(!confirm(`將 ${user.name} 加入本月支援名單？`)) return;
-        try {
-            await PreScheduleService.addSupportStaff(this.state.unitId, this.state.year, this.state.month, user.uid);
-            await this.loadData();
-            alert("加入成功！");
-            if(this.supportModal) this.supportModal.hide();
-        } catch(e) { alert("加入失敗: " + e.message); }
-    }
-    
-    remindUnsubmitted() {
-        const unsubmitted = this.state.staffList.filter(s => {
-            const sub = this.state.submissions[s.uid];
-            return !sub || !sub.isSubmitted;
-        });
-        
-        if (unsubmitted.length === 0) {
-            alert("所有人員皆已提交！");
+    applyShift(val) {
+        if (!this.currentEditTarget) return;
+        const { uid, day, type } = this.currentEditTarget;
+
+        if (type === 'history') {
+            // 更新歷史資料物件
+            if (!this.historyData[uid]) this.historyData[uid] = {};
+            this.historyData[uid][day] = val;
         } else {
-            const names = unsubmitted.map(s => s.name).join(', ');
-            alert(`以下人員尚未提交預班，請通知：\n${names}`);
+            // 更新本月預班物件
+            if (!this.scheduleData.submissions[uid]) this.scheduleData.submissions[uid] = {};
+            if (!this.scheduleData.submissions[uid].wishes) this.scheduleData.submissions[uid].wishes = {};
+            
+            if (val) this.scheduleData.submissions[uid].wishes[day] = val;
+            else delete this.scheduleData.submissions[uid].wishes[day];
+        }
+
+        this.isDirty = true;
+        this.renderTable(); // 重新渲染以更新畫面
+        document.getElementById('context-menu').style.display = 'none';
+        document.getElementById('btn-save').disabled = false;
+    }
+
+    async saveData() {
+        const btn = document.getElementById('btn-save');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 儲存中...';
+
+        try {
+            // 準備更新資料
+            // 我們將 historyData 存入 document 的 history 欄位
+            const updates = {
+                submissions: this.scheduleData.submissions,
+                history: this.historyData, // ✅ 關鍵：儲存上個月資料供排班程式使用
+                lastUpdated: new Date()
+            };
+
+            await PreScheduleService.updatePreSchedule(this.scheduleId, updates);
+            
+            this.isDirty = false;
+            alert("✅ 儲存成功！");
+        } catch (e) {
+            alert("儲存失敗: " + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save"></i> 儲存變更';
         }
     }
-    
-    exportExcel() { alert("功能實作中"); }
+
+    goToAutoSchedule() {
+        if (this.isDirty) {
+            if (!confirm("您有未儲存的變更，是否繼續？(未儲存的變更將不會應用於排班)")) return;
+        }
+        // 跳轉到排班工作台，並帶上 ID
+        window.location.hash = `/schedule/auto?preScheduleId=${this.scheduleId}`;
+    }
 }
