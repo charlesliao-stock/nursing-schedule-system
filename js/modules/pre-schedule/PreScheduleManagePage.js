@@ -31,38 +31,22 @@ export class PreScheduleManagePage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger">無效的單位參數</div>';
 
-        // Log 1: 確認 render 有被呼叫
-        console.log("🚀 [Debug] Page.render() 被呼叫，準備回傳 HTML String");
         return PreScheduleManageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
     async afterRender() {
         window.routerPage = this; 
-        console.log("🚀 [Debug] Page.afterRender() 開始執行");
+        console.log("🚀 [Debug] Page.afterRender() 執行");
 
-        // Log 2: 檢查當下 DOM 狀態
-        let modalEl = document.getElementById('detail-modal');
-        console.log("🔍 [Debug] 第一次嘗試抓取 #detail-modal:", modalEl);
-
-        // --- 解決方案：給瀏覽器一點時間渲染 DOM ---
-        if (!modalEl) {
-            console.warn("⚠️ [Debug] 第一次抓不到 Modal，嘗試等待 50ms...");
-            await new Promise(r => setTimeout(r, 50)); // 等待 50 毫秒
-            modalEl = document.getElementById('detail-modal');
-            console.log("🔍 [Debug] 延遲後第二次抓取 #detail-modal:", modalEl);
-        }
-
-        // 初始化 Modal
+        // 嘗試抓取 Modal
+        const modalEl = document.getElementById('detail-modal');
         if (modalEl) {
             this.detailModal = new bootstrap.Modal(modalEl);
             console.log("✅ [Debug] Modal 初始化成功");
         } else {
-            console.error("❌ [Debug] 嚴重錯誤：等待後依然找不到 ID 為 'detail-modal' 的元素。請檢查 Template 是否正確輸出 HTML。");
-            // 印出當前 body 的內容長度，協助判斷是否整個頁面都沒渲染
-            console.log("📄 [Debug] 當前 Body 內容長度:", document.body.innerHTML.length);
+            console.warn("⚠️ [Debug] 找不到 Modal 元素 (可能為快取問題)，跳過初始化以防止崩潰。");
         }
 
-        // 權限判斷與載入單位
         if (auth.currentUser) {
             try {
                 const userDoc = await userService.getUserData(auth.currentUser.uid);
@@ -79,17 +63,13 @@ export class PreScheduleManagePage {
         await this.loadData();
     }
 
-    // --- 其餘邏輯保持不變 ---
-
     async loadUnits() {
         try {
             const units = await UnitService.getAllUnits();
             const selector = document.getElementById('unit-selector');
             const container = document.getElementById('unit-selector-container');
             
-            // Log 3: 檢查單位選單元素
-            if (!selector) console.warn("⚠️ [Debug] 找不到 #unit-selector 下拉選單");
-
+            // 防呆檢查：如果 Template 是舊的，selector 會是 null
             if (selector && container) {
                 selector.innerHTML = '<option value="" disabled>切換單位...</option>';
                 units.forEach(unit => {
@@ -102,6 +82,9 @@ export class PreScheduleManagePage {
                     selector.appendChild(option);
                 });
                 container.style.display = 'block';
+                console.log("✅ [Debug] 單位選單載入完成");
+            } else {
+                console.warn("⚠️ [Debug] 找不到單位選單 DOM，這確認了瀏覽器正在使用舊版 Template。");
             }
         } catch (error) {
             console.error("載入單位列表失敗:", error);
@@ -313,9 +296,8 @@ export class PreScheduleManagePage {
             `;
             this.detailModal.show();
         } else {
-            // 這邊如果再跳錯，代表延遲也沒用，可能是 Template 真的沒寫進去
-            console.error("❌ [Debug] openDetailModal 失敗: detailModal 物件不存在");
-            alert("系統錯誤：無法開啟視窗，請按 F12 查看 Log 並截圖回報。");
+            console.error("Modal 尚未初始化，請重新整理");
+            alert("系統偵測到您正在使用舊版頁面快取，請按 Ctrl+F5 強制重新整理。");
         }
     }
     
