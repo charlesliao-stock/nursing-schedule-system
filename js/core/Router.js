@@ -14,10 +14,10 @@ import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js";
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
 import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
 
-// ✅ 預班管理路由設定
-import { PreScheduleManagePage } from "../modules/preschedule/PreScheduleManagePage.js";
-import { PreScheduleEditPage } from "../modules/preschedule/PreScheduleEditPage.js"; 
-import { PreScheduleSubmitPage } from "../modules/preschedule/PreScheduleSubmitPage.js";
+// ✅ 修正：路徑改為 pre-schedule (加上連字號)，對應您原本的資料夾名稱
+import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
+import { PreScheduleEditPage } from "../modules/pre-schedule/PreScheduleEditPage.js"; 
+import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
 
 import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
 import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
@@ -52,9 +52,9 @@ class Router {
             '/schedule/edit': SchedulePage,
             '/schedule/my': MySchedulePage,
             
-            // 預班路由
-            '/pre-schedule/manage': PreScheduleManagePage, // 列表頁 (入口)
-            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯頁 (大表)
+            // 預班管理路由
+            '/pre-schedule/manage': PreScheduleManagePage, // 列表頁
+            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯頁
             '/pre-schedule/submit': PreScheduleSubmitPage, // 個人填寫頁
 
             '/swaps/review': SwapReviewPage,
@@ -121,7 +121,6 @@ class Router {
         const viewContainer = document.getElementById('main-view');
 
         if (pageInstance && viewContainer) {
-            // 讓子頁面的側邊選單亮燈停留在父層
             let menuPath = purePath;
             if (purePath === '/schedule/edit') menuPath = '/schedule/list';
             if (purePath === '/pre-schedule/edit') menuPath = '/pre-schedule/manage';
