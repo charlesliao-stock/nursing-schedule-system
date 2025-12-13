@@ -1,6 +1,6 @@
 import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js";
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
-import { ScheduleService } from "../../services/firebase/ScheduleService.js"; // 記得確認引用路徑
+import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
 
 export class PreScheduleManagePage {
@@ -9,16 +9,15 @@ export class PreScheduleManagePage {
             unitId: null,
             year: null,
             month: null,
-            staffList: [],        // 原始資料
-            displayList: [],      // 排序後的顯示資料
+            staffList: [],        
+            displayList: [],      
             submissions: {},
-            prevMonthData: {},    // 上個月班表快取
-            prevMonthDays: [],    // 上個月最後幾天 [25, 26...]
-            sortConfig: { key: 'staffId', dir: 'asc' }, // 預設依員編排序
-            dragSrcUid: null      // 拖曳暫存
+            prevMonthData: {},    
+            prevMonthDays: [],    
+            sortConfig: { key: 'staffId', dir: 'asc' }, 
+            dragSrcUid: null      
         };
         this.detailModal = null;
-        this.currentEditUid = null;
     }
 
     async render() {
@@ -33,8 +32,18 @@ export class PreScheduleManagePage {
     }
 
     async afterRender() {
-        this.detailModal = new bootstrap.Modal(document.getElementById('detail-modal'));
-        window.routerPage = this; // 綁定到 window 以供 Template 呼叫
+        // 1. 綁定 Window 變數，供 Template 使用
+        window.routerPage = this; 
+        
+        // 2. 安全地初始化 Modal (防呆檢查)
+        const modalEl = document.getElementById('detail-modal');
+        if (modalEl) {
+            this.detailModal = new bootstrap.Modal(modalEl);
+        } else {
+            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素，請檢查 Template 檔案。");
+        }
+
+        // 3. 載入資料
         await this.loadData();
     }
 
@@ -43,7 +52,6 @@ export class PreScheduleManagePage {
         if (container) container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><div class="mt-2 text-muted">載入資料中...</div></div>';
 
         try {
-            // 1. 平行載入人員名單與本月預班
             const [staffList, preSchedule] = await Promise.all([
                 userService.getUnitStaff(this.state.unitId),
                 PreScheduleService.getPreSchedule(this.state.unitId, this.state.year, this.state.month)
@@ -52,16 +60,16 @@ export class PreScheduleManagePage {
             this.state.staffList = staffList;
             if (preSchedule) this.state.submissions = preSchedule.submissions || {};
 
-            // 2. 載入上個月班表 (用於補足月底 6 天)
+            // 載入上個月班表
             await this.loadPrevMonthData();
 
-            // 3. 整合資料：把上月班表塞進 staff 物件
+            // 整合資料
             this.enrichStaffData();
 
-            // 4. 更新進度條
+            // 更新進度條
             this.updateProgress();
 
-            // 5. 初始排序與渲染
+            // 初始排序與渲染
             this.handleSort(this.state.sortConfig.key, false);
 
         } catch (e) {
@@ -70,7 +78,6 @@ export class PreScheduleManagePage {
         }
     }
 
-    // --- 新功能：載入上個月資料 ---
     async loadPrevMonthData() {
         let prevYear = this.state.year;
         let prevMonth = this.state.month - 1;
@@ -87,8 +94,6 @@ export class PreScheduleManagePage {
         try {
             const prevSchedule = await ScheduleService.getSchedule(this.state.unitId, prevYear, prevMonth);
             const map = {};
-            
-            // 如果上個月有班表，轉存為 { uid: { day: code } }
             if (prevSchedule && prevSchedule.assignments) {
                 Object.entries(prevSchedule.assignments).forEach(([uid, shifts]) => {
                     map[uid] = {};
@@ -100,24 +105,19 @@ export class PreScheduleManagePage {
             this.state.prevMonthData = map;
         } catch (e) {
             console.warn("上個月班表載入失敗或不存在:", e);
-            this.state.prevMonthData = {}; // 保持為空，顯示虛線讓用戶填
+            this.state.prevMonthData = {}; 
         }
     }
 
     enrichStaffData() {
-        // 將上月班表注入到每個員工物件，方便 Template 讀取
         this.state.staffList.forEach(s => {
             s.prevMonthDays = this.state.prevMonthDays;
-            // 若 DB 有資料則用 DB，若無則為空
             s.prevMonthShifts = this.state.prevMonthData[s.uid] || {};
         });
-        // 初始化顯示列表
         this.state.displayList = [...this.state.staffList];
     }
 
-    // --- 新功能：排序處理 ---
     handleSort(key, toggle = true) {
-        // 更新排序設定
         if (toggle && this.state.sortConfig.key === key) {
             this.state.sortConfig.dir = this.state.sortConfig.dir === 'asc' ? 'desc' : 'asc';
         } else {
@@ -128,12 +128,10 @@ export class PreScheduleManagePage {
         const { key: sortKey, dir } = this.state.sortConfig;
         const multiplier = dir === 'asc' ? 1 : -1;
 
-        // 執行排序
         this.state.displayList.sort((a, b) => {
             let valA = a[sortKey];
             let valB = b[sortKey];
 
-            // 特殊處理：狀態排序 (依是否提交)
             if (sortKey === 'status') {
                 valA = this.state.submissions[a.uid]?.isSubmitted ? 1 : 0;
                 valB = this.state.submissions[b.uid]?.isSubmitted ? 1 : 0;
@@ -142,7 +140,6 @@ export class PreScheduleManagePage {
                 valB = valB || '';
             }
 
-            // 特殊處理：員編若為數字字串，轉數字排序
             if (sortKey === 'staffId') {
                 const numA = parseFloat(valA);
                 const numB = parseFloat(valB);
@@ -150,23 +147,20 @@ export class PreScheduleManagePage {
                     return (numA - numB) * multiplier;
                 }
             }
-
-            // 一般字串排序
             return String(valA).localeCompare(String(valB), 'zh-Hant') * multiplier;
         });
 
         this.renderTableOnly();
     }
 
-    // --- 新功能：拖曳排序 (Drag & Drop) ---
     handleDragStart(e) {
         this.state.dragSrcUid = e.currentTarget.dataset.uid;
         e.dataTransfer.effectAllowed = 'move';
-        e.currentTarget.classList.add('table-active'); // 拖曳時的視覺效果
+        e.currentTarget.classList.add('table-active');
     }
 
     handleDragOver(e) {
-        if (e.preventDefault) e.preventDefault(); // 允許放置
+        if (e.preventDefault) e.preventDefault(); 
         e.dataTransfer.dropEffect = 'move';
         return false;
     }
@@ -179,21 +173,16 @@ export class PreScheduleManagePage {
         const targetUid = row.dataset.uid;
         if (this.state.dragSrcUid === targetUid) return;
 
-        // 重新排列 Array
         const fromIndex = this.state.displayList.findIndex(s => s.uid === this.state.dragSrcUid);
         const toIndex = this.state.displayList.findIndex(s => s.uid === targetUid);
 
         if (fromIndex > -1 && toIndex > -1) {
             const [movedItem] = this.state.displayList.splice(fromIndex, 1);
             this.state.displayList.splice(toIndex, 0, movedItem);
-            
-            // 拖曳後，通常不再維持原本的排序規則 (視為自訂排序)
-            // 這裡重新渲染表格
             this.renderTableOnly();
         }
     }
 
-    // --- 新功能：手動編輯上個月班別 ---
     async editPrevShift(uid, day) {
         const staff = this.state.displayList.find(s => s.uid === uid);
         const currentVal = staff.prevMonthShifts[day] || '';
@@ -203,14 +192,8 @@ export class PreScheduleManagePage {
         if (input !== null) {
             const code = input.trim().toUpperCase();
             if (['D', 'E', 'N', 'OFF', 'M_OFF', ''].includes(code) || code === '') {
-                // 更新本地暫存資料
                 if (!staff.prevMonthShifts) staff.prevMonthShifts = {};
                 staff.prevMonthShifts[day] = code;
-                
-                // 注意：這裡僅更新畫面暫存，若要永久儲存，建議呼叫 ScheduleService 更新上一月的班表
-                // await ScheduleService.updateShift(unitId, prevYear, prevMonth, uid, day, code);
-                // 這裡為了流暢度先只做前端更新
-                
                 this.renderTableOnly();
             } else {
                 alert("無效的班別代碼，請輸入 D, E, N 或 OFF");
@@ -218,7 +201,6 @@ export class PreScheduleManagePage {
         }
     }
 
-    // 只重繪表格內容 (不重繪外框與 Modal)
     renderTableOnly() {
         const container = document.getElementById('review-table-container');
         if (container) {
@@ -235,28 +217,55 @@ export class PreScheduleManagePage {
         }
     }
 
-    // 更新進度條 UI
     updateProgress() {
         const total = this.state.staffList.length;
         const submitted = Object.values(this.state.submissions).filter(s => s.isSubmitted).length;
         const percent = total === 0 ? 0 : Math.round((submitted / total) * 100);
 
-        document.getElementById('submitted-count').textContent = submitted;
-        document.getElementById('total-staff-count').textContent = total;
+        const submittedEl = document.getElementById('submitted-count');
+        const totalEl = document.getElementById('total-staff-count');
         const bar = document.getElementById('progress-bar');
+        
+        if (submittedEl) submittedEl.textContent = submitted;
+        if (totalEl) totalEl.textContent = total;
         if (bar) {
             bar.style.width = `${percent}%`;
             bar.textContent = `${percent}%`;
         }
     }
     
-    // (其餘 saveReview, exportExcel 等方法維持原樣或根據您的需求保留)
     async saveReview() {
-        // 這裡您可以實作將預班轉入正式班表的邏輯
         alert("功能實作中：儲存當前預班狀態至正式班表");
     }
     
     openDetailModal(uid) {
-        alert(`開啟詳細編輯: ${uid} (功能請自行串接 Detail Template)`);
+        const staff = this.state.staffList.find(s => s.uid === uid);
+        const sub = this.state.submissions[uid] || {};
+        
+        if (this.detailModal) {
+            document.getElementById('modal-body-content').innerHTML = `
+                <div class="p-3">
+                    <h5>${staff.name} (${staff.staffId})</h5>
+                    <p>目前特註：${sub.note || '無'}</p>
+                    <p class="text-muted small">此處可擴充為完整的預班編輯表單。</p>
+                </div>
+            `;
+            this.detailModal.show();
+        } else {
+            alert("Modal 初始化失敗，請重新整理頁面");
+        }
+    }
+    
+    // 空殼方法，避免報錯
+    saveDetail() {
+        if(this.detailModal) this.detailModal.hide();
+    }
+    
+    exportExcel() {
+        alert("匯出 Excel 功能尚未實作");
+    }
+    
+    remindUnsubmitted() {
+        alert("催繳通知功能尚未實作");
     }
 }
