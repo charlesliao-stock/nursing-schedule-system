@@ -2,24 +2,30 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { authService } from "../../services/firebase/AuthService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
-import { PreScheduleSubmitTemplate } from "./templates/PreScheduleSubmitTemplate.js"; // 仍保留引用以取得 ShiftMenu 樣式
+import { PreScheduleSubmitTemplate } from "./templates/PreScheduleSubmitTemplate.js"; 
 
 export class PreScheduleSubmitPage {
     constructor() {
-        // 移除這裡的年份月份初始化，因為清單頁不需要了
+        const today = new Date();
+        let targetMonth = today.getMonth() + 1 + 1; 
+        let targetYear = today.getFullYear();
+        if (targetMonth > 12) { targetMonth -= 12; targetYear++; }
+
+        this.year = targetYear;
+        this.month = targetMonth;
         
         // 核心狀態
-        this.realUser = null;       // 實際登入者
-        this.currentUser = null;    // 當前模擬對象
+        this.realUser = null;       
+        this.currentUser = null;    
         this.targetUnitId = null;   
         this.currentUnit = null;    
         
+        this.unitStaffMap = {}; 
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
         this.unitAggregate = {}; 
         this.unitNames = {}; 
-        this.unitStaffMap = {};
         
         this.isReadOnly = false;
         this.isAdminMode = false;
@@ -36,9 +42,101 @@ export class PreScheduleSubmitPage {
         };
     }
 
-    // 1. 修改 Render：移除月份選擇器，只保留基本框架
     async render() {
-        return `
+        // ✅ 加入 CSS 樣式，強制將容器轉為 7 欄網格
+        const style = `
+        <style>
+            /* 日曆網格核心設定 */
+            .calendar-grid {
+                display: grid;
+                grid-template-columns: repeat(7, 1fr); /* 強制 7 欄等寬 */
+                gap: 5px;
+                background-color: #fff;
+                padding: 10px;
+            }
+            
+            /* 星期標頭 */
+            .calendar-header {
+                text-align: center;
+                font-weight: bold;
+                padding: 8px 0;
+                background-color: #f8f9fa;
+                border-radius: 4px;
+                color: #495057;
+            }
+
+            /* 日期格子 */
+            .calendar-cell {
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                min-height: 100px; /* 確保格子高度足夠 */
+                padding: 5px;
+                position: relative;
+                background-color: #fff;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            .calendar-cell:hover:not(.disabled) {
+                border-color: #0d6efd;
+                background-color: #f8f9fa;
+                transform: translateY(-2px);
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+
+            /* 週末樣式 */
+            .calendar-cell.weekend {
+                background-color: #fdf2f2; /* 淡紅色背景 */
+            }
+            .weekend-text {
+                color: #dc3545;
+                font-weight: bold;
+            }
+
+            /* 禁用樣式 */
+            .calendar-cell.disabled {
+                background-color: #e9ecef;
+                cursor: not-allowed;
+                opacity: 0.7;
+            }
+
+            /* 日期數字 */
+            .day-number {
+                font-weight: bold;
+                font-size: 1.1rem;
+                margin-bottom: 5px;
+            }
+
+            /* 班別標籤 (Badge) */
+            .shift-badge {
+                display: inline-block;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 0.9rem;
+                font-weight: bold;
+                text-align: center;
+                width: 100%;
+                margin-bottom: auto;
+            }
+
+            /* 底部統計 (已滿/未滿) */
+            .bottom-stats {
+                font-size: 0.75rem;
+                text-align: right;
+                color: #6c757d;
+                margin-top: 5px;
+            }
+            .bottom-stats.full {
+                color: #dc3545; /* 額滿變紅 */
+                font-weight: bold;
+            }
+        </style>
+        `;
+
+        return style + `
         <div class="container-fluid mt-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h3><i class="fas fa-edit text-primary me-2"></i>提交預班</h3>
@@ -66,13 +164,14 @@ export class PreScheduleSubmitPage {
                             <thead class="table-light">
                                 <tr>
                                     <th>月份</th>
+                                    <th>單位</th>
                                     <th>開放填寫區間</th>
                                     <th>狀態</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="schedule-list-tbody">
-                                <tr><td colspan="4" class="p-4 text-center text-muted">載入中...</td></tr>
+                                <tr><td colspan="5" class="p-4 text-center text-muted">載入中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -149,14 +248,16 @@ export class PreScheduleSubmitPage {
         
         this.bindEvents();
 
+        // 3. 權限分流初始化 (修正：保留表格結構)
         if (this.realUser.role === 'system_admin' || this.realUser.originalRole === 'system_admin') {
             this.isAdminMode = true;
             this.setupAdminUI();
+            
             const tbody = document.getElementById('schedule-list-tbody');
             if (tbody) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="p-5 text-center text-muted">
+                        <td colspan="5" class="p-5 text-center text-muted">
                             <div class="alert alert-warning d-inline-block shadow-sm">
                                 <i class="fas fa-hand-point-up me-2"></i>
                                 請先選擇上方「管理員模式」的單位與人員，並點擊 <span class="badge bg-danger">切換身分</span> 按鈕進行模擬。
@@ -164,6 +265,7 @@ export class PreScheduleSubmitPage {
                         </td>
                     </tr>`;
             }
+            document.getElementById('list-view').style.display = 'block';
         } else {
             this.initRegularUser();
         }
@@ -246,20 +348,19 @@ export class PreScheduleSubmitPage {
         staff.forEach(s => this.unitStaffMap[s.uid] = s.name);
     }
 
-    // 3. 修改 List 邏輯：與管理者介面相同，不篩選日期，只列出清單
     async tryLoadSchedule() {
         if(!this.targetUnitId) return;
         const tbody = document.getElementById('schedule-list-tbody');
         if (!tbody) return;
 
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center py-5"><span class="spinner-border text-primary"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><span class="spinner-border text-primary"></span></td></tr>';
 
         try {
             const allSchedules = await PreScheduleService.getPreSchedulesList(this.targetUnitId);
             this.preSchedulesList = allSchedules;
 
             if (allSchedules.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="py-5 text-muted text-center">此單位目前無預班表</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="py-5 text-muted text-center">此單位目前無預班表</td></tr>';
                 return;
             }
 
@@ -290,6 +391,7 @@ export class PreScheduleSubmitPage {
                 return `
                     <tr>
                         <td class="fw-bold fs-5 text-primary">${p.year}-${String(p.month).padStart(2,'0')}</td>
+                        <td>${this.currentUnit.unitName}</td>
                         <td>${openDate} ~ ${closeDate}</td>
                         <td>${statusHtml}</td>
                         <td>
@@ -302,14 +404,14 @@ export class PreScheduleSubmitPage {
             }).join('');
             
             if (tbody.innerHTML.trim() === '') {
-                tbody.innerHTML = '<tr><td colspan="4" class="py-5 text-muted text-center">該同仁不在任何預班名單中</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="py-5 text-muted text-center">該同仁不在任何預班名單中</td></tr>';
             }
             
             this.showListView();
 
         } catch (e) {
             console.error(e);
-            tbody.innerHTML = `<tr><td colspan="4" class="text-danger text-center">載入失敗: ${e.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="text-danger text-center">載入失敗: ${e.message}</td></tr>`;
         }
     }
 
@@ -318,7 +420,6 @@ export class PreScheduleSubmitPage {
         document.getElementById('detail-view').style.display = 'none';
     }
 
-    // 2. 修改 OpenSchedule：生成偏好選單
     openSchedule(id, isExpired) {
         this.currentSchedule = this.preSchedulesList.find(s => s.id === id);
         if (!this.currentSchedule) return;
@@ -346,14 +447,13 @@ export class PreScheduleSubmitPage {
         }
         document.querySelectorAll('#detail-view textarea').forEach(i => i.disabled = disabled);
 
-        // --- 產生偏好設定區塊 (修改重點：全都顯示) ---
+        // --- 偏好設定區塊 ---
         const canBatch = this.currentUser.constraints?.canBatch;
         const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
         const savedPref = mySub.preferences || {};
         
         let prefHtml = '';
 
-        // 若有包班權限，顯示包班選項
         if (canBatch) {
             prefHtml += `
             <div class="mb-3 p-2 bg-light border rounded">
@@ -375,7 +475,6 @@ export class PreScheduleSubmitPage {
             </div>`;
         }
 
-        // 強制顯示排班偏好 (P1-P3)
         const genOptions = (val) => `
             <option value="" ${val===''?'selected':''}>-</option>
             <option value="D" ${val==='D'?'selected':''}>白班 (D)</option>
@@ -438,7 +537,7 @@ export class PreScheduleSubmitPage {
         const reserved = this.currentSchedule.settings.reservedStaff || 0; 
         const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}}; 
         
-        for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none;"></div>`; 
+        for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none; min-height:100px;"></div>`; 
         
         for(let d=1; d<=daysInMonth; d++) { 
             const date = new Date(year, month - 1, d); 
@@ -556,21 +655,17 @@ export class PreScheduleSubmitPage {
         const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
         const preferences = {};
         
-        // 收集包班偏好
         if (canBatch) {
             const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
             preferences.batch = batchPref;
         }
 
-        // 收集排序偏好 (P1-P3)
         const p1 = document.getElementById('pref-1')?.value || "";
         const p2 = document.getElementById('pref-2')?.value || "";
         const p3 = document.getElementById('pref-3')?.value || "";
 
-        // 驗證
         if (!p1 && (p2 || p3)) { alert("請從第一優先開始填寫"); return; }
         
-        // 檢查重複
         const selected = [p1, p2, p3].filter(x => x);
         const unique = new Set(selected);
         if (selected.length !== unique.size) { alert("偏好順序請勿選擇重複的班別"); return; }
