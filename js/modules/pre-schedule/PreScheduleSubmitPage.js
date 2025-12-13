@@ -20,119 +20,46 @@ export class PreScheduleSubmitPage {
         this.targetUnitId = null;   
         this.currentUnit = null;    
         
-        this.unitStaffMap = {}; 
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
         this.unitAggregate = {}; 
         this.unitNames = {}; 
+        this.unitStaffMap = {};
         
         this.isReadOnly = false;
         this.isAdminMode = false;
         this.isImpersonating = false; 
         
+        // ✅ 修改 1: 統一代碼格式，與管理者介面一致 (NO_D, NO_E...)
         this.shiftTypes = {
-            'OFF': { label: 'OFF', color: '#dc3545', bg: '#dc3545', text: 'white' },
-            'D':   { label: '白',   color: '#0d6efd', bg: '#0d6efd', text: 'white' },
-            'E':   { label: '小',   color: '#ffc107', bg: '#ffc107', text: 'black' },
-            'N':   { label: '大',   color: '#212529', bg: '#212529', text: 'white' },
-            'XD':  { label: '勿白', color: '#adb5bd', bg: '#f8f9fa', text: '#0d6efd', border: '1px solid #0d6efd' },
-            'XE':  { label: '勿小', color: '#adb5bd', bg: '#f8f9fa', text: '#ffc107', border: '1px solid #ffc107' },
-            'XN':  { label: '勿大', color: '#adb5bd', bg: '#f8f9fa', text: '#212529', border: '1px solid #212529' }
+            'OFF':   { label: 'OFF',  color: '#dc3545', bg: '#dc3545', text: 'white' },
+            'M_OFF': { label: 'M',    color: '#212529', bg: '#212529', text: 'white' }, // 強迫預休
+            'D':     { label: '白',   color: '#0d6efd', bg: '#0d6efd', text: 'white' },
+            'E':     { label: '小',   color: '#ffc107', bg: '#ffc107', text: 'black' },
+            'N':     { label: '大',   color: '#212529', bg: '#212529', text: 'white' },
+            'NO_D':  { label: '勿白', color: '#adb5bd', bg: '#f8f9fa', text: '#0d6efd', border: '1px solid #0d6efd' },
+            'NO_E':  { label: '勿小', color: '#adb5bd', bg: '#f8f9fa', text: '#ffc107', border: '1px solid #ffc107' },
+            'NO_N':  { label: '勿大', color: '#adb5bd', bg: '#f8f9fa', text: '#212529', border: '1px solid #212529' }
         };
     }
 
     async render() {
-        // ✅ 加入 CSS 樣式，強制將容器轉為 7 欄網格
+        // 加入 CSS 樣式
         const style = `
         <style>
-            /* 日曆網格核心設定 */
-            .calendar-grid {
-                display: grid;
-                grid-template-columns: repeat(7, 1fr); /* 強制 7 欄等寬 */
-                gap: 5px;
-                background-color: #fff;
-                padding: 10px;
-            }
-            
-            /* 星期標頭 */
-            .calendar-header {
-                text-align: center;
-                font-weight: bold;
-                padding: 8px 0;
-                background-color: #f8f9fa;
-                border-radius: 4px;
-                color: #495057;
-            }
-
-            /* 日期格子 */
-            .calendar-cell {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                min-height: 100px; /* 確保格子高度足夠 */
-                padding: 5px;
-                position: relative;
-                background-color: #fff;
-                cursor: pointer;
-                transition: all 0.2s;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
-            }
-
-            .calendar-cell:hover:not(.disabled) {
-                border-color: #0d6efd;
-                background-color: #f8f9fa;
-                transform: translateY(-2px);
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-
-            /* 週末樣式 */
-            .calendar-cell.weekend {
-                background-color: #fdf2f2; /* 淡紅色背景 */
-            }
-            .weekend-text {
-                color: #dc3545;
-                font-weight: bold;
-            }
-
-            /* 禁用樣式 */
-            .calendar-cell.disabled {
-                background-color: #e9ecef;
-                cursor: not-allowed;
-                opacity: 0.7;
-            }
-
-            /* 日期數字 */
-            .day-number {
-                font-weight: bold;
-                font-size: 1.1rem;
-                margin-bottom: 5px;
-            }
-
-            /* 班別標籤 (Badge) */
-            .shift-badge {
-                display: inline-block;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-size: 0.9rem;
-                font-weight: bold;
-                text-align: center;
-                width: 100%;
-                margin-bottom: auto;
-            }
-
-            /* 底部統計 (已滿/未滿) */
-            .bottom-stats {
-                font-size: 0.75rem;
-                text-align: right;
-                color: #6c757d;
-                margin-top: 5px;
-            }
-            .bottom-stats.full {
-                color: #dc3545; /* 額滿變紅 */
-                font-weight: bold;
-            }
+            .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; background-color: #fff; padding: 10px; }
+            .calendar-header { text-align: center; font-weight: bold; padding: 8px 0; background-color: #f8f9fa; border-radius: 4px; color: #495057; }
+            .calendar-cell { border: 1px solid #dee2e6; border-radius: 4px; min-height: 100px; padding: 5px; position: relative; background-color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
+            .calendar-cell:hover:not(.disabled) { border-color: #0d6efd; background-color: #f8f9fa; transform: translateY(-2px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            .calendar-cell.weekend { background-color: #fdf2f2; }
+            .weekend-text { color: #dc3545; font-weight: bold; }
+            .calendar-cell.disabled { background-color: #e9ecef; cursor: not-allowed; opacity: 0.7; }
+            .day-number { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
+            .shift-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.9rem; font-weight: bold; text-align: center; width: 100%; margin-bottom: auto; }
+            .bottom-stats { font-size: 0.75rem; text-align: right; color: #6c757d; margin-top: 5px; }
+            .bottom-stats.full { color: #dc3545; font-weight: bold; }
+            .dropdown-item:hover { background-color: #f8f9fa; color: #0d6efd; }
         </style>
         `;
 
@@ -162,13 +89,7 @@ export class PreScheduleSubmitPage {
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
-                                <tr>
-                                    <th>月份</th>
-                                    <th>單位</th>
-                                    <th>開放填寫區間</th>
-                                    <th>狀態</th>
-                                    <th>操作</th>
-                                </tr>
+                                <tr><th>月份</th><th>單位</th><th>開放填寫區間</th><th>狀態</th><th>操作</th></tr>
                             </thead>
                             <tbody id="schedule-list-tbody">
                                 <tr><td colspan="5" class="p-4 text-center text-muted">載入中...</td></tr>
@@ -180,11 +101,10 @@ export class PreScheduleSubmitPage {
 
             <div id="detail-view" style="display:none;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <button class="btn btn-outline-secondary" id="btn-back">
-                        <i class="fas fa-arrow-left"></i> 返回列表
-                    </button>
+                    <button class="btn btn-outline-secondary" id="btn-back"><i class="fas fa-arrow-left"></i> 返回列表</button>
                     <h4 class="mb-0 fw-bold" id="calendar-header-title"></h4>
-                    <div></div> </div>
+                    <div></div>
+                </div>
 
                 <div class="row">
                     <div class="col-lg-8 mb-3">
@@ -200,12 +120,10 @@ export class PreScheduleSubmitPage {
                             <div class="card-body">
                                 <h6 class="fw-bold text-info border-bottom pb-2">排班限制</h6>
                                 <div class="d-flex justify-content-between mb-2">
-                                    <span>預班上限：</span>
-                                    <span class="fw-bold"><span id="count-total">0</span> / <span id="limit-total">-</span></span>
+                                    <span>預班上限：</span><span class="fw-bold"><span id="count-total">0</span> / <span id="limit-total">-</span></span>
                                 </div>
                                 <div class="d-flex justify-content-between">
-                                    <span>假日預班：</span>
-                                    <span class="fw-bold"><span id="count-holiday">0</span> / <span id="limit-holiday">-</span></span>
+                                    <span>假日預班：</span><span class="fw-bold"><span id="count-holiday">0</span> / <span id="limit-holiday">-</span></span>
                                 </div>
                             </div>
                         </div>
@@ -214,7 +132,6 @@ export class PreScheduleSubmitPage {
                             <div class="card-header bg-white fw-bold">排班偏好與備註</div>
                             <div class="card-body">
                                 <div id="preference-container" class="mb-3"></div>
-                                
                                 <div class="mb-3">
                                     <label class="form-label small text-muted">備註說明</label>
                                     <textarea id="wish-notes" class="form-control" rows="3" placeholder="如有其他需求請在此說明..."></textarea>
@@ -239,31 +156,14 @@ export class PreScheduleSubmitPage {
         if (!this.realUser) { alert("無法讀取使用者資訊"); return; }
 
         window.routerPage = this;
-
-        // 初始化右鍵選單內容
-        const menuContainer = document.getElementById('user-shift-menu');
-        if (menuContainer) {
-            menuContainer.innerHTML = PreScheduleSubmitTemplate.renderContextMenu(this.shiftTypes);
-        }
-        
         this.bindEvents();
 
-        // 3. 權限分流初始化 (修正：保留表格結構)
         if (this.realUser.role === 'system_admin' || this.realUser.originalRole === 'system_admin') {
             this.isAdminMode = true;
             this.setupAdminUI();
-            
             const tbody = document.getElementById('schedule-list-tbody');
             if (tbody) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="p-5 text-center text-muted">
-                            <div class="alert alert-warning d-inline-block shadow-sm">
-                                <i class="fas fa-hand-point-up me-2"></i>
-                                請先選擇上方「管理員模式」的單位與人員，並點擊 <span class="badge bg-danger">切換身分</span> 按鈕進行模擬。
-                            </div>
-                        </td>
-                    </tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="p-5 text-center text-muted"><div class="alert alert-warning d-inline-block shadow-sm"><i class="fas fa-hand-point-up me-2"></i>請先選擇上方「管理員模式」的單位與人員，並點擊 <span class="badge bg-danger">切換身分</span> 按鈕進行模擬。</div></td></tr>`;
             }
             document.getElementById('list-view').style.display = 'block';
         } else {
@@ -591,13 +491,51 @@ export class PreScheduleSubmitPage {
         this.updateCounters(); 
     }
 
+    // ✅ 修改 2: 動態生成與管理者一致的選單
     handleRightClick(e, day) { 
         e.preventDefault(); 
         this.tempTarget = day; 
         const menu = document.getElementById('user-shift-menu'); 
+        
         if(menu) {
-            menu.style.left = `${e.clientX}px`; 
-            menu.style.top = `${e.clientY}px`; 
+            // 班別列表：優先使用單位設定，若無則使用預設
+            const unitShifts = this.currentUnit.settings?.shifts || [
+                {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
+            ];
+
+            let menuHtml = `<h6 class="dropdown-header bg-light py-1">設定 ${day} 日</h6>`;
+            
+            // 1. OFF (預休/強休)
+            menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+            
+            // 2. 指定班別 (D, E, N...)
+            unitShifts.forEach(s => {
+                menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('${s.code}')"><span class="badge bg-info text-white w-25 me-2">${s.code}</span> 指定${s.name}</button>`;
+            });
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+
+            // 3. 勿排班別 (NO_D, NO_E, NO_N...)
+            unitShifts.forEach(s => {
+                menuHtml += `<button class="dropdown-item py-1 text-danger" onclick="window.routerPage.applyShiftFromMenu('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
+            });
+            
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+            menuHtml += `<button class="dropdown-item py-1 text-secondary" onclick="window.routerPage.applyShiftFromMenu('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</button>`;
+
+            menu.innerHTML = menuHtml;
+
+            // 定位
+            const menuWidth = 180; 
+            let left = e.clientX;
+            let top = e.clientY;
+            
+            // 邊界檢查
+            if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 10;
+            if (top + menu.offsetHeight > window.innerHeight) top = window.innerHeight - menu.offsetHeight - 10;
+
+            menu.style.left = `${left}px`; 
+            menu.style.top = `${top}px`; 
             menu.style.display = 'block'; 
         }
     }
@@ -605,12 +543,18 @@ export class PreScheduleSubmitPage {
     applyShiftFromMenu(type) { 
         if(!this.tempTarget) return; 
         const day = this.tempTarget; 
+        
         if(type) { 
-            if (!this.myWishes[day] && !this.checkLimits(day)) return; 
+            // 若為「勿排」或「強休」，不需檢查 OFF 數量限制，但需檢查是否衝突
+            if (!this.myWishes[day]) {
+                // 只有 OFF 算在預休數量限制內 (可根據需求調整，這裡假設只有 OFF 算)
+                if (type === 'OFF' && !this.checkLimits(day)) return; 
+            }
             this.myWishes[day] = type; 
         } else { 
             delete this.myWishes[day]; 
         } 
+        
         this.renderCalendar(); 
         this.updateCounters(); 
         const menu = document.getElementById('user-shift-menu');
@@ -622,13 +566,17 @@ export class PreScheduleSubmitPage {
         const settings = this.currentSchedule.settings; 
         const maxOff = parseInt(settings.maxOffDays); 
         const maxHoliday = parseInt(settings.maxHoliday || 0); 
-        const currentTotal = Object.keys(this.myWishes).length; 
+        
+        // 這裡僅計算純 'OFF'
+        const currentTotal = Object.values(this.myWishes).filter(v => v === 'OFF').length; 
         if (currentTotal >= maxOff) { alert("已達預班總數上限"); return false; } 
+        
         const date = new Date(this.currentSchedule.year, this.currentSchedule.month-1, day); 
         const w = date.getDay(); 
         if(w===0 || w===6) { 
             let hCount = 0; 
-            Object.keys(this.myWishes).forEach(d => { 
+            Object.entries(this.myWishes).forEach(([d, v]) => { 
+                if(v !== 'OFF') return;
                 const dt = new Date(this.currentSchedule.year, this.currentSchedule.month-1, d); 
                 if(dt.getDay()===0 || dt.getDay()===6) hCount++; 
             }); 
@@ -638,9 +586,11 @@ export class PreScheduleSubmitPage {
     }
 
     updateCounters() { 
-        const total = Object.keys(this.myWishes).length; 
+        // 僅統計 'OFF'
+        const total = Object.values(this.myWishes).filter(v => v === 'OFF').length;
         let holiday = 0; 
-        Object.keys(this.myWishes).forEach(d => { 
+        Object.entries(this.myWishes).forEach(([d, v]) => { 
+            if(v !== 'OFF') return;
             const date = new Date(this.currentSchedule.year, this.currentSchedule.month - 1, d); 
             if(date.getDay() === 0 || date.getDay() === 6) holiday++; 
         }); 
