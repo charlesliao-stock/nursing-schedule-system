@@ -67,8 +67,7 @@ export class ScheduleListPage {
             return;
         }
 
-        // ✅ 修正權限邏輯：
-        // 系統管理員：強制手動選擇，不預設載入
+        // ✅ 權限邏輯：系統管理員需手動選擇，避免預載
         if (isAdmin) {
             unitSelect.innerHTML = '<option value="" disabled selected>請選擇單位...</option>' + 
                                    units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
@@ -78,10 +77,7 @@ export class ScheduleListPage {
             unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             
             // 只有一個單位時，自動選取並載入
-            if (units.length === 1) {
-                this.loadSchedules(units[0].unitId);
-            } else {
-                // 多個單位時，選第一個但也載入 (這是一般管理者的預期行為)
+            if (units.length > 0) {
                 this.loadSchedules(units[0].unitId);
             }
         }
@@ -91,7 +87,6 @@ export class ScheduleListPage {
         });
     }
 
-    // loadSchedules 方法保持不變...
     async loadSchedules(unitId) {
         this.targetUnitId = unitId;
         const tbody = document.getElementById('schedule-list-tbody');
