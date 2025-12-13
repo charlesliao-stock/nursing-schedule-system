@@ -14,10 +14,10 @@ import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js";
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
 import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
 
-// ✅ 修改：拆分為列表頁與編輯頁
-import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
-import { PreScheduleEditPage } from "../modules/pre-schedule/PreScheduleEditPage.js"; // 新增
-import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
+// ✅ 預班管理路由設定
+import { PreScheduleManagePage } from "../modules/preschedule/PreScheduleManagePage.js";
+import { PreScheduleEditPage } from "../modules/preschedule/PreScheduleEditPage.js"; 
+import { PreScheduleSubmitPage } from "../modules/preschedule/PreScheduleSubmitPage.js";
 
 import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
 import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
@@ -52,10 +52,10 @@ class Router {
             '/schedule/edit': SchedulePage,
             '/schedule/my': MySchedulePage,
             
-            // ✅ 預班管理路由更新
-            '/pre-schedule/manage': PreScheduleManagePage, // 列表 (選單位 -> 看月份)
-            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯 (大表)
-            '/pre-schedule/submit': PreScheduleSubmitPage,
+            // 預班路由
+            '/pre-schedule/manage': PreScheduleManagePage, // 列表頁 (入口)
+            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯頁 (大表)
+            '/pre-schedule/submit': PreScheduleSubmitPage, // 個人填寫頁
 
             '/swaps/review': SwapReviewPage,
             '/swaps/apply': SwapApplyPage,
@@ -121,8 +121,8 @@ class Router {
         const viewContainer = document.getElementById('main-view');
 
         if (pageInstance && viewContainer) {
+            // 讓子頁面的側邊選單亮燈停留在父層
             let menuPath = purePath;
-            // 讓子頁面的選單亮燈停留在父層列表
             if (purePath === '/schedule/edit') menuPath = '/schedule/list';
             if (purePath === '/pre-schedule/edit') menuPath = '/pre-schedule/manage';
 
