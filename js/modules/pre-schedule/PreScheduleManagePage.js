@@ -32,18 +32,16 @@ export class PreScheduleManagePage {
     }
 
     async afterRender() {
-        // 1. 綁定 Window 變數，供 Template 使用
         window.routerPage = this; 
         
-        // 2. 安全地初始化 Modal (防呆檢查)
+        // 嘗試獲取 Modal，如果還是沒有 (Template 快取問題)，不會報錯 Crash，但會在 Console 警告
         const modalEl = document.getElementById('detail-modal');
         if (modalEl) {
             this.detailModal = new bootstrap.Modal(modalEl);
         } else {
-            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素，請檢查 Template 檔案。");
+            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素，請嘗試清除瀏覽器快取 (Ctrl+F5)。");
         }
 
-        // 3. 載入資料
         await this.loadData();
     }
 
@@ -60,16 +58,12 @@ export class PreScheduleManagePage {
             this.state.staffList = staffList;
             if (preSchedule) this.state.submissions = preSchedule.submissions || {};
 
-            // 載入上個月班表
             await this.loadPrevMonthData();
 
-            // 整合資料
             this.enrichStaffData();
 
-            // 更新進度條
             this.updateProgress();
 
-            // 初始排序與渲染
             this.handleSort(this.state.sortConfig.key, false);
 
         } catch (e) {
@@ -83,7 +77,6 @@ export class PreScheduleManagePage {
         let prevMonth = this.state.month - 1;
         if (prevMonth === 0) { prevMonth = 12; prevYear--; }
 
-        // 計算上個月的最後 6 天
         const daysInPrevMonth = new Date(prevYear, prevMonth, 0).getDate();
         const last6Days = [];
         for (let i = 5; i >= 0; i--) {
@@ -252,11 +245,10 @@ export class PreScheduleManagePage {
             `;
             this.detailModal.show();
         } else {
-            alert("Modal 初始化失敗，請重新整理頁面");
+            console.error("Modal 尚未初始化，請重新整理");
         }
     }
     
-    // 空殼方法，避免報錯
     saveDetail() {
         if(this.detailModal) this.detailModal.hide();
     }
