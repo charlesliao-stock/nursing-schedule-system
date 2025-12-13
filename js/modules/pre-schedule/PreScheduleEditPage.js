@@ -17,7 +17,6 @@ export class PreScheduleEditPage {
             sortConfig: { key: 'staffId', dir: 'asc' } 
         };
         this.activeContextMenu = null; 
-        // ✅ 新增：用來記錄右鍵選單當下的目標 { uid, day, type: 'PREV'|'CURR' }
         this.contextTarget = null; 
     }
 
@@ -229,7 +228,6 @@ export class PreScheduleEditPage {
             </th>
         `;
 
-        // 上月
         this.state.prevMonthLast6Days.forEach(d => {
             headerHtml += `
                 <th class="text-center p-0 bg-secondary bg-opacity-10 text-muted border-bottom border-secondary" style="width: 28px;">
@@ -238,7 +236,6 @@ export class PreScheduleEditPage {
                 </th>`;
         });
 
-        // 本月
         for (let d = 1; d <= daysInMonth; d++) {
             const date = new Date(this.state.year, this.state.month - 1, d);
             const dayOfWeek = date.getDay();
@@ -303,19 +300,19 @@ export class PreScheduleEditPage {
 
             let rowHtml = `
                 <td class="sticky-col col-1 text-center fw-bold text-secondary bg-white"><small>${staff.staffId || ''}</small></td>
+                
                 <td class="sticky-col col-2 text-start p-0 ps-1 align-middle text-truncate ${nameCellClass}" 
                     title="${nameCellTitle}" style="max-width: 60px; font-size: 0.85rem;">
                     ${staff.name} ${isSupport}
                 </td>
+                
                 <td class="sticky-col col-3 text-center bg-white p-0 align-middle">${noteBadge}</td>
                 <td class="sticky-col col-4 bg-white p-0 align-middle border-end">${prefHtml}</td>
             `;
 
-            // ✅ 修正：上月班表 (增加點擊與右鍵事件)
             this.state.prevMonthLast6Days.forEach(d => {
                 const shift = (this.state.prevMonthData[staff.uid] || {})[d] || ''; 
                 
-                // 上月班別樣式
                 let prevClass = 'bg-secondary bg-opacity-10 text-muted';
                 if(shift === 'OFF') prevClass = 'bg-warning bg-opacity-25 text-dark';
                 else if(['D','E','N'].includes(shift)) prevClass = 'bg-info bg-opacity-25 text-dark fw-bold';
@@ -323,9 +320,9 @@ export class PreScheduleEditPage {
                 rowHtml += `
                     <td class="text-center p-0 align-middle ${prevClass} border-end border-light" 
                         style="border:1px solid #e0e0e0; font-size:0.75rem; cursor:pointer;"
-                        onclick="window.routerPage.handlePrevCellClick('${staff.uid}', ${d}, '${shift}')"
+                        onclick="window.routerPage.editPrevMonthCell('${staff.uid}', ${d}, '${shift}')"
                         oncontextmenu="window.routerPage.handlePrevCellRightClick(event, '${staff.uid}', ${d})"
-                        title="上月 ${d} 日: ${shift || '空'} (點擊切換)">
+                        title="上月 ${d} 日: ${shift || '空'} (點擊修改)">
                         ${shift}
                     </td>`;
             });
@@ -402,41 +399,38 @@ export class PreScheduleEditPage {
         document.head.appendChild(style);
     }
 
-    // --- 互動邏輯：本月 ---
+    // --- 互動邏輯 ---
 
     handleCellClick(uid, day) {
         if (!this.state.submissions[uid].wishes) this.state.submissions[uid].wishes = {};
         const current = this.state.submissions[uid].wishes[day];
-        // 切換邏輯：空 -> OFF -> 空
         if (current === 'OFF') delete this.state.submissions[uid].wishes[day];
         else this.state.submissions[uid].wishes[day] = 'OFF';
-        
         this.renderMatrixGrid();
     }
 
     handleCellRightClick(e, uid, day) {
         e.preventDefault();
-        // 設定 contextTarget 為本月 (CURR)
         this.contextTarget = { uid, day, type: 'CURR' };
         this.showContextMenu(e, day);
     }
 
-    // --- 互動邏輯：上月 (PREV) ---
-
+    // 上月編輯邏輯
     async handlePrevCellClick(uid, day, currentVal) {
-        // 左鍵點擊上月：快速切換 OFF (即時存檔)
-        const newVal = currentVal === 'OFF' ? '' : 'OFF';
-        await this.updatePrevShift(uid, day, newVal);
+        // ✅ 修正：使用 prompt 讓使用者輸入 (或用右鍵選單)
+        // 這裡為了方便，點擊直接觸發 prompt，右鍵觸發選單
+        const newVal = prompt(`修改上個月 ${day} 日班別 (D, E, N, OFF):`, currentVal);
+        if (newVal !== null) {
+            const val = newVal.trim().toUpperCase();
+            await this.updatePrevShift(uid, day, val);
+        }
     }
 
     handlePrevCellRightClick(e, uid, day) {
         e.preventDefault();
-        // 設定 contextTarget 為上月 (PREV)
         this.contextTarget = { uid, day, type: 'PREV' };
         this.showContextMenu(e, day);
     }
-
-    // --- 共用選單與執行 ---
 
     showContextMenu(e, day) {
         this.closeContextMenu();
@@ -447,10 +441,8 @@ export class PreScheduleEditPage {
 
         let menuHtml = `<h6 class="dropdown-header bg-light py-1">設定 ${day} 日 (${this.contextTarget.type === 'PREV' ? '上月' : '本月'})</h6>`;
         
-        // 呼叫 applyMenuShift 而非 setWish
         menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
         
-        // 只有本月才能選 M_FF (上月是已發生的班表，通常沒有 M_FF)
         if (this.contextTarget.type === 'CURR') {
             menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('M_OFF')"><span class="badge bg-dark text-white w-25 me-2">M</span> 強迫預休</button>`;
         }
@@ -460,7 +452,6 @@ export class PreScheduleEditPage {
             menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyMenuShift('${s.code}')"><span class="badge bg-info text-white w-25 me-2">${s.code}</span> ${s.name}</button>`;
         });
 
-        // 勿排 (僅限本月)
         if (this.contextTarget.type === 'CURR') {
             menuHtml += `<div class="dropdown-divider my-1"></div>`;
             shifts.forEach(s => {
@@ -488,33 +479,36 @@ export class PreScheduleEditPage {
         const { uid, day, type } = this.contextTarget;
 
         if (type === 'CURR') {
-            // 本月：更新 submissions (記憶體操作)
             if (!this.state.submissions[uid].wishes) this.state.submissions[uid].wishes = {};
             if (val === '') delete this.state.submissions[uid].wishes[day];
             else this.state.submissions[uid].wishes[day] = val;
             this.renderMatrixGrid();
         } else {
-            // 上月：更新 ScheduleService (即時 DB 操作)
             await this.updatePrevShift(uid, day, val);
         }
         this.closeContextMenu();
     }
 
     async updatePrevShift(uid, day, val) {
-        // 計算上個月的年/月
         let prevY = this.state.year, prevM = this.state.month - 1;
         if (prevM === 0) { prevM = 12; prevY--; }
 
         try {
-            // 呼叫 API 更新
             await ScheduleService.updateShift(this.state.unitId, prevY, prevM, uid, day, val);
-            // 更新本地顯示
-            if (!this.state.prevMonthData[uid]) this.state.prevMonthData[uid] = {};
-            this.state.prevMonthData[uid][day] = val;
-            this.renderMatrixGrid();
         } catch (e) {
-            alert("上月班表更新失敗: " + e.message);
+            // ✅ 修正：若無文件，僅更新前端
+            if (e.message.includes("No document to update") || e.code === 'not-found') {
+                console.log("上月班表文件不存在，僅更新前端畫面供參考。");
+            } else {
+                alert("更新失敗: " + e.message);
+                return;
+            }
         }
+
+        // 更新本地暫存
+        if (!this.state.prevMonthData[uid]) this.state.prevMonthData[uid] = {};
+        this.state.prevMonthData[uid][day] = val;
+        this.renderMatrixGrid();
     }
 
     closeContextMenu() {
@@ -545,16 +539,22 @@ export class PreScheduleEditPage {
 
     openAddSupportModal() { if(this.supportModal) this.supportModal.show(); }
     
-    async searchStaff() { /* ... 同前 ... */ 
+    async searchStaff() {
         const input = document.getElementById('support-search-input').value.trim();
         const resultArea = document.getElementById('search-result-area');
         if(!input) return alert("請輸入關鍵字");
+        
         resultArea.innerHTML = '<div class="text-center p-2 text-muted">搜尋中...</div>';
         try {
             const allUsers = await userService.getAllUsers(); 
             const found = allUsers.filter(u => (u.staffId && u.staffId.includes(input)) || (u.name && u.name.includes(input)));
+
             resultArea.innerHTML = '';
-            if (found.length === 0) { resultArea.innerHTML = '<div class="text-center p-2 text-muted">找不到符合的人員</div>'; return; }
+            if (found.length === 0) {
+                resultArea.innerHTML = '<div class="text-center p-2 text-muted">找不到符合的人員</div>';
+                return;
+            }
+
             found.forEach(u => {
                 if (this.state.staffList.find(s => s.uid === u.uid)) return; 
                 const item = document.createElement('button');
@@ -566,7 +566,7 @@ export class PreScheduleEditPage {
         } catch(e) { console.error(e); }
     }
 
-    async addSupportStaff(user) { /* ... 同前 ... */ 
+    async addSupportStaff(user) {
         if(!confirm(`將 ${user.name} 加入本月支援名單？`)) return;
         try {
             await PreScheduleService.addSupportStaff(this.state.unitId, this.state.year, this.state.month, user.uid);
