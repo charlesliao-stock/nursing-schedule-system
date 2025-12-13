@@ -2,15 +2,13 @@ import {
     db, 
     collection, 
     doc, 
-    getDoc, 
     getDocs, 
     setDoc, 
     updateDoc, 
-    deleteDoc,
+    deleteDoc, 
     query, 
     where, 
     orderBy, 
-    Timestamp,
     arrayUnion
 } from "../../config/firebase.config.js";
 
@@ -32,7 +30,8 @@ class PreScheduleService {
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error getting pre-schedules list:", error);
-            throw error;
+            // 避免因為索引未建立導致卡死，回傳空陣列
+            return [];
         }
     }
 
@@ -71,8 +70,8 @@ class PreScheduleService {
             
             const payload = {
                 ...data,
-                createdAt: Timestamp.now(),
-                updatedAt: Timestamp.now()
+                createdAt: new Date(), // 改用 new Date()
+                updatedAt: new Date()
             };
             
             await setDoc(docRef, payload);
@@ -91,8 +90,8 @@ class PreScheduleService {
                 settings: data.settings,
                 staffIds: data.staffIds,
                 staffSettings: data.staffSettings,
-                // supportStaffIds: data.supportStaffIds, // 視情況是否要整批更新
-                updatedAt: Timestamp.now()
+                supportStaffIds: data.supportStaffIds || [], // 確保支援人員欄位存在
+                updatedAt: new Date()
             });
         } catch (error) {
             console.error("Error updating settings:", error);
@@ -124,7 +123,7 @@ class PreScheduleService {
                 [`${key}.note`]: notes,
                 [`${key}.preferences`]: preferences,
                 [`${key}.isSubmitted`]: true,
-                [`${key}.updatedAt`]: Timestamp.now()
+                [`${key}.updatedAt`]: new Date()
             });
         } catch (error) {
             console.error("Error submitting wish:", error);
@@ -132,7 +131,7 @@ class PreScheduleService {
         }
     }
 
-    // ✅ [補上] 管理者儲存預班審核結果 (EditPage 用)
+    // 管理者儲存預班審核結果 (EditPage 用)
     async updatePreScheduleSubmissions(unitId, year, month, submissions) {
         try {
             const schedule = await this.getPreSchedule(unitId, year, month);
@@ -143,7 +142,7 @@ class PreScheduleService {
             // 全量更新 submissions 欄位
             await updateDoc(docRef, {
                 submissions: submissions,
-                updatedAt: Timestamp.now()
+                updatedAt: new Date()
             });
         } catch (error) {
             console.error("Error updating submissions:", error);
@@ -151,7 +150,7 @@ class PreScheduleService {
         }
     }
 
-    // ✅ [補上] 加入跨單位支援人員
+    // 加入跨單位支援人員
     async addSupportStaff(unitId, year, month, uid) {
         try {
             const schedule = await this.getPreSchedule(unitId, year, month);
@@ -163,7 +162,7 @@ class PreScheduleService {
             await updateDoc(docRef, {
                 staffIds: arrayUnion(uid),        // 確保他出現在總名單
                 supportStaffIds: arrayUnion(uid), // 標記為支援
-                updatedAt: Timestamp.now()
+                updatedAt: new Date()
             });
         } catch (error) {
             console.error("Error adding support staff:", error);
@@ -173,5 +172,5 @@ class PreScheduleService {
 }
 
 export const PreScheduleServiceInstance = new PreScheduleService();
-// 為了相容您目前的 import 方式 (import { PreScheduleService } ...)，我們 export instance 作為 named export
+// 為了相容您目前的 import 方式，我們 export instance 作為 named export
 export { PreScheduleServiceInstance as PreScheduleService };
