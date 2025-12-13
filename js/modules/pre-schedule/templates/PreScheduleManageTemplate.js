@@ -1,7 +1,10 @@
 export const PreScheduleManageTemplate = {
     // 1. 主框架
     renderLayout(year, month) {
+        // ✅ 修正：使用一個最外層的 DIV 包裹所有內容 (包含 Modal)
+        // 這樣可以避免 Router 只渲染第一個元素而遺失 Modal
         return `
+        <div class="page-wrapper">
             <div class="container-fluid p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
@@ -10,21 +13,22 @@ export const PreScheduleManageTemplate = {
                         </h2>
                         
                         <div id="unit-selector-container" class="ms-4" style="display:none;">
-                            <select id="unit-selector" class="form-select fw-bold border-primary text-primary" 
+                            <select id="unit-selector" class="form-select fw-bold border-primary text-primary shadow-sm" 
+                                    style="min-width: 200px;"
                                     onchange="window.routerPage.handleUnitChange(this.value)">
                                 <option value="" disabled selected>切換單位...</option>
                             </select>
                         </div>
 
-                        <span class="badge bg-white text-dark border ms-3 fs-6">
+                        <span class="badge bg-white text-dark border ms-3 fs-6 shadow-sm">
                             ${year}年 ${month}月
                         </span>
                     </div>
                     <div>
-                        <button class="btn btn-outline-secondary me-2" onclick="window.history.back()">
+                        <button class="btn btn-outline-secondary me-2 shadow-sm" onclick="window.history.back()">
                             <i class="fas fa-arrow-left"></i> 返回
                         </button>
-                        <button class="btn btn-primary" onclick="window.routerPage.saveReview()">
+                        <button class="btn btn-primary shadow-sm" onclick="window.routerPage.saveReview()">
                             <i class="fas fa-save"></i> 儲存並轉入排班表
                         </button>
                     </div>
@@ -74,10 +78,10 @@ export const PreScheduleManageTemplate = {
                 </div>
             </div>
 
-            <div class="modal fade" id="detail-modal" tabindex="-1">
+            <div class="modal fade" id="detail-modal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content">
-                        <div class="modal-header">
+                        <div class="modal-header bg-light">
                             <h5 class="modal-title">預班詳細內容</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
@@ -91,6 +95,7 @@ export const PreScheduleManageTemplate = {
                     </div>
                 </div>
             </div>
+        </div>
         `;
     },
 
