@@ -26,7 +26,7 @@ export class PreScheduleEditPage {
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
                         <h2 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-edit text-primary me-2"></i>預班內容檢視
+                            <i class="fas fa-edit text-primary me-2"></i>預班內容編輯
                         </h2>
                         <span class="badge bg-primary fs-6 ms-3"><i class="fas fa-hospital me-1"></i> ${unitName}</span>
                         <span class="badge bg-white text-dark border ms-2 fs-6 shadow-sm">${this.state.year}年 ${this.state.month}月</span>
@@ -77,15 +77,15 @@ export class PreScheduleEditPage {
             const preSchedule = await PreScheduleService.getPreSchedule(this.state.unitId, this.state.year, this.state.month);
             if (!preSchedule) throw new Error("找不到預班表資料");
 
-            // 直接使用 PreSchedule 中儲存的 staffIds 來抓取人員，確保包含支援人員
+            // 1. 取得人員名單 (包含支援人員)
             const staffIds = preSchedule.staffIds || [];
             const promises = staffIds.map(uid => userService.getUserData(uid));
             const allStaff = await Promise.all(promises);
             
-            // 標記支援人員
+            // 2. 標記屬性
+            const supportIds = preSchedule.supportStaffIds || [];
             this.state.staffList = allStaff.filter(u=>u).map(u => {
-                u.isSupport = u.unitId !== this.state.unitId;
-                // 使用 PreSchedule 中儲存的組別設定 (如果有)
+                u.isSupport = supportIds.includes(u.uid) || u.unitId !== this.state.unitId;
                 const savedGroup = preSchedule.staffSettings?.[u.uid]?.group;
                 if(savedGroup) u.group = savedGroup;
                 return u;
@@ -93,6 +93,7 @@ export class PreScheduleEditPage {
 
             this.state.submissions = preSchedule.submissions || {};
 
+            // 3. 載入上個月班表
             await this.loadPrevMonthData();
             this.handleSort('staffId', false);
 
@@ -102,6 +103,7 @@ export class PreScheduleEditPage {
         }
     }
 
+    // ✅ 關鍵：依 User UID 抓取上月班表 (不依賴單位)
     async loadPrevMonthData() {
         let prevYear = this.state.year;
         let prevMonth = this.state.month - 1;
@@ -114,6 +116,7 @@ export class PreScheduleEditPage {
 
         const promises = this.state.staffList.map(async (staff) => {
             try {
+                // 使用 PersonalSchedule 確保抓到該員的班表
                 const schedule = await ScheduleService.getPersonalSchedule(staff.uid, prevYear, prevMonth);
                 let shifts = {};
                 if (schedule && schedule.assignments) shifts = schedule.assignments; 
@@ -180,12 +183,14 @@ export class PreScheduleEditPage {
             const noteHtml = sub.note ? `<div class="text-truncate" style="max-width:200px" title="${sub.note}">${sub.note}</div>` : '<span class="text-muted">-</span>';
 
             let gridHtml = '<div class="d-flex overflow-auto" style="max-width:450px">';
+            // 上月月底
             (this.state.prevMonthDays||[]).forEach(d => {
                 const s = (this.state.prevMonthData[staff.uid]||{})[d] || '';
                 const style = s ? 'bg-secondary text-white opacity-50' : 'bg-white text-muted border-dashed';
                 gridHtml += `<div class="border rounded text-center me-1 ${style}" style="min-width:24px;font-size:0.7em"><div>${d}</div><div>${s||'?'}</div></div>`;
             });
             gridHtml += '<div class="border-end mx-1"></div>';
+            // 本月預班
             for(let d=1; d<=31; d++) {
                 if(wishes[d]) {
                     const w = wishes[d];
