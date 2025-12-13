@@ -12,10 +12,11 @@ import { GroupSettingsPage } from "../modules/unit/GroupSettingsPage.js";
 
 import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js"; 
 import { SchedulePage } from "../modules/schedule/SchedulePage.js";
-// ✅ 新增：我的班表頁面
 import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
 
+// ✅ 修改：拆分為列表頁與編輯頁
 import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
+import { PreScheduleEditPage } from "../modules/pre-schedule/PreScheduleEditPage.js"; // 新增
 import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
 
 import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
@@ -49,9 +50,11 @@ class Router {
 
             '/schedule/list': ScheduleListPage,
             '/schedule/edit': SchedulePage,
-            '/schedule/my': MySchedulePage, // ✅ 註冊路由
+            '/schedule/my': MySchedulePage,
             
-            '/pre-schedule/manage': PreScheduleManagePage,
+            // ✅ 預班管理路由更新
+            '/pre-schedule/manage': PreScheduleManagePage, // 列表 (選單位 -> 看月份)
+            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯 (大表)
             '/pre-schedule/submit': PreScheduleSubmitPage,
 
             '/swaps/review': SwapReviewPage,
@@ -119,7 +122,10 @@ class Router {
 
         if (pageInstance && viewContainer) {
             let menuPath = purePath;
+            // 讓子頁面的選單亮燈停留在父層列表
             if (purePath === '/schedule/edit') menuPath = '/schedule/list';
+            if (purePath === '/pre-schedule/edit') menuPath = '/pre-schedule/manage';
+
             if (this.currentLayout) this.currentLayout.updateActiveMenu(menuPath);
 
             try {
