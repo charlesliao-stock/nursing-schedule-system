@@ -13,65 +13,97 @@ export class StaffListPage {
         this.sortConfig = { key: 'staffId', direction: 'asc' };
     }
 
-    // (render 與 afterRender 方法與之前相同，這裡省略以節省篇幅)
     async render() {
         this.currentUser = authService.getProfile();
         const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
+        
         let unitOptionsHtml = '<option value="">載入中...</option>';
         let isOneUnit = false;
+
         try {
             let units = [];
+            // 1. 根據權限取得單位列表
             if (isAdmin) {
                 units = await UnitService.getAllUnits();
             } else {
                 units = await UnitService.getUnitsByManager(this.currentUser.uid);
+                // Fallback: 若非管理職但有綁定單位
                 if(units.length === 0 && this.currentUser.unitId) {
                     const u = await UnitService.getUnitById(this.currentUser.unitId);
                     if(u) units.push(u);
                 }
             }
+
+            // 建立 unitMap 供列表顯示使用
             units.forEach(u => this.unitMap[u.unitId] = u.unitName);
-            unitOptionsHtml = (isAdmin ? `<option value="">全部單位</option>` : '') + units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-            if (!isAdmin && units.length <= 1) isOneUnit = true;
+
+            // 2. 產生下拉選單 HTML
+            if (units.length === 0) {
+                unitOptionsHtml = '<option value="">無權限</option>';
+            } else if (isAdmin) {
+                // 系統管理員：預設顯示 "請選擇"
+                unitOptionsHtml = `<option value="" disabled selected>請選擇單位...</option>` + 
+                                  units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+            } else {
+                // 單位主管
+                unitOptionsHtml = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+                if (units.length === 1) isOneUnit = true;
+            }
+
         } catch (e) {
             console.error("單位載入失敗:", e);
             unitOptionsHtml = '<option value="">(無法載入單位)</option>';
         }
+
+        // 使用 Template 渲染整體佈局
         return StaffListTemplate.renderLayout(unitOptionsHtml, isAdmin, isOneUnit) + StaffListTemplate.renderModalHtml(isAdmin);
     }
 
     async afterRender() {
         if(!this.currentUser) return;
-        window.routerPage = this;
+        window.routerPage = this; // 讓全域函數可呼叫 (如 onclick="window.routerPage.xxx")
+        
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
         const unitSelect = document.getElementById('unit-filter');
+        const btnAdd = document.getElementById('btn-add-staff');
+
+        // 事件綁定
         unitSelect.addEventListener('change', () => this.loadData());
-        document.getElementById('btn-add-staff').addEventListener('click', () => this.openModal());
+        btnAdd.addEventListener('click', () => this.openModal());
         document.getElementById('btn-save').addEventListener('click', () => this.handleSave());
         document.getElementById('keyword-search').addEventListener('input', (e) => this.filterData(e.target.value));
+        
+        // Modal 內的單位切換連動組別
         document.getElementById('edit-unit').addEventListener('change', (e) => this.updateGroupOptions(e.target.value));
-        this.loadData(); 
+
+        // 初始載入邏輯
+        const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
+        
+        if (!isAdmin && unitSelect.options.length > 0) {
+            // 一般管理者：如果有單位，自動載入第一個
+            this.loadData();
+        }
+        // 系統管理員：等待手動選擇，不自動載入
     }
 
     async loadData() {
         const unitId = document.getElementById('unit-filter').value;
         const tbody = document.getElementById('staff-tbody');
+        const btnAdd = document.getElementById('btn-add-staff');
+        
+        if (!unitId) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-5 text-muted">請先選擇單位</td></tr>';
+            btnAdd.disabled = true;
+            return;
+        }
+
+        btnAdd.disabled = false;
         tbody.innerHTML = '<tr><td colspan="8" class="text-center py-5"><span class="spinner-border spinner-border-sm"></span> 載入資料中...</td></tr>';
 
         try {
-            let list = [];
-            const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
-
-            if (isAdmin && !unitId) {
-                list = await userService.getAllUsers();
-            } else {
-                const target = unitId || this.currentUser.unitId;
-                if (target) {
-                    list = await userService.getUsersByUnit(target);
-                }
-            }
+            // 讀取該單位所有人員
+            const list = await userService.getUsersByUnit(unitId);
             
-            // ✅ list 中的每個物件現在保證都有 uid (因為 UserService.js 已修正)
             this.staffList = list;
             this.applySortAndFilter();
 
@@ -81,82 +113,226 @@ export class StaffListPage {
         }
     }
 
-    // (handleSort, updateHeaderIcons, applySortAndFilter, updateGroupOptions 邏輯不變)
-    handleSort(key) { if (this.sortConfig.key === key) { this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc'; } else { this.sortConfig.key = key; this.sortConfig.direction = 'asc'; } this.updateHeaderIcons(); this.applySortAndFilter(); }
-    updateHeaderIcons() { document.querySelectorAll('.sortable-th i').forEach(icon => { icon.className = 'fas fa-sort text-muted small opacity-25'; }); const activeTh = document.querySelector(`.sortable-th[onclick*="'${this.sortConfig.key}'"] i`); if (activeTh) { activeTh.className = this.sortConfig.direction === 'asc' ? 'fas fa-sort-up text-dark' : 'fas fa-sort-down text-dark'; activeTh.classList.remove('opacity-25'); } }
+    handleSort(key) {
+        if (this.sortConfig.key === key) {
+            this.sortConfig.direction = this.sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortConfig.key = key;
+            this.sortConfig.direction = 'asc';
+        }
+        this.updateHeaderIcons();
+        this.applySortAndFilter();
+    }
+
+    updateHeaderIcons() {
+        document.querySelectorAll('.sortable-th i').forEach(icon => {
+            icon.className = 'fas fa-sort text-muted small opacity-25';
+        });
+        const activeTh = document.querySelector(`.sortable-th[onclick*="'${this.sortConfig.key}'"] i`);
+        if (activeTh) {
+            activeTh.className = this.sortConfig.direction === 'asc' ? 'fas fa-sort-up text-dark' : 'fas fa-sort-down text-dark';
+            activeTh.classList.remove('opacity-25');
+        }
+    }
+
     applySortAndFilter() {
         const keyword = document.getElementById('keyword-search').value.toLowerCase();
         let filtered = this.staffList;
+
+        // 關鍵字過濾
         if (keyword) {
-            filtered = this.staffList.filter(u => (u.name && u.name.toLowerCase().includes(keyword)) || (u.staffId && u.staffId.includes(keyword)) || (u.email && u.email.toLowerCase().includes(keyword)));
+            filtered = this.staffList.filter(u => 
+                (u.name && u.name.toLowerCase().includes(keyword)) || 
+                (u.staffId && u.staffId.includes(keyword)) || 
+                (u.email && u.email.toLowerCase().includes(keyword))
+            );
         }
+
+        // 排序
         const key = this.sortConfig.key;
         const dir = this.sortConfig.direction === 'asc' ? 1 : -1;
+        
         filtered.sort((a, b) => {
-            let valA = a[key] || ''; let valB = b[key] || '';
-            if (key === 'unitId') { valA = this.unitMap[valA] || valA; valB = this.unitMap[valB] || valB; }
-            const numA = parseFloat(valA); const numB = parseFloat(valB);
-            if (!isNaN(numA) && !isNaN(numB) && String(numA) === String(valA)) { return (numA - numB) * dir; }
-            valA = valA.toString().toLowerCase(); valB = valB.toString().toLowerCase();
-            if (valA < valB) return -1 * dir; if (valA > valB) return 1 * dir; return 0;
+            let valA = a[key] || '';
+            let valB = b[key] || '';
+            
+            // 特殊欄位處理
+            if (key === 'unitId') {
+                valA = this.unitMap[valA] || valA;
+                valB = this.unitMap[valB] || valB;
+            }
+
+            // 數字排序優化 (如員編)
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+            if (!isNaN(numA) && !isNaN(numB) && String(numA) === String(valA)) {
+                return (numA - numB) * dir;
+            }
+
+            // 字串排序
+            valA = valA.toString().toLowerCase();
+            valB = valB.toString().toLowerCase();
+            if (valA < valB) return -1 * dir;
+            if (valA > valB) return 1 * dir;
+            return 0;
         });
+
         this.displayList = filtered;
-        // 使用 Template 渲染，Template 內部會正確使用 u.uid 來綁定按鈕事件
+        // 渲染 HTML
         document.getElementById('staff-tbody').innerHTML = StaffListTemplate.renderRows(this.displayList, this.unitMap);
     }
-    async updateGroupOptions(unitId, selectedGroup = '') { const groupSelect = document.getElementById('edit-group'); groupSelect.innerHTML = '<option value="">载入中...</option>'; if (!unitId) { groupSelect.innerHTML = '<option value="">請先選擇單位</option>'; return; } try { const unit = await UnitService.getUnitById(unitId); const groups = unit.groups || []; let html = '<option value="">(無組別)</option>'; html += groups.map(g => `<option value="${g}">${g}</option>`).join(''); groupSelect.innerHTML = html; if (selectedGroup) groupSelect.value = selectedGroup; } catch(e) { groupSelect.innerHTML = '<option value="">讀取失敗</option>'; } }
+
+    filterData(keyword) {
+        this.applySortAndFilter();
+    }
+
+    // 更新 Modal 中的組別選項
+    async updateGroupOptions(unitId, selectedGroup = '') {
+        const groupSelect = document.getElementById('edit-group');
+        groupSelect.innerHTML = '<option value="">載入中...</option>';
+        
+        if (!unitId) {
+            groupSelect.innerHTML = '<option value="">請先選擇單位</option>';
+            return;
+        }
+
+        try {
+            const unit = await UnitService.getUnitById(unitId);
+            const groups = unit.groups || [];
+            let html = '<option value="">(無組別)</option>';
+            html += groups.map(g => `<option value="${g}">${g}</option>`).join('');
+            groupSelect.innerHTML = html;
+            if (selectedGroup) groupSelect.value = selectedGroup;
+        } catch(e) {
+            console.error(e);
+            groupSelect.innerHTML = '<option value="">讀取失敗</option>';
+        }
+    }
 
     async openModal(uid = null) {
         document.getElementById('staff-form').reset();
         const editUnit = document.getElementById('edit-unit');
         const filterUnit = document.getElementById('unit-filter');
+        
+        // 將列表頁的單位選項複製到 Modal 中
         editUnit.innerHTML = filterUnit.innerHTML;
-        if(editUnit.options.length > 0 && editUnit.options[0].value === "") { editUnit.remove(0); }
+        // 移除 "全部單位" 或 "請選擇" 的無效選項
+        if(editUnit.options.length > 0 && editUnit.options[0].value === "") {
+            editUnit.remove(0);
+        }
 
         if(uid) {
-            // ✅ 使用傳入的 uid 尋找人員
+            // 編輯模式
             document.getElementById('modal-title').textContent = "編輯人員";
             const u = this.staffList.find(x => x.uid === uid);
             if (!u) { alert("找不到該人員資料"); return; }
             
-            document.getElementById('edit-uid').value = uid; // 隱藏欄位存 uid
+            document.getElementById('edit-uid').value = uid; // 隱藏欄位：Firebase Document ID
             document.getElementById('edit-unit').value = u.unitId;
-            document.getElementById('edit-staffId').value = u.staffId; // 顯示欄位存 staffId
+            document.getElementById('edit-staffId').value = u.staffId;
             document.getElementById('edit-name').value = u.name;
             document.getElementById('edit-email').value = u.email;
-            document.getElementById('edit-email').disabled = true;
+            document.getElementById('edit-email').disabled = true; // Email 不可修改
             document.getElementById('edit-level').value = u.rank;
             document.getElementById('edit-hireDate').value = u.hireDate || '';
+            
             await this.updateGroupOptions(u.unitId, u.group);
+            
+            // 權限與限制
             document.getElementById('edit-isPregnant').checked = !!u.constraints?.isPregnant;
             document.getElementById('edit-canBatch').checked = !!u.constraints?.canBatch;
             document.getElementById('edit-maxConsecutive').value = u.constraints?.maxConsecutive || 6;
             document.getElementById('edit-maxConsecutiveNights').value = u.constraints?.maxConsecutiveNights || 4;
+            
             document.getElementById('edit-is-manager').checked = u.role === 'unit_manager';
             document.getElementById('edit-is-scheduler').checked = u.role === 'unit_scheduler';
         } else {
+            // 新增模式
             document.getElementById('modal-title').textContent = "新增人員";
             document.getElementById('edit-uid').value = "";
             document.getElementById('edit-email').disabled = false;
+            
+            // 預設選取目前列表篩選的單位
             const currentFilter = filterUnit.value;
-            if (currentFilter) { editUnit.value = currentFilter; await this.updateGroupOptions(currentFilter); } else if (editUnit.options.length > 0) { await this.updateGroupOptions(editUnit.value); }
+            if (currentFilter) {
+                editUnit.value = currentFilter;
+                await this.updateGroupOptions(currentFilter);
+            } else if (editUnit.options.length > 0) {
+                // 若無篩選，選第一個並載入組別
+                editUnit.selectedIndex = 0;
+                await this.updateGroupOptions(editUnit.value);
+            }
         }
         this.editModal.show();
     }
 
     async handleSave() {
-        const uid = document.getElementById('edit-uid').value; // 這是 document ID
-        // ... (內容與之前相同，省略以節省篇幅)
-        const isManager = document.getElementById('edit-is-manager').checked; const isScheduler = document.getElementById('edit-is-scheduler').checked; let newRole = 'user'; if(isManager) newRole = 'unit_manager'; else if(isScheduler) newRole = 'unit_scheduler'; const data = { name: document.getElementById('edit-name').value, unitId: document.getElementById('edit-unit').value, staffId: document.getElementById('edit-staffId').value, rank: document.getElementById('edit-level').value, group: document.getElementById('edit-group').value, hireDate: document.getElementById('edit-hireDate').value || null, role: newRole, permissions: { canManageUnit: isManager, canEditSchedule: isScheduler || isManager, canViewSchedule: true }, constraints: { isPregnant: document.getElementById('edit-isPregnant').checked, canBatch: document.getElementById('edit-canBatch').checked, maxConsecutive: parseInt(document.getElementById('edit-maxConsecutive').value) || 6, maxConsecutiveNights: parseInt(document.getElementById('edit-maxConsecutiveNights').value) || 4 } }; const btn = document.getElementById('btn-save'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; try { if(uid) { await userService.updateUser(uid, data); alert("✅ 修改成功"); } else { const email = document.getElementById('edit-email').value; const res = await userService.createStaff({ ...data, email }, "123456"); if(res.success) alert("✅ 新增成功 (預設密碼: 123456)"); else alert("新增失敗: " + res.error); } this.editModal.hide(); this.loadData(); } catch(e) { alert("錯誤: " + e.message); } finally { btn.disabled = false; btn.innerHTML = '儲存'; }
+        const uid = document.getElementById('edit-uid').value; // Document ID
+        const btn = document.getElementById('btn-save');
+        
+        // 收集表單資料
+        const isManager = document.getElementById('edit-is-manager').checked;
+        const isScheduler = document.getElementById('edit-is-scheduler').checked;
+        
+        let newRole = 'user';
+        if(isManager) newRole = 'unit_manager';
+        else if(isScheduler) newRole = 'unit_scheduler';
+
+        const data = {
+            name: document.getElementById('edit-name').value,
+            unitId: document.getElementById('edit-unit').value,
+            staffId: document.getElementById('edit-staffId').value,
+            rank: document.getElementById('edit-level').value,
+            group: document.getElementById('edit-group').value,
+            hireDate: document.getElementById('edit-hireDate').value || null,
+            role: newRole,
+            permissions: {
+                canManageUnit: isManager,
+                canEditSchedule: isScheduler || isManager,
+                canViewSchedule: true
+            },
+            constraints: {
+                isPregnant: document.getElementById('edit-isPregnant').checked,
+                canBatch: document.getElementById('edit-canBatch').checked,
+                maxConsecutive: parseInt(document.getElementById('edit-maxConsecutive').value) || 6,
+                maxConsecutiveNights: parseInt(document.getElementById('edit-maxConsecutiveNights').value) || 4
+            }
+        };
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 處理中...';
+
+        try {
+            if(uid) {
+                // 更新
+                await userService.updateUser(uid, data);
+                alert("✅ 修改成功");
+            } else {
+                // 新增 (需 Email)
+                const email = document.getElementById('edit-email').value;
+                const res = await userService.createStaff({ ...data, email }, "123456");
+                if(res.success) alert("✅ 新增成功 (預設密碼: 123456)");
+                else alert("新增失敗: " + res.error);
+            }
+            this.editModal.hide();
+            this.loadData(); // 重新載入列表
+        } catch(e) {
+            alert("錯誤: " + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '儲存';
+        }
     }
 
-    filterData(keyword) { this.applySortAndFilter(); }
-    
-    // ✅ 刪除時使用 uid
-    async deleteStaff(uid) { 
-        if(confirm("確定刪除此人員？")) { 
-            await userService.deleteStaff(uid); 
-            this.loadData(); 
-        } 
+    async deleteStaff(uid) {
+        if(confirm("確定刪除此人員？此動作無法復原。")) {
+            try {
+                await userService.deleteStaff(uid);
+                alert("已刪除");
+                this.loadData();
+            } catch(e) {
+                alert("刪除失敗: " + e.message);
+            }
+        }
     }
 }
