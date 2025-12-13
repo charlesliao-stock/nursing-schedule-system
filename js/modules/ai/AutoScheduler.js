@@ -3,99 +3,115 @@ import { RuleEngine } from "./RuleEngine.js";
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (步進回溯版)
-     * @param {Object} currentSchedule 目前的排班物件 (含 year, month)
-     * @param {Array} staffList 人員列表 (含 constraints)
-     * @param {Object} unitSettings 單位設定 (含 rules, staffRequirements)
-     * @param {Object} preScheduleData 預班資料 (含 submissions)
+     * 啟動排班引擎 (歷史數據整合版)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (安全步進模式)");
+        console.log("🚀 AI 排班引擎啟動 (v3.0 歷史數據整合版)");
 
         try {
-            // --- 1. 上下文準備 (Context Preparation) ---
-            // 這裡進行了嚴格的資料清洗，防止 undefined 錯誤
+            // --- 1. 上下文準備 ---
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
             
-            // --- 2. 包班預填階段 (Preprocessing) ---
+            // --- 2. 包班預填 ---
             console.log("🔹 執行包班預填...");
             this.prefillBatchShifts(context);
 
-            // --- 3. 進入步進式排班主迴圈 (Solver) ---
+            // --- 3. 步進式排班 ---
             console.log("🔹 開始每日步進排班...");
-            
-            // 從第 1 天開始排
             const success = await this.solveDay(1, context);
 
             if (success) {
                 console.log("✅ 排班成功！");
                 return { assignments: context.assignments, logs: context.logs };
             } else {
-                console.warn("⚠️ 排班完成，但可能存在未解的缺口或妥協 (已達回溯上限)");
-                // 即使失敗也回傳目前的進度供參考
+                console.warn("⚠️ 排班完成 (達回溯上限)，結果可能不完美");
                 return { assignments: context.assignments, logs: context.logs }; 
             }
 
         } catch (e) {
-            console.error("❌ 排班引擎發生錯誤:", e);
-            // 回傳空結果與錯誤訊息，避免前端畫面全白
-            return { assignments: {}, logs: [`Critical Error: ${e.message}`] };
+            console.error("❌ 排班引擎崩潰:", e);
+            // 回傳錯誤日誌，讓前端知道發生什麼事
+            return { assignments: {}, logs: [`Critical Error: ${e.message}`, `Stack: ${e.stack}`] };
         }
     }
 
     // ============================================================
-    //  核心邏輯 1: 上下文準備 (高強度防呆)
+    //  核心邏輯 1: 上下文準備 (整合 History)
     // ============================================================
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
-        // 1. 基礎物件防呆：確保所有輸入都不是 null/undefined
+        // 1. 基礎物件防呆 (處理 null 與 undefined)
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
         preScheduleData = preScheduleData || {}; 
         
         const rules = unitSettings.rules || {};
         const settings = unitSettings.settings || {};
-        const submissions = preScheduleData.submissions || {}; // ✅ 關鍵修復：確保 submissions 至少是空物件
+        
+        // 🔥 關鍵修復：Object.entries(null) 會報錯，必須確保是物件
+        const submissions = (preScheduleData.submissions && typeof preScheduleData.submissions === 'object') ? preScheduleData.submissions : {};
+        const historyData = (preScheduleData.history && typeof preScheduleData.history === 'object') ? preScheduleData.history : {};
 
-        // 2. 人員名單清洗與參數補正
+        // 2. 人員清洗
         const validStaffList = (staffList || [])
             .filter(s => s && (s.uid || s.id))
             .map(s => {
                 const newS = { ...s };
                 newS.uid = s.uid || s.id;
                 newS.constraints = s.constraints || {};
-                
-                // 補足 RuleEngine 所需的預設值，防止 crash
                 if (newS.constraints.maxConsecutive === undefined) newS.constraints.maxConsecutive = 7;
                 if (newS.constraints.maxConsecutiveNights === undefined) newS.constraints.maxConsecutiveNights = 4;
                 return newS;
             });
 
-        // 3. 建立儲存結構
+        // 3. 初始化容器
         const assignments = {};
-        const wishes = {}; // 用於區分「預班OFF」與「系統OFF」
-        
+        const wishes = {}; 
+        // 新增：上個月最後一天的班別 (用於 Day 1 檢查)
+        const lastMonthShifts = {}; 
+
         validStaffList.forEach(s => {
             assignments[s.uid] = {};
             wishes[s.uid] = {};
+            lastMonthShifts[s.uid] = null; // 預設無資料
         });
 
-        // 4. 載入預班 (Wishes) - 使用 try-catch 保護
+        // 4. 載入預班 (Wishes)
         try {
             Object.entries(submissions).forEach(([uid, sub]) => {
-                // 確保該員還在名單內，且 sub 物件結構正確
                 if (assignments[uid] && sub && sub.wishes) {
-                    Object.entries(sub.wishes).forEach(([d, wish]) => {
+                    Object.entries(sub.wishes || {}).forEach(([d, wish]) => {
                         const day = parseInt(d);
-                        wishes[uid][day] = wish;      // 記錄原始意願
-                        assignments[uid][day] = wish; // 預填入班表
+                        wishes[uid][day] = wish;
+                        assignments[uid][day] = wish; 
                     });
                 }
             });
-        } catch(e) {
-            console.warn("⚠️ 讀取預班資料時發生輕微錯誤 (已忽略):", e);
-        }
+        } catch(e) { console.warn("預班讀取警告:", e); }
 
-        // 5. 班別定義
+        // 5. 載入歷史資料 (History) - 找出上個月最後一天
+        // historyData 結構: { uid: { 26: 'D', ... 30: 'N' } }
+        try {
+            Object.entries(historyData).forEach(([uid, history]) => {
+                if (assignments[uid] && history) {
+                    // 找出 key 最大的一天 (即上個月最後一天)
+                    const days = Object.keys(history).map(k => parseInt(k)).sort((a,b)=>b-a);
+                    if (days.length > 0) {
+                        const lastDay = days[0];
+                        lastMonthShifts[uid] = history[lastDay];
+                    }
+                }
+            });
+        } catch(e) { console.warn("歷史資料讀取警告:", e); }
+
+        // 6. 人力需求防呆
+        const rawReq = unitSettings.staffRequirements || {};
+        const staffReq = { 
+            D: rawReq.D || {}, 
+            E: rawReq.E || {}, 
+            N: rawReq.N || {} 
+        };
+
+        // 7. 班別定義
         let shiftDefs = settings.shifts || [
             { code: 'D', name: '白班' }, { code: 'E', name: '小夜' }, { code: 'N', name: '大夜' }, { code: 'OFF', name: '休假' }
         ];
@@ -107,12 +123,13 @@ export class AutoScheduler {
             staffList: validStaffList,
             assignments: assignments,
             wishes: wishes, 
+            lastMonthShifts: lastMonthShifts, // ✅ 傳遞歷史資料
             rules: rules,
-            staffReq: unitSettings.staffRequirements || { D: {}, E: {}, N: {} },
+            staffReq: staffReq,
             shiftDefs: shiftDefs,
-            shiftPriority: ['N', 'E', 'D', 'OFF'], // 嘗試填入的優先順序
+            shiftPriority: ['N', 'E', 'D', 'OFF'], 
             logs: [],
-            maxBacktrack: 50000, // 安全閥：最大回溯次數
+            maxBacktrack: 50000, 
             backtrackCount: 0
         };
     }
@@ -122,14 +139,10 @@ export class AutoScheduler {
     // ============================================================
     static prefillBatchShifts(context) {
         context.staffList.forEach(staff => {
-            // 讀取包班偏好 (假設存在於 constraints.batchPref 或 submissions 中)
-            // 這裡統一從 constraints 讀取 (需確保 SubmitPage 寫入位置一致)
             const batchType = staff.constraints?.batchPref; 
-            
             if (staff.constraints?.canBatch && batchType) {
                 for (let day = 1; day <= context.daysInMonth; day++) {
                     const existing = context.assignments[staff.uid][day];
-                    // 邏輯：若格子是空的 (沒預班)，就填入包班；若有 OFF 則不動
                     if (!existing) {
                         context.assignments[staff.uid][day] = batchType;
                     }
@@ -139,92 +152,95 @@ export class AutoScheduler {
     }
 
     // ============================================================
-    //  核心邏輯 3: 每日步進 (Solver)
+    //  核心邏輯 3: 每日步進
     // ============================================================
     static async solveDay(day, context) {
-        // 終止條件：排完最後一天
         if (day > context.daysInMonth) return true;
 
-        // 找出當日空白的人員 (排除已有預班或包班的人)
         const pendingStaff = context.staffList.filter(s => !context.assignments[s.uid][day]);
-        
-        // 隨機打亂順序，確保公平性
         this.shuffleArray(pendingStaff);
 
-        // 進入單日人員填空
         if (await this.solveStaffForDay(day, pendingStaff, 0, context)) {
-            
-            // 當日排完後，檢查人力缺口
             const check = this.checkDailyManpower(day, context);
-            
             if (check.isValid) {
-                // UI 效能優化：每排 3 天讓瀏覽器喘息一下
                 if (day % 3 === 0) await new Promise(r => setTimeout(r, 0));
-
-                // 成功，推進到下一天
                 if (await this.solveDay(day + 1, context)) return true;
-                
-                // 若下一天失敗回傳 false，程式會繼續往下走 -> 觸發本層回溯
             }
         }
 
-        // 死路回溯：還原這一天
         this.rollbackDay(day, pendingStaff, context);
         return false;
     }
 
     // ============================================================
-    //  核心邏輯 4: 單人決策 (DFS)
+    //  核心邏輯 4: 單人決策 (整合 History Check)
     // ============================================================
     static async solveStaffForDay(day, staffList, index, context) {
-        // 這一天的人都排完了
         if (index >= staffList.length) return true;
 
-        // 安全閥檢查
         context.backtrackCount++;
-        if (context.backtrackCount > context.maxBacktrack) {
-            throw new Error("運算量過大，強制中止 (建議檢查規則是否過於嚴苛)");
-        }
+        if (context.backtrackCount > context.maxBacktrack) throw new Error("運算超載");
 
         const staff = staffList[index];
         let candidates = [...context.shiftPriority];
 
-        // --- 特殊規則：預休 OFF 不接 N ---
+        // --- 判斷前一天 (Prev Day) ---
+        let prevAssignment = null;
+        let prevWish = null;
+
+        if (day === 1) {
+            // ✅ Day 1 特殊處理：讀取上個月最後一天 (History)
+            prevAssignment = context.lastMonthShifts[staff.uid]; 
+            // 上個月的預班我們通常不追溯，設為 null 或依需求擴充
+            prevWish = null; 
+        } else {
+            // Day 2+：讀取本月前一天
+            prevAssignment = context.assignments[staff.uid][day - 1];
+            prevWish = context.wishes[staff.uid][day - 1];
+        }
+
+        // --- 規則：預休 OFF 不接 N ---
         if (candidates.includes('N')) {
-            const prevWish = context.wishes[staff.uid][day - 1];      // 昨天是否「預班OFF」
-            const prevAssigned = context.assignments[staff.uid][day - 1]; // 昨天的最終班表
-            
-            // 邏輯：昨天是 OFF 且 這個 OFF 是員工自己要的
-            if (prevAssigned === 'OFF' && (prevWish === 'OFF' || prevWish === 'M_OFF')) {
-                // 剔除 N
+            // 只有在本月內 (Day > 1) 才能判斷是否為「預休」
+            // Day 1 無法判斷上個月是否為預休，故暫時忽略此規則，或視為系統休
+            if (day > 1 && prevAssignment === 'OFF' && (prevWish === 'OFF' || prevWish === 'M_OFF')) {
                 candidates = candidates.filter(c => c !== 'N');
             }
         }
 
-        // 嘗試每個候選班別
+        // --- 嘗試班別 ---
         for (const shift of candidates) {
-            // 暫填
             context.assignments[staff.uid][day] = shift;
             
-            // 呼叫 RuleEngine 驗證 (只檢查 Hard Rules)
-            const result = RuleEngine.validateStaff(
-                context.assignments[staff.uid], 
-                context.daysInMonth, 
-                context.shiftDefs, 
-                context.rules, 
-                staff.constraints
-            );
+            // 呼叫 RuleEngine (需支援 Day 1 邊界檢查)
+            // 為了讓 Day 1 能檢查間隔 (例如上月30是E，今日不能D)
+            // 我們需要在 RuleEngine 內部處理，或者在這裡做簡易的 Hard Check
+            
+            // 簡易 Hard Check: E 接 D, D 接 N
+            let hardCheckPassed = true;
+            if (context.rules.constraints?.minInterval11h && prevAssignment) {
+                if (prevAssignment === 'E' && shift === 'D') hardCheckPassed = false;
+                if (prevAssignment === 'D' && shift === 'N') hardCheckPassed = false;
+            }
 
-            // 如果今天沒有違規
-            if (!result.errors[day]) {
-                // 遞迴排下一個人
-                if (await this.solveStaffForDay(day, staffList, index + 1, context)) {
-                    return true;
+            if (hardCheckPassed) {
+                // 執行完整檢查
+                const result = RuleEngine.validateStaff(
+                    context.assignments[staff.uid], 
+                    context.daysInMonth, 
+                    context.shiftDefs, 
+                    context.rules, 
+                    staff.constraints
+                );
+
+                if (!result.errors[day]) {
+                    if (await this.solveStaffForDay(day, staffList, index + 1, context)) {
+                        return true;
+                    }
                 }
             }
         }
 
-        // 死路：所有班別都試過了都不行 -> 回溯
         delete context.assignments[staff.uid][day];
         return false;
     }
@@ -244,7 +260,9 @@ export class AutoScheduler {
 
         const missing = [];
         ['D', 'E', 'N'].forEach(s => {
-            const req = (context.staffReq[s] && context.staffReq[s][w]) || 0;
+            // ✅ 防呆：確保 staffReq[s] 存在
+            const reqObj = context.staffReq[s] || {};
+            const req = reqObj[w] || 0;
             if (counts[s] < req) missing.push(s);
         });
 
@@ -252,7 +270,6 @@ export class AutoScheduler {
     }
 
     static rollbackDay(day, staffList, context) {
-        // 只清除當下嘗試排的人，保留原本的預班
         staffList.forEach(s => delete context.assignments[s.uid][day]);
     }
 
