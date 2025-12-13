@@ -2,7 +2,9 @@ import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
-import { UnitService } from "../../services/firebase/UnitService.js"; // ✅ 新增引用
+import { UnitService } from "../../services/firebase/UnitService.js"; 
+// ✅ 新增 auth 引用，解決 firebase is not defined 錯誤
+import { auth } from "../../config/firebase.config.js"; 
 
 export class PreScheduleManagePage {
     constructor() {
@@ -17,7 +19,7 @@ export class PreScheduleManagePage {
             prevMonthDays: [],    
             sortConfig: { key: 'staffId', dir: 'asc' }, 
             dragSrcUid: null,
-            currentUser: null // ✅ 儲存當前使用者資訊
+            currentUser: null 
         };
         this.detailModal = null;
     }
@@ -36,28 +38,32 @@ export class PreScheduleManagePage {
     async afterRender() {
         window.routerPage = this; 
         
+        // Modal 防呆
         const modalEl = document.getElementById('detail-modal');
         if (modalEl) {
             this.detailModal = new bootstrap.Modal(modalEl);
         } else {
-            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素，請嘗試清除瀏覽器快取 (Ctrl+F5)。");
+            console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素。");
         }
 
-        // ✅ 1. 先讀取使用者資料，判斷是否為管理員
-        const auth = firebase.auth(); // 假設全域有 firebase，或透過 AuthService 取得
+        // ✅ 修正：直接使用 import 進來的 auth，而不是全域的 firebase.auth()
         if (auth.currentUser) {
-            const userDoc = await userService.getUserData(auth.currentUser.uid);
-            this.state.currentUser = userDoc;
-            // ✅ 2. 如果是管理員，載入單位選單
-            if (userDoc && (userDoc.role === 'admin' || userDoc.role === 'system_admin')) {
-                await this.loadUnits();
+            try {
+                const userDoc = await userService.getUserData(auth.currentUser.uid);
+                this.state.currentUser = userDoc;
+                
+                // 如果是管理員，載入單位選單
+                if (userDoc && (userDoc.role === 'admin' || userDoc.role === 'system_admin')) {
+                    await this.loadUnits();
+                }
+            } catch (error) {
+                console.error("讀取使用者資料失敗", error);
             }
         }
 
         await this.loadData();
     }
 
-    // ✅ 新增：載入所有單位並渲染選單
     async loadUnits() {
         try {
             const units = await UnitService.getAllUnits();
@@ -65,9 +71,7 @@ export class PreScheduleManagePage {
             const container = document.getElementById('unit-selector-container');
             
             if (selector && container) {
-                // 清空舊選項
                 selector.innerHTML = '<option value="" disabled>切換單位...</option>';
-                
                 units.forEach(unit => {
                     const option = document.createElement('option');
                     option.value = unit.id;
@@ -77,8 +81,6 @@ export class PreScheduleManagePage {
                     }
                     selector.appendChild(option);
                 });
-                
-                // 顯示選單
                 container.style.display = 'block';
             }
         } catch (error) {
@@ -86,10 +88,8 @@ export class PreScheduleManagePage {
         }
     }
 
-    // ✅ 新增：處理單位切換
     handleUnitChange(newUnitId) {
         if (!newUnitId) return;
-        // 更新 URL Hash，這會觸發 Router 重新載入頁面
         window.location.hash = `/preschedule/manage?unitId=${newUnitId}&year=${this.state.year}&month=${this.state.month}`;
     }
 
