@@ -1,47 +1,37 @@
 import { RuleEngine } from "./RuleEngine.js";
 
-// ============================================================
-//  0. AI 權重與設定 (移植自 Python 邏輯)
-// ============================================================
+// AI 權重設定
 const WEIGHTS = {
     BASE: 100,
-    NEED_HIGH: 50,      // 人力極缺時的加分
+    NEED_HIGH: 50,      // 人力極缺
     NEED_LOW: 10,       // 人力微缺
-    PREFERENCE: 20,     // 員工願望 (Wish) 或偏好
-    CONTINUITY: 10,     // 連續上同班別 (避免花班)
-    PENALTY_FATIGUE: -80, // 疲勞罰分 (如 N接D)
-    RECOVERY: 20        // OFF 的恢復加分
-};
-
-const SHIFT_TIMES = {
-    'D': { start: 8, end: 16 },
-    'E': { start: 16, end: 24 },
-    'N': { start: 0, end: 8 },  // 跨日需特殊處理
-    'OFF': { start: 0, end: 0 }
+    PREFERENCE: 20,     // 員工願望/偏好
+    CONTINUITY: 10,     // 連續上班
+    PENALTY_FATIGUE: -80, // 疲勞罰分 (如 N->D)
+    RECOVERY: 20        // OFF 的恢復分
 };
 
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (v4.0 AI 積分回溯版)
+     * 啟動排班引擎 (v4.0 積分權重 + 回溯機制 + 包班調節)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v4.0 積分權重 + 回溯機制)");
+        console.log("🚀 AI 排班引擎啟動 (v4.0 Full Version)");
 
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
             
-            // 1. 預填包班 (Pre-fill)
+            // 1. 包班預填
             this.prefillBatchShifts(context);
 
             console.log("🔹 開始每日步進排班...");
             
-            // 2. 每日排班
+            // 2. 每日排班 (遞迴+回溯)
             const success = await this.solveDay(1, context);
 
             if (success) {
                 console.log("✅ 排班成功！");
-                // 3. 全局修剪 (Optional: 如果需要像 Python Step 7 一樣的事後修剪，可在此加入)
             } else {
                 console.warn(`⚠️ 排班勉強完成，最後停留在 Day ${context.maxReachedDay}`);
             }
@@ -54,7 +44,7 @@ export class AutoScheduler {
     }
 
     // ============================================================
-    //  1. 上下文準備 (保持原樣，僅增加 log 初始化)
+    //  1. 上下文準備
     // ============================================================
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
@@ -66,15 +56,16 @@ export class AutoScheduler {
         const submissions = preScheduleData.submissions || {};
         const historyData = preScheduleData.history || {};
 
-        // 人員清洗
+        // 人員清洗與基礎設定
         const validStaffList = (staffList || [])
             .filter(s => s && (s.uid || s.id))
             .map(s => {
                 const newS = { ...s };
                 newS.uid = s.uid || s.id;
                 newS.constraints = s.constraints || {};
-                // 預設參數
+                // 設定預設值以防參數缺失
                 if (newS.constraints.maxConsecutive === undefined) newS.constraints.maxConsecutive = 7;
+                if (newS.constraints.maxConsecutiveNights === undefined) newS.constraints.maxConsecutiveNights = 4;
                 return newS;
             });
 
@@ -90,7 +81,7 @@ export class AutoScheduler {
             lastMonthShifts[s.uid] = 'OFF'; 
         });
 
-        // 載入 Wish & Pref & History (略為簡化，假設資料結構與之前相同)
+        // 讀取預班/偏好/歷史
         try {
             Object.entries(submissions || {}).forEach(([uid, sub]) => {
                 if (assignments[uid]) {
@@ -138,7 +129,7 @@ export class AutoScheduler {
             staffReq: staffReq,
             shiftDefs: shiftDefs,
             logs: [],
-            maxBacktrack: 20000, // 增加回溯上限以適應複雜運算
+            maxBacktrack: 20000, // 增加回溯上限
             backtrackCount: 0,
             maxReachedDay: 0
         };
@@ -173,12 +164,11 @@ export class AutoScheduler {
         if (day > context.maxReachedDay) context.maxReachedDay = day;
         if (day > context.daysInMonth) return true;
 
-        // 3.1 預處理：修剪過剩的包班 (維持您的邏輯)
+        // 3.1 預處理：修剪過剩的包班
         this.adjustBatchOverstaffing(day, context);
 
-        // 3.2 找出待排班人員 (Pending)
-        // 這裡不再隨機 shuffle，而是依「目前工時積分」或「公平性」排序會更好
-        // 暫時維持 shuffle，但在 solveRecursive 內部會進行「班別的評分」
+        // 3.2 找出待排班人員
+        // 過濾掉當天已經有班 (包含 Wish 或 包班預填) 的人
         const pendingStaff = context.staffList.filter(s => !context.assignments[s.uid][day]);
         this.shuffleArray(pendingStaff);
 
@@ -194,14 +184,13 @@ export class AutoScheduler {
         } else {
             context.logs.push(`[Day ${day}] Warn: Manpower shortage. Forced proceed.`);
             console.warn(`⚠️ [Day ${day}] 人力缺口: ${check.missing}`);
-            // 即使缺人也嘗試排下一天 (Soft constraints 策略)
             await this.solveDay(day + 1, context);
             return true;
         }
     }
 
     // ============================================================
-    //  4. AI 核心：計分與遞迴 (Replacing solveStaffForDay)
+    //  4. AI 核心：計分與遞迴 (Recursive Solver)
     // ============================================================
     static async solveRecursive(day, staffList, index, context) {
         // Base Case: 當天所有人都排完了
@@ -213,63 +202,48 @@ export class AutoScheduler {
         const staff = staffList[index];
         const prevShift = context.assignments[staff.uid][day - 1] || 'OFF';
 
-        // 4.1 產生候選班別
-        // 這裡列出所有可能的班，包含 OFF
+        // 4.1 產生候選班別 (Wish 已在 Loop 前被 filter 掉，這裡只處理 pending)
         let possibleShifts = ['D', 'E', 'N', 'OFF'];
         
-        // 如果有 Wish，則候選名單只有 Wish
-        const wish = context.wishes[staff.uid][day];
-        if (wish) possibleShifts = [wish];
-
-        // 4.2 計算每個候選班別的分數
-        const candidates = [];
-        const date = new Date(context.year, context.month - 1, day);
-        const w = date.getDay();
-
-        // 取得當前已排的人力計數 (用於計算 Need 分數)
+        // 4.2 取得當前已排的人力計數 (用於計算 Need 分數)
         const currentCounts = { D: 0, E: 0, N: 0 };
         context.staffList.forEach(s => {
             const sh = context.assignments[s.uid][day];
             if (sh && sh !== 'OFF') currentCounts[sh] = (currentCounts[sh] || 0) + 1;
         });
+        const date = new Date(context.year, context.month - 1, day);
+        const w = date.getDay();
 
+        const candidates = [];
         for (const shift of possibleShifts) {
-            // A. 硬限制檢查 (Hard Constraints)
+            // A. 硬限制檢查
             const { valid, reason } = this.checkHardConstraints(staff, shift, prevShift, context, day);
-            if (!valid) {
-                // context.logs.push(`  x ${staff.name} -> ${shift}: ${reason}`); // 除錯用
-                continue; // 直接剔除
-            }
+            if (!valid) continue; 
 
-            // B. 評分 (Scoring)
+            // B. 評分
             const { score, details } = this.calculateScore(staff, shift, prevShift, context, day, currentCounts, w);
-            
-            candidates.push({
-                shift: shift,
-                score: score,
-                details: details
-            });
+            candidates.push({ shift, score, details });
         }
 
-        // 4.3 排序：分數高者優先嘗試 (Heuristic Search)
+        // 4.3 排序：分數高者優先嘗試
         candidates.sort((a, b) => b.score - a.score);
 
         // 4.4 嘗試指派
+        let foundValidShift = false;
         for (const cand of candidates) {
             const shift = cand.shift;
             
-            // 剪枝 (Pruning): 如果該班已滿，且還有其他選擇 (如 OFF)，且這不是 Wish，則跳過
-            // 但為了避免死胡同，如果分數很高，還是試試看
+            // 剪枝 (Pruning): 如果該班已滿且非高分連續班，則跳過 (提升效能)
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
-            if (shift !== 'OFF' && !wish && currentCounts[shift] >= req) {
-                // 只有當分數極高 (例如連續性需求) 時才考慮超排，否則跳過
-                if (cand.score < 120) continue; 
+            if (shift !== 'OFF' && currentCounts[shift] >= req && cand.score < 120) {
+                continue; 
             }
 
             // 執行指派
             context.assignments[staff.uid][day] = shift;
+            foundValidShift = true;
             
-            // 驗證整體規則 (RuleEngine)
+            // 驗證整體規則
             const ruleCheck = RuleEngine.validateStaff(
                 context.assignments[staff.uid], 
                 context.daysInMonth, 
@@ -281,54 +255,42 @@ export class AutoScheduler {
             if (!ruleCheck.errors[day]) {
                 // 遞迴下一位
                 if (await this.solveRecursive(day, staffList, index + 1, context)) {
-                    return true; // 成功找到路徑
+                    return true;
                 }
             }
 
             // 回溯 (Backtrack)
-            // context.logs.push(`  << Backtrack: ${staff.name} revert ${shift}`);
             delete context.assignments[staff.uid][day];
         }
 
-        return false; // 無解
+        // 如果連 OFF 都不能排 (例如連續上班天數爆了且無法 OFF)，這裡會回傳 false，觸發上一層的回溯
+        return false;
     }
 
     // ============================================================
     //  5. 輔助邏輯：硬限制與評分
     // ============================================================
     
-    /**
-     * 硬限制檢查 (違反則完全不可選)
-     */
     static checkHardConstraints(staff, shift, prevShift, context, day) {
-        // 1. 基本的 N 接 D 限制 (視規則而定，假設為硬限制或極高罰分)
-        // 這裡示範硬限制：昨晚 E 不能接今早 D (間隔 < 11hr)
+        // 1. 間隔限制
         if (context.rules.constraints?.minInterval11h) {
-            if (prevShift === 'E' && shift === 'D') {
-                return { valid: false, reason: "Interval < 11h (E->D)" };
-            }
-            if (prevShift === 'D' && shift === 'N') { // 假設 D(16下) 接 N(00上) = 8hr
-                return { valid: false, reason: "Interval < 11h (D->N)" };
-            }
+            if (prevShift === 'E' && shift === 'D') return { valid: false, reason: "Interval < 11h" };
+            if (prevShift === 'D' && shift === 'N') return { valid: false, reason: "Interval < 11h" };
         }
         
-        // 2. N 前限制 (如果 Day1 是 N，Day0 必須是 OFF 或 N)
-        // 這是護理界常見規則，視您的需求開啟
-        // if (shift === 'N' && prevShift !== 'OFF' && prevShift !== 'N') {
-        //    return { valid: false, reason: "N must strictly follow N or OFF" };
-        // }
-
-        // 3. 孕婦保護
+        // 2. 孕婦保護
         if (staff.constraints.isPregnant && (shift === 'N' || shift === 'E')) {
             return { valid: false, reason: "Pregnant protection" };
+        }
+
+        // 3. 連續夜班限制 (Soft -> Hard 視規則強度)
+        if (shift === 'N') {
+             // 簡易檢查，詳細由 RuleEngine 把關
         }
 
         return { valid: true, reason: "" };
     }
 
-    /**
-     * 計算分數 (Step 4 核心)
-     */
     static calculateScore(staff, shift, prevShift, context, day, currentCounts, w) {
         let score = 0;
         const details = [];
@@ -336,46 +298,27 @@ export class AutoScheduler {
         // 1. 基礎分
         const base = (shift === 'OFF') ? 50 : WEIGHTS.BASE;
         score += base;
-        // details.push(`Base(${base})`);
 
-        // 2. 需求權重 (Need)
+        // 2. 需求權重
         if (shift !== 'OFF') {
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
             const current = currentCounts[shift] || 0;
-            
             if (current < req) {
                 score += WEIGHTS.NEED_HIGH;
                 details.push("Need++");
             } else if (current >= req) {
-                score -= 50; // 已滿，降分
+                score -= 50; 
                 details.push("Full--");
             }
         }
 
-        // 3. 個人偏好 (Pref)
+        // 3. 偏好與連續性
         const prefs = context.preferences[staff.uid];
-        if (prefs.p1 === shift) {
-            score += WEIGHTS.PREFERENCE;
-            details.push("P1");
-        }
-        if (prefs.p2 === shift) {
-            score += 10;
-            details.push("P2");
-        }
+        if (prefs.p1 === shift) { score += WEIGHTS.PREFERENCE; details.push("P1"); }
+        if (prevShift === shift && shift !== 'OFF') { score += WEIGHTS.CONTINUITY; details.push("Cont."); }
+        if (prevShift === 'N' && shift === 'D') { score += WEIGHTS.PENALTY_FATIGUE; details.push("Fatigue"); }
 
-        // 4. 連續性與疲勞 (Continuity & Fatigue)
-        if (prevShift === shift && shift !== 'OFF') {
-            score += WEIGHTS.CONTINUITY;
-            details.push("Cont.");
-        }
-
-        // N 接 D (軟限制，雖不違法但很累) - 假設 User 允許 N(08:30下) 接 D(08:00上) 但不建議
-        if (prevShift === 'N' && shift === 'D') {
-            score += WEIGHTS.PENALTY_FATIGUE;
-            details.push("N->D fatigue");
-        }
-
-        // 累積上班天數過多，OFF 分數加成
+        // 4. 需要休息 (連續上班太多天，OFF 分數變高)
         const consecutive = this.calculateConsecutiveWork(staff.uid, day, context);
         if (shift === 'OFF' && consecutive > 5) {
             score += (consecutive * 10);
@@ -385,11 +328,7 @@ export class AutoScheduler {
         return { score, details: details.join(',') };
     }
 
-    // ============================================================
-    //  6. 其他工具函數
-    // ============================================================
     static adjustBatchOverstaffing(day, context) {
-        // (維持您原有的邏輯，這是很好的 Pruning 機制)
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
 
@@ -415,9 +354,7 @@ export class AutoScheduler {
                 });
 
                 for (let i = 0; i < cutCount && i < assignedStaff.length; i++) {
-                    const staffToCut = assignedStaff[i];
-                    context.assignments[staffToCut.uid][day] = 'OFF';
-                    context.logs.push(`[Day ${day}] Cut Batch: ${staffToCut.uid} (${shift}->OFF)`);
+                    context.assignments[assignedStaff[i].uid][day] = 'OFF';
                 }
             }
         });
