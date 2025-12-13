@@ -1,66 +1,157 @@
-// js/modules/preschedule/templates/PreScheduleManageTemplate.js
-
 export const PreScheduleManageTemplate = {
-    // ... (renderLayout 保持不變) ...
+    // 1. 主框架
+    renderLayout(year, month) {
+        return `
+            <div class="container-fluid p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="d-flex align-items-center">
+                        <h2 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核
+                        </h2>
+                        <span class="badge bg-white text-dark border ms-3 fs-6">
+                            ${year}年 ${month}月
+                        </span>
+                    </div>
+                    <div>
+                        <button class="btn btn-outline-secondary me-2" onclick="window.history.back()">
+                            <i class="fas fa-arrow-left"></i> 返回
+                        </button>
+                        <button class="btn btn-primary" onclick="window.routerPage.saveReview()">
+                            <i class="fas fa-save"></i> 儲存並轉入排班表
+                        </button>
+                    </div>
+                </div>
 
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card shadow-sm border-0 h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted mb-2">提交進度</h6>
+                                <div class="d-flex align-items-end">
+                                    <h3 class="mb-0 fw-bold text-success" id="submitted-count">0</h3>
+                                    <span class="text-muted ms-2">/ <span id="total-staff-count">0</span> 人</span>
+                                </div>
+                                <div class="progress mt-2" style="height: 6px;">
+                                    <div id="progress-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card shadow-sm border-0 h-100">
+                            <div class="card-body d-flex align-items-center justify-content-between">
+                                <div>
+                                    <h6 class="text-muted mb-1">功能操作</h6>
+                                    <div class="text-muted small">請點擊下方表格標題進行排序，或拖曳「#」欄位調整順序。</div>
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline-primary btn-sm me-2" onclick="window.routerPage.exportExcel()">
+                                        <i class="fas fa-file-excel"></i> 匯出報表
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="window.routerPage.remindUnsubmitted()">
+                                        <i class="fas fa-bell"></i> 催繳通知
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow border-0">
+                    <div class="card-body p-0">
+                        <div id="review-table-container">
+                            <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal fade" id="detail-modal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">預班詳細內容</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" id="modal-body-content"></div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                            <button type="button" class="btn btn-primary" onclick="window.routerPage.saveDetail()">儲存變更</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // 2. 渲染審核表格 (包含排序、拖曳、新欄位)
     renderReviewTable(staffList, submissions, year, month, options = {}) {
         const { sortKey = 'staffId', sortDir = 'asc' } = options;
-        
-        // 輔助函式：產生排序圖示
+
         const getSortIcon = (key) => {
-            if (sortKey !== key) return '<i class="fas fa-sort text-muted opacity-25"></i>';
+            if (sortKey !== key) return '<i class="fas fa-sort text-muted opacity-25 ms-1"></i>';
             return sortDir === 'asc' 
-                ? '<i class="fas fa-sort-up text-dark"></i>' 
-                : '<i class="fas fa-sort-down text-dark"></i>';
+                ? '<i class="fas fa-sort-up text-dark ms-1"></i>' 
+                : '<i class="fas fa-sort-down text-dark ms-1"></i>';
         };
 
-        // 1. 表頭：新增 "員編" 與 "組別"
-        // 注意：員編加入 onclick 事件以支援排序
         let html = `
         <div class="table-responsive">
-            <table class="table table-bordered table-hover align-middle" id="review-table">
-                <thead class="table-light sticky-top">
+            <table class="table table-hover align-middle mb-0" id="review-table">
+                <thead class="bg-light sticky-top" style="z-index: 10;">
                     <tr>
-                        <th style="width: 40px;">#</th> <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">
+                        <th style="width: 50px;" class="text-center">#</th> <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">
                             員編 ${getSortIcon('staffId')}
                         </th>
+                        
                         <th style="width: 120px;">姓名</th>
-                        <th style="width: 80px; cursor: pointer;" onclick="window.routerPage.handleSort('group')">
+                        
+                        <th style="width: 90px; cursor: pointer;" onclick="window.routerPage.handleSort('group')">
                             組別 ${getSortIcon('group')}
                         </th>
-                        <th>預班內容 (含上月月底班別)</th>
-                        <th style="width: 250px;">特註 / 偏好</th> <th style="width: 100px;">狀態</th>
+
+                        <th style="min-width: 350px;">預班內容 (含上月月底)</th>
+
+                        <th style="min-width: 250px; max-width: 300px;">特註 / 偏好</th>
+
+                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('status')">
+                            狀態 ${getSortIcon('status')}
+                        </th>
+                        
                         <th style="width: 80px;">操作</th>
                     </tr>
                 </thead>
-                <tbody id="review-table-body">
+                <tbody>
         `;
 
-        // 2. 表格內容
         if (staffList.length === 0) {
-            html += `<tr><td colspan="8" class="text-center py-4 text-muted">無資料</td></tr>`;
+            html += `<tr><td colspan="8" class="text-center py-5 text-muted">目前尚無人員資料</td></tr>`;
         } else {
-            staffList.forEach((staff, index) => {
+            staffList.forEach((staff) => {
                 const sub = submissions[staff.uid] || {};
                 const wishes = sub.wishes || {};
-                const updated = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleString() : '未提交';
-                const statusBadge = sub.isSubmitted 
-                    ? '<span class="badge bg-success">已送出</span>' 
-                    : '<span class="badge bg-secondary">未填寫</span>';
+                
+                // 狀態顯示
+                const isSubmitted = sub.isSubmitted;
+                const statusBadge = isSubmitted 
+                    ? `<span class="badge bg-success-subtle text-success border border-success px-2 py-1">已送出</span>` 
+                    : `<span class="badge bg-secondary-subtle text-secondary border px-2 py-1">未填寫</span>`;
+                const updateTime = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleDateString() : '';
 
-                // 處理特註顯示 (包含包班者的偏好)
-                let noteContent = sub.note || '';
-                // 即使是包班 (canBatch)，也要顯示 wishes 摘要，避免資訊遺漏
-                const wishSummary = this.getWishSummary(wishes, year, month); 
-                if (wishSummary) {
-                    noteContent += noteContent ? `<br><small class="text-primary">${wishSummary}</small>` : `<small class="text-primary">${wishSummary}</small>`;
+                // 特註與偏好摘要 (修正: 即使能包班也要顯示 wishes)
+                let noteHtml = '';
+                if (sub.note) {
+                    noteHtml += `<div class="mb-1 text-dark" style="white-space: pre-wrap; font-size: 0.9rem;">${sub.note}</div>`;
                 }
-                if (!noteContent) noteContent = '<span class="text-muted small">-</span>';
+                const wishSummary = this.getWishSummary(wishes);
+                if (wishSummary) {
+                    noteHtml += `<div class="text-primary small"><i class="fas fa-star me-1"></i>${wishSummary}</div>`;
+                }
+                if (!noteHtml) noteHtml = '<span class="text-muted small">-</span>';
 
-                // 產生上一月月底 + 本月預班的視覺化格子 (簡化版)
-                const gridHtml = this.renderReviewGrid(staff, wishes, year, month);
+                // 產生格子 (包含上個月)
+                const gridHtml = this.renderGridVisual(staff, wishes, year, month);
 
-                // Row 加入 draggable 屬性
                 html += `
                     <tr draggable="true" 
                         data-uid="${staff.uid}" 
@@ -69,21 +160,34 @@ export const PreScheduleManageTemplate = {
                         ondragover="window.routerPage.handleDragOver(event)" 
                         ondrop="window.routerPage.handleDrop(event)">
                         
-                        <td class="text-center text-muted cursor-grab" title="拖曳以排序">
+                        <td class="text-center text-muted" style="cursor: grab;" title="拖曳排序">
                             <i class="fas fa-grip-vertical"></i>
                         </td>
+
                         <td class="fw-bold text-secondary">${staff.staffId || ''}</td>
+
                         <td>
-                            <div class="fw-bold">${staff.name}</div>
+                            <div class="fw-bold text-dark">${staff.name}</div>
                             <div class="small text-muted">${staff.rank || ''}</div>
                         </td>
-                        <td><span class="badge bg-light text-dark border">${staff.group || '無'}</span></td>
-                        <td class="p-1">${gridHtml}</td>
-                        <td class="text-start" style="white-space: pre-wrap; font-size: 0.9em;">${noteContent}</td>
-                        <td class="text-center">${statusBadge}<br><small class="text-muted" style="font-size:0.7em">${updated}</small></td>
+
+                        <td><span class="badge bg-light text-dark border">${staff.group || '-'}</span></td>
+
+                        <td class="py-2">${gridHtml}</td>
+
+                        <td class="text-start align-top py-3">${noteHtml}</td>
+
                         <td class="text-center">
-                            <button class="btn btn-sm btn-outline-primary" onclick="window.routerPage.openDetailModal('${staff.uid}')">
-                                <i class="fas fa-edit"></i>
+                            ${statusBadge}
+                            <div class="small text-muted mt-1" style="font-size:0.75rem">${updateTime}</div>
+                        </td>
+
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary rounded-circle" 
+                                    style="width:32px; height:32px;"
+                                    onclick="window.routerPage.openDetailModal('${staff.uid}')" 
+                                    title="編輯">
+                                <i class="fas fa-pen"></i>
                             </button>
                         </td>
                     </tr>
@@ -95,64 +199,83 @@ export const PreScheduleManageTemplate = {
         return html;
     },
 
-    // 輔助：產生預班格子 (包含前一個月月底 6 天)
-    renderReviewGrid(staff, wishes, year, month) {
-        // 這裡需要 routerPage 提供的上個月資料 (prevMonthData)
-        // 假設資料已經合併在 staff 物件或全域變數中，這裡先做 UI 結構
-        // 為了簡單起見，我們畫一條橫向 scroll 的容器
-        
-        let html = '<div class="d-flex overflow-auto" style="max-width: 400px; gap: 2px;">';
-        
-        // 1. 渲染上個月月底 6 天 (假如有資料)
-        // 這部分需要 Logic 層傳入資料，這裡先用 placeholder 邏輯
-        const prevData = staff.prevMonthShifts || {}; // 預期格式: { 25: 'D', 26: 'N'... }
-        const prevDays = staff.prevMonthDays || []; // [25, 26, 27, 28, 29, 30]
+    // 3. 視覺化格子 (上月月底 6 天 + 本月預班)
+    renderGridVisual(staff, wishes, year, month) {
+        let html = '<div class="d-flex align-items-center overflow-auto pb-1" style="max-width: 450px;">';
+
+        // --- A. 上個月月底 6 天 ---
+        // 這些資料來自 Logic 層計算並注入到 staff 物件中
+        const prevDays = staff.prevMonthDays || []; 
+        const prevShifts = staff.prevMonthShifts || {};
 
         prevDays.forEach(d => {
-            const shift = prevData[d] || '';
-            const style = shift ? 'bg-secondary text-white opacity-50' : 'bg-light text-muted border-dashed';
-            // 如果是空的，允許點擊輸入 (邏輯在 Page 處理)
-            const clickAttr = !shift ? `onclick="window.routerPage.editPrevShift('${staff.uid}', ${d})"` : '';
+            const shift = prevShifts[d] || '';
+            // 若有值顯示灰色，若無值顯示虛線 (提示可填)
+            let styleClass = shift 
+                ? 'bg-secondary text-white opacity-50 border-secondary' 
+                : 'bg-white text-muted border-secondary border-dashed';
+            
+            // 點擊事件：手動補填前月班表
+            const onClick = `onclick="window.routerPage.editPrevShift('${staff.uid}', ${d})"`
+            
             html += `
-                <div class="text-center border rounded" style="min-width: 24px; font-size: 0.75rem; ${clickAttr ? 'cursor:pointer' : ''}" title="上月 ${d} 日">
-                    <div class="bg-light text-muted border-bottom" style="font-size:0.6rem">${d}</div>
-                    <div class="${style}" style="height:20px; line-height:20px;">${shift || '?'}</div>
+                <div class="text-center me-1 rounded border ${styleClass}" 
+                     style="min-width: 24px; cursor: pointer;" 
+                     title="上月 ${d} 日 (點擊編輯)" ${onClick}>
+                    <div class="bg-light border-bottom text-muted" style="font-size: 0.6rem; line-height: 12px;">${d}</div>
+                    <div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${shift || '?'}</div>
                 </div>
             `;
         });
 
-        if(prevDays.length > 0) {
-            html += '<div class="border-start mx-1"></div>'; // 分隔線
+        if (prevDays.length > 0) {
+            html += '<div class="border-end mx-2" style="height: 30px; border-color: #ddd;"></div>';
         }
 
-        // 2. 渲染本月預班 (只顯示有填的)
-        let hasWish = false;
-        for(let d=1; d<=31; d++) {
-            if(wishes[d]) {
-                hasWish = true;
+        // --- B. 本月預班 (只顯示有填寫的日期) ---
+        let hasWishes = false;
+        // 簡單遍歷 1~31 日
+        for (let d = 1; d <= 31; d++) {
+            if (wishes[d]) {
+                hasWishes = true;
                 const w = wishes[d];
-                let colorClass = 'bg-primary text-white';
-                if(w==='OFF') colorClass = 'bg-secondary text-white';
+                let bgClass = 'bg-primary text-white border-primary';
+                if (w === 'OFF') bgClass = 'bg-secondary text-white border-secondary';
+                if (w === 'M_OFF') bgClass = 'bg-dark text-white border-dark';
+
                 html += `
-                    <div class="text-center border rounded" style="min-width: 24px; font-size: 0.75rem;">
-                        <div class="bg-light border-bottom" style="font-size:0.6rem">${d}</div>
-                        <div class="${colorClass}" style="height:20px; line-height:20px;">${w}</div>
+                    <div class="text-center me-1 rounded border ${bgClass}" style="min-width: 24px;">
+                        <div class="bg-white text-dark border-bottom opacity-75" style="font-size: 0.6rem; line-height: 12px;">${d}</div>
+                        <div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${w}</div>
                     </div>
                 `;
             }
         }
-        if(!hasWish) html += '<span class="text-muted small my-auto ps-2">無預班需求</span>';
+
+        if (!hasWishes) {
+            html += '<span class="text-muted small ms-1">無預班</span>';
+        }
 
         html += '</div>';
         return html;
     },
 
-    getWishSummary(wishes, year, month) {
-        // 簡單統計： N:3, OFF:5
+    getWishSummary(wishes) {
+        if (!wishes) return '';
         const counts = {};
-        Object.values(wishes).forEach(w => counts[w] = (counts[w]||0)+1);
+        Object.values(wishes).forEach(w => {
+            counts[w] = (counts[w] || 0) + 1;
+        });
         const parts = [];
-        Object.entries(counts).forEach(([k, v]) => parts.push(`${k}:${v}`));
+        // 優先顯示 OFF
+        if (counts['OFF']) parts.push(`OFF:${counts['OFF']}`);
+        if (counts['M_OFF']) parts.push(`管休:${counts['M_OFF']}`);
+        
+        Object.keys(counts).forEach(key => {
+            if (key !== 'OFF' && key !== 'M_OFF') {
+                parts.push(`${key}:${counts[key]}`);
+            }
+        });
         return parts.join(', ');
     }
 };
