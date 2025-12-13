@@ -1,5 +1,5 @@
 // ✅ 關鍵修改： ?v=2.2 (再次強制更新)
-import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js?v=2.2"; 
+import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate1.js?v=2.2"; 
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
