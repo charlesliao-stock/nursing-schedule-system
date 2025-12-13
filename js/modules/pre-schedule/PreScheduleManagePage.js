@@ -18,25 +18,36 @@ export class PreScheduleManagePage {
         const user = authService.getProfile();
         const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
         
-        let unitOptions = '<option value="" disabled selected>請選擇單位...</option>';
+        // 1. 預先準備單位選項 HTML (避免畫面閃爍)
+        let unitOptions = '<option value="">載入中...</option>';
         let unitSelectDisabled = '';
 
-        if (isAdmin) {
-            const units = await UnitService.getAllUnits();
-            unitOptions += units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-        } else {
-            const units = await UnitService.getUnitsByManager(user.uid);
-            if(units.length === 0 && user.unitId) {
-                const u = await UnitService.getUnitById(user.unitId);
-                if(u) units.push(u);
-            }
-            if (units.length > 0) {
-                unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
-                if (units.length === 1) unitOptions = units.map(u => `<option value="${u.unitId}" selected>${u.unitName}</option>`).join('');
+        try {
+            let units = [];
+            if (isAdmin) {
+                units = await UnitService.getAllUnits();
+                // 系統管理員：預設顯示提示選項
+                unitOptions = `<option value="" disabled selected>請選擇管理單位...</option>` + 
+                              units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             } else {
-                unitOptions = '<option value="">無權限</option>';
-                unitSelectDisabled = 'disabled';
+                units = await UnitService.getUnitsByManager(user.uid);
+                // Fallback: 若非管理職但有綁定單位
+                if(units.length === 0 && user.unitId) {
+                    const u = await UnitService.getUnitById(user.unitId);
+                    if(u) units.push(u);
+                }
+
+                if (units.length > 0) {
+                    unitOptions = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
+                    // 只有一個單位時，disabled 屬性可選用 (這裡保留可選但只有一項)
+                } else {
+                    unitOptions = '<option value="">無權限</option>';
+                    unitSelectDisabled = 'disabled';
+                }
             }
+        } catch (e) {
+            console.error("單位載入失敗", e);
+            unitOptions = '<option value="">載入失敗</option>';
         }
 
         return `
@@ -49,7 +60,9 @@ export class PreScheduleManagePage {
                 <div class="card shadow-sm mb-4 border-left-primary">
                     <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
                         <label class="fw-bold mb-0 text-nowrap"><i class="fas fa-hospital-user me-1"></i>管理單位：</label>
-                        <select id="unit-select" class="form-select w-auto fw-bold text-primary" ${unitSelectDisabled}>${unitOptions}</select>
+                        <select id="unit-select" class="form-select w-auto fw-bold text-primary" ${unitSelectDisabled}>
+                            ${unitOptions}
+                        </select>
                         <div class="vr mx-2"></div>
                         <button id="btn-add" class="btn btn-primary w-auto text-nowrap" disabled>
                             <i class="fas fa-plus"></i> 新增預班表
@@ -198,8 +211,11 @@ export class PreScheduleManagePage {
             if(document.getElementById('chk-use-defaults').checked) this.setDefaultDates();
         });
 
-        // 若有預選值，自動載入
-        if (unitSelect.value) {
+        // ✅ 自動載入邏輯：若非管理員且有預設值，自動載入
+        const user = authService.getProfile();
+        const isAdmin = user.role === 'system_admin' || user.originalRole === 'system_admin';
+        
+        if (!isAdmin && unitSelect.value) {
             this.loadList(unitSelect.value);
         }
     }
@@ -229,6 +245,8 @@ export class PreScheduleManagePage {
                 else if (now >= p.settings.openDate && now <= p.settings.closeDate) statusBadge = '<span class="badge bg-success">開放中</span>';
                 else statusBadge = '<span class="badge bg-dark">已截止</span>';
 
+                if (p.status === 'closed') statusBadge = '<span class="badge bg-info text-dark">已封存</span>';
+
                 return `
                     <tr>
                         <td class="fw-bold fs-5 text-primary">${p.year}-${String(p.month).padStart(2,'0')}</td>
@@ -252,6 +270,7 @@ export class PreScheduleManagePage {
     }
 
     goToEdit(year, month) {
+        // 跳轉到大表頁，帶入參數
         window.location.hash = `/pre-schedule/edit?unitId=${this.targetUnitId}&year=${year}&month=${month}`;
     }
 
@@ -259,8 +278,10 @@ export class PreScheduleManagePage {
         const monthStr = document.getElementById('edit-month').value;
         if (!monthStr) return;
         const [y, m] = monthStr.split('-').map(Number);
+        
         const today = new Date().toISOString().split('T')[0];
-        const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0];
+        const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0]; // 預設當月15號
+        
         document.getElementById('edit-open').value = today;
         document.getElementById('edit-close').value = closeDate;
     }
@@ -299,15 +320,18 @@ export class PreScheduleManagePage {
             const savedStaffIds = data.staffIds || [];
             const savedSettings = data.staffSettings || {};
             
-            // 批次取得所有人資料 (效能考量：這裡假設人數不多，若多需優化)
+            // 使用 supportStaffIds 判斷誰是支援人員
+            const supportStaffIds = data.supportStaffIds || [];
+
+            // 批次取得所有人資料
             const promises = savedStaffIds.map(uid => userService.getUserData(uid));
             const users = await Promise.all(promises);
 
             this.selectedStaff = users.filter(u => u).map(s => ({
                 uid: s.uid, name: s.name, rank: s.rank, staffId: s.staffId,
                 tempGroup: savedSettings[s.uid]?.group || s.group || '',
-                // 判斷是否為支援 (若該員 unitId 不等於當前 unitId)
-                isSupport: s.unitId !== this.targetUnitId
+                // 判斷是否為支援人員
+                isSupport: supportStaffIds.includes(s.uid) || s.unitId !== this.targetUnitId
             }));
             
             this.renderGroupInputs(groups, s.groupLimits || {});
@@ -436,6 +460,7 @@ export class PreScheduleManagePage {
     }
 
     addStaffFromSearch(uid, name, rank, staffId, group, userUnitId) {
+        // 判斷是否為支援人員：若該員單位 ID != 當前目標單位 ID
         const isSupport = userUnitId !== this.targetUnitId;
         this.selectedStaff.push({ uid, name, rank, staffId, tempGroup: group, isSupport });
         document.getElementById('search-results-dropdown').style.display = 'none';
@@ -501,6 +526,7 @@ export class PreScheduleManagePage {
         const staffSettings = {};
         this.selectedStaff.forEach(s => staffSettings[s.uid] = { group: s.tempGroup });
 
+        // 收集支援人員 ID
         const supportStaffIds = this.selectedStaff.filter(s => s.isSupport).map(s => s.uid);
 
         const data = {
@@ -517,7 +543,7 @@ export class PreScheduleManagePage {
             },
             staffIds: this.selectedStaff.map(s => s.uid),
             staffSettings: staffSettings,
-            supportStaffIds: supportStaffIds, // 儲存支援人員ID
+            supportStaffIds: supportStaffIds, // ✅ 儲存支援人員
             status: 'open'
         };
 
