@@ -3,14 +3,13 @@ import { RuleEngine } from "./RuleEngine.js";
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (v3.3 Day 1 深度除錯版)
+     * 啟動排班引擎 (v3.4 偏好與拒絕原因診斷版)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.time("AI_Run_Time");
-        console.log("🚀 AI 排班引擎啟動 (v3.3 Day 1 深度除錯版)");
+        console.log("🚀 AI 排班引擎啟動 (v3.4 診斷版)");
 
         try {
-            // --- 1. 上下文準備 ---
+            // --- 1. 上下文準備 (含詳細人員偏好檢查) ---
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
             
             // --- 2. 包班預填 ---
@@ -20,7 +19,6 @@ export class AutoScheduler {
             console.log("🔹 開始每日步進排班...");
             const success = await this.solveDay(1, context);
 
-            console.timeEnd("AI_Run_Time");
             if (success) {
                 console.log("✅ 排班成功！");
                 return { assignments: context.assignments, logs: context.logs };
@@ -36,10 +34,10 @@ export class AutoScheduler {
     }
 
     // ============================================================
-    //  核心邏輯 1: 上下文準備
+    //  核心邏輯 1: 上下文準備 (新增人員偏好檢查 Log)
     // ============================================================
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
-        // ... (基礎防呆同前版)
+        // 基礎防呆
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
         preScheduleData = preScheduleData || {}; 
@@ -100,20 +98,31 @@ export class AutoScheduler {
             });
         } catch(e) {}
 
-        // 🔥 關鍵修正：將歷史資料注入 assignments[0]
-        // 這樣 RuleEngine 在檢查 Day 1 時，讀取 assignments[0] 就不會是 undefined
+        // 注入 Day 0
         validStaffList.forEach(s => {
             assignments[s.uid][0] = lastMonthShifts[s.uid];
         });
 
+        // 🔥 [診斷 1] 列出所有人員的讀入狀態
+        console.group("👥 [AI Debug] 人員資料與偏好總檢");
+        validStaffList.forEach(s => {
+            const sub = submissions[s.uid] || {};
+            const pref = sub.preferences || {}; // 讀取 preferences 欄位
+            const wishCount = Object.keys(wishes[s.uid] || {}).length;
+            
+            // 從 constraints 或 preferences 讀取包班
+            const batch = s.constraints.batchPref || pref.batch || "無";
+            const p1 = pref.priority1 || "-";
+            const p2 = pref.priority2 || "-";
+
+            console.log(`- ${s.name}: [包班:${batch}] [志願:${p1}>${p2}] [預班數:${wishCount}] [上月:${lastMonthShifts[s.uid]}]`);
+        });
+        console.groupEnd();
+
         // 人力需求
         const rawReq = unitSettings.staffRequirements || {};
         const staffReq = { D: rawReq.D || {}, E: rawReq.E || {}, N: rawReq.N || {} };
-
-        // 班別定義
-        let shiftDefs = settings.shifts || [
-            { code: 'D', name: '白班' }, { code: 'E', name: '小夜' }, { code: 'N', name: '大夜' }, { code: 'OFF', name: '休假' }
-        ];
+        const shiftDefs = settings.shifts || [];
 
         return {
             year: currentSchedule.year,
@@ -128,7 +137,7 @@ export class AutoScheduler {
             shiftDefs: shiftDefs,
             shiftPriority: ['N', 'E', 'D', 'OFF'], 
             logs: [],
-            maxBacktrack: 20000, 
+            maxBacktrack: 10000, 
             backtrackCount: 0,
             maxReachedDay: 0
         };
@@ -136,8 +145,12 @@ export class AutoScheduler {
 
     static prefillBatchShifts(context) {
         context.staffList.forEach(staff => {
-            const batchType = staff.constraints?.batchPref; 
-            if (staff.constraints?.canBatch && batchType) {
+            // 同步檢查 constraints 和 submissions 裡的包班設定
+            const sub = (context.preScheduleData?.submissions || {})[staff.uid] || {};
+            const pref = sub.preferences || {};
+            const batchType = staff.constraints?.batchPref || pref.batch; 
+
+            if ((staff.constraints?.canBatch || pref.batch) && batchType) {
                 for (let day = 1; day <= context.daysInMonth; day++) {
                     if (!context.assignments[staff.uid][day]) {
                         context.assignments[staff.uid][day] = batchType;
@@ -163,9 +176,8 @@ export class AutoScheduler {
                 if (day % 3 === 0) await new Promise(r => setTimeout(r, 0));
                 if (await this.solveDay(day + 1, context)) return true;
             } else {
-                // Debug Day 1 Manpower issue
                 if (day === 1) {
-                    console.log(`❌ Day 1 人力不足細節: ${check.missing}`);
+                    console.warn(`❌ [Day 1] 人力不足，無法推進! 細節: ${check.missing}`);
                 }
             }
         }
@@ -175,7 +187,7 @@ export class AutoScheduler {
     }
 
     // ============================================================
-    //  核心邏輯 4: 單人決策 (含 Day 1 Debug)
+    //  核心邏輯 4: 單人決策 (含 Day 1 詳細拒絕原因)
     // ============================================================
     static async solveStaffForDay(day, staffList, index, context) {
         if (index >= staffList.length) return true;
@@ -186,11 +198,10 @@ export class AutoScheduler {
         const staff = staffList[index];
         let candidates = [...context.shiftPriority];
 
-        // --- 前一天判斷 (直接讀 assignments[day-1] 因為我們已經注入了 Day 0) ---
         const prevAssignment = context.assignments[staff.uid][day - 1] || 'OFF';
-        const prevWish = context.wishes[staff.uid][day - 1]; // Day 0 不會有 wish, undefined
+        const prevWish = context.wishes[staff.uid][day - 1]; 
 
-        // 規則：預休 OFF 不接 N (Day 1 無預休 wish, 此條 pass)
+        // 規則：預休 OFF 不接 N
         if (candidates.includes('N')) {
             if (day > 1 && prevAssignment === 'OFF' && (prevWish === 'OFF' || prevWish === 'M_OFF')) {
                 candidates = candidates.filter(c => c !== 'N');
@@ -202,9 +213,11 @@ export class AutoScheduler {
             
             // 簡易 Hard Check
             let hardCheckPassed = true;
+            let hardCheckReason = "";
+            
             if (context.rules.constraints?.minInterval11h) {
-                if (prevAssignment === 'E' && shift === 'D') hardCheckPassed = false;
-                if (prevAssignment === 'D' && shift === 'N') hardCheckPassed = false;
+                if (prevAssignment === 'E' && shift === 'D') { hardCheckPassed = false; hardCheckReason = "E接D違規"; }
+                if (prevAssignment === 'D' && shift === 'N') { hardCheckPassed = false; hardCheckReason = "D接N違規"; }
             }
 
             if (hardCheckPassed) {
@@ -221,14 +234,15 @@ export class AutoScheduler {
                         return true;
                     }
                 } else {
-                    // 🔥 Day 1 專用 Debug：印出為什麼這個人不能上這個班
+                    // 🔥 [診斷 2] Day 1 拒絕原因
                     if (day === 1 && shift !== 'OFF') {
-                         console.log(`🚫 Day 1 拒絕: ${staff.name} 排 ${shift} 失敗 -> ${result.errors[day]}`);
+                        console.log(`🚫 [Day 1] ${staff.name} 試排 [${shift}] 失敗 -> ${result.errors[day]}`);
                     }
                 }
             } else {
+                // 🔥 [診斷 2] Day 1 硬規則拒絕
                 if (day === 1 && shift !== 'OFF') {
-                    console.log(`🚫 Day 1 拒絕: ${staff.name} 排 ${shift} 失敗 -> 間隔不足 (昨:${prevAssignment})`);
+                    console.log(`🚫 [Day 1] ${staff.name} 試排 [${shift}] 失敗 -> 硬規則: ${hardCheckReason} (昨:${prevAssignment})`);
                 }
             }
         }
