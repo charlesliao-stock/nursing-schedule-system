@@ -3,7 +3,7 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { UnitService } from "../../services/firebase/UnitService.js"; 
-// ✅ 新增 auth 引用，解決 firebase is not defined 錯誤
+// ✅ 引入 auth，修正 ReferenceError
 import { auth } from "../../config/firebase.config.js"; 
 
 export class PreScheduleManagePage {
@@ -38,7 +38,7 @@ export class PreScheduleManagePage {
     async afterRender() {
         window.routerPage = this; 
         
-        // Modal 防呆
+        // 1. 初始化 Modal (因 Template 已修正，這裡應該一定找得到了)
         const modalEl = document.getElementById('detail-modal');
         if (modalEl) {
             this.detailModal = new bootstrap.Modal(modalEl);
@@ -46,13 +46,13 @@ export class PreScheduleManagePage {
             console.error("❌ 錯誤：找不到 ID 為 'detail-modal' 的元素。");
         }
 
-        // ✅ 修正：直接使用 import 進來的 auth，而不是全域的 firebase.auth()
+        // 2. 判斷權限，若是 Admin 則顯示單位選擇器
+        // ✅ 使用 auth.currentUser 而非 firebase.auth().currentUser
         if (auth.currentUser) {
             try {
                 const userDoc = await userService.getUserData(auth.currentUser.uid);
                 this.state.currentUser = userDoc;
                 
-                // 如果是管理員，載入單位選單
                 if (userDoc && (userDoc.role === 'admin' || userDoc.role === 'system_admin')) {
                     await this.loadUnits();
                 }
@@ -61,9 +61,11 @@ export class PreScheduleManagePage {
             }
         }
 
+        // 3. 載入資料
         await this.loadData();
     }
 
+    // --- 新功能：載入單位列表 ---
     async loadUnits() {
         try {
             const units = await UnitService.getAllUnits();
@@ -81,15 +83,17 @@ export class PreScheduleManagePage {
                     }
                     selector.appendChild(option);
                 });
-                container.style.display = 'block';
+                container.style.display = 'block'; // 顯示選單
             }
         } catch (error) {
             console.error("載入單位列表失敗:", error);
         }
     }
 
+    // --- 新功能：處理單位切換 ---
     handleUnitChange(newUnitId) {
         if (!newUnitId) return;
+        // 重新導向，這會觸發 Router 重新渲染頁面
         window.location.hash = `/preschedule/manage?unitId=${newUnitId}&year=${this.state.year}&month=${this.state.month}`;
     }
 
