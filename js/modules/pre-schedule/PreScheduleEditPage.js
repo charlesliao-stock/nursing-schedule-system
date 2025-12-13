@@ -13,7 +13,7 @@ export class PreScheduleEditPage {
             submissions: {}, 
             prevMonthData: {}, 
             prevMonthLast6Days: [],
-            unitSettings: null, // 儲存單位設定 (含排班規則)
+            unitSettings: null, 
             sortConfig: { key: 'staffId', dir: 'asc' } 
         };
         this.activeContextMenu = null; 
@@ -56,13 +56,18 @@ export class PreScheduleEditPage {
 
                 <div class="card shadow border-0">
                     <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-2 small">
+                        <div class="d-flex align-items-center gap-3 small">
                             <span class="fw-bold text-primary"><i class="fas fa-th me-1"></i> 排班工作台</span>
-                            <div class="border-start ps-2 text-muted">
-                                <span class="badge bg-warning text-dark border me-1">OFF</span>預休
-                                <span class="badge bg-dark text-white border me-1">強休</span>系統
-                                <span class="badge bg-info text-white border me-1">班</span>指定
-                                <span class="badge bg-danger text-white border me-1">X</span>勿排
+                            
+                            <div class="alert alert-info py-0 px-2 mb-0 border-0" style="font-size: 0.85rem;">
+                                <i class="fas fa-mouse-pointer me-1"></i> <strong>提示：</strong>在格子上按 <b>右鍵</b> 可選擇班別 (白/小/大/勿排...)
+                            </div>
+
+                            <div class="border-start ps-2 text-muted d-flex align-items-center gap-2">
+                                <span class="badge bg-warning text-dark border" style="font-size: 0.7rem;">OFF</span>預休
+                                <span class="badge bg-dark text-white border" style="font-size: 0.7rem;">M_FF</span>強休
+                                <span class="badge bg-danger text-white border" style="font-size: 0.7rem;">X</span>勿排
+                                <span class="ms-2 d-flex align-items-center"><div style="width:12px;height:12px;background:#f8d7da;border:1px solid #f5c6cb;margin-right:4px;"></div>未交</span>
                             </div>
                         </div>
                         <div class="d-flex gap-2">
@@ -71,6 +76,9 @@ export class PreScheduleEditPage {
                             </button>
                             <button class="btn btn-outline-primary btn-sm py-0" onclick="window.routerPage.exportExcel()">
                                 <i class="fas fa-file-excel"></i> 匯出
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm py-0" onclick="window.routerPage.remindUnsubmitted()">
+                                <i class="fas fa-bell"></i> 催繳
                             </button>
                         </div>
                     </div>
@@ -122,6 +130,7 @@ export class PreScheduleEditPage {
             
             let staffList = [];
             if (preSchedule && preSchedule.staffIds && preSchedule.staffIds.length > 0) {
+                // 批次取得完整 User 物件，確保拿到 isPregnant 等最新狀態
                 const promises = preSchedule.staffIds.map(uid => userService.getUserData(uid));
                 const users = await Promise.all(promises);
                 staffList = users.filter(u => u);
@@ -130,8 +139,11 @@ export class PreScheduleEditPage {
             }
 
             const supportIds = preSchedule?.supportStaffIds || [];
+            
             this.state.staffList = staffList.map(u => {
                 u.isSupport = supportIds.includes(u.uid) || u.unitId !== this.state.unitId;
+                // 確保讀取到懷孕狀態
+                u.isPregnant = !!u.isPregnant; 
                 return u;
             });
 
@@ -204,24 +216,23 @@ export class PreScheduleEditPage {
 
         const getSortIcon = (k) => sortKey !== k ? '<i class="fas fa-sort text-muted opacity-25 ms-1"></i>' : (sortDir === 'asc' ? '<i class="fas fa-sort-up text-dark ms-1"></i>' : '<i class="fas fa-sort-down text-dark ms-1"></i>');
 
-        // 讀取班別種類上限 (2 或 3，預設 3)
-        // 假設路徑：unitSettings.rules.constraints.maxShiftTypesWeek
-        // 若找不到則預設為 3
+        // 讀取班別種類上限
         const maxShiftTypes = this.state.unitSettings?.rules?.constraints?.maxShiftTypesWeek || 3;
         
-        // CSS 優化：壓縮固定欄位寬度
+        // --- 1. 表頭 ---
+        // 1. 調整姓名欄寬度：改為 90px
         let headerHtml = `
             <th class="sticky-col col-1 bg-light text-center px-1" style="width: 70px; cursor:pointer;" onclick="window.routerPage.handleSort('staffId')">
                 <small>職編</small>${getSortIcon('staffId')}
             </th>
-            <th class="sticky-col col-2 bg-light text-center px-1" style="width: 80px;">姓名</th>
+            <th class="sticky-col col-2 bg-light text-center px-1" style="width: 90px;">姓名</th>
             <th class="sticky-col col-3 bg-light text-center px-1" style="width: 40px;" title="特殊註記">註</th>
             <th class="sticky-col col-4 bg-light text-center px-1" style="width: ${maxShiftTypes===3?'140px':'110px'};">
-                <small>排班偏好 (包/1-${maxShiftTypes})</small>
+                <small>排班偏好</small>
             </th>
         `;
 
-        // 上月 (極簡化顯示)
+        // 上月 (管理者可編輯)
         this.state.prevMonthLast6Days.forEach(d => {
             headerHtml += `
                 <th class="text-center p-0 bg-secondary bg-opacity-10 text-muted border-bottom border-secondary" style="width: 28px;">
@@ -245,31 +256,36 @@ export class PreScheduleEditPage {
         }
         headerHtml += `<th class="text-center bg-light px-1" style="width: 40px;"><small>預休</small></th>`;
 
-        // --- 內容 ---
+        // --- 2. 內容 ---
         let bodyHtml = '';
         this.state.staffList.forEach(staff => {
             if (!this.state.submissions[staff.uid]) this.state.submissions[staff.uid] = { wishes: {}, preferences: {} };
             const sub = this.state.submissions[staff.uid];
             const wishes = sub.wishes || {};
             const prefs = sub.preferences || {};
+            const isSubmitted = sub.isSubmitted;
 
-            // 1. 支援人員標記
+            // 支援人員標記
             const isSupport = staff.isSupport ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.5rem; padding: 2px 3px;">支</span>' : '';
             
-            // 2. 特殊註記：讀取 isPregnant
-            // 若有懷孕，顯示紅色「孕」字
+            // 6. 未提交者標示粉紅色
+            const nameCellClass = isSubmitted ? 'bg-white' : 'table-danger'; // table-danger 是淡粉紅
+            const nameCellTitle = isSubmitted ? '' : '此人尚未提交預班';
+
+            // 2. 特殊註記：與人員管理同步 (懷孕)
             let noteBadge = '';
             if (staff.isPregnant) {
-                noteBadge = `<span class="badge bg-danger rounded-circle p-1" title="懷孕" style="width:20px;height:20px;line-height:12px;">孕</span>`;
+                noteBadge = `<span class="badge bg-danger rounded-circle p-1 d-flex align-items-center justify-content-center" title="懷孕" style="width:20px;height:20px;font-size:0.7rem;">孕</span>`;
             } else if (staff.specialNote) {
-                noteBadge = `<span class="badge bg-info rounded-circle p-1" title="${staff.specialNote}" style="width:20px;height:20px;">!</span>`;
+                noteBadge = `<span class="badge bg-info rounded-circle p-1 d-flex align-items-center justify-content-center" title="${staff.specialNote}" style="width:20px;height:20px;">!</span>`;
             }
 
-            // 3. 偏好欄位 (包班 + 1~N)
-            // 包班顯示邏輯
+            // 2. 包班顯示 (包+班別)
             let bundleHtml = '';
             if (prefs.batch) {
-                bundleHtml = `<span class="badge bg-primary" title="包班:${prefs.batch}">包${prefs.batch}</span>`;
+                // prefs.batch 可能是 'N' 或 'E'
+                const label = prefs.batch === 'N' ? '大' : (prefs.batch === 'E' ? '小' : prefs.batch);
+                bundleHtml = `<span class="badge bg-primary" style="font-size:0.7rem;" title="包班:${label}">包${label}</span>`;
             } else {
                 bundleHtml = `<span class="text-muted small">-</span>`;
             }
@@ -285,7 +301,6 @@ export class PreScheduleEditPage {
                     <option value="N" ${val==='N'?'selected':''}>N</option>
                 </select>`;
 
-            // 組合偏好欄位
             let prefHtml = `
                 <div class="d-flex align-items-center justify-content-between px-1" style="height: 100%;">
                     <div style="width: 35px; text-align: center;">${bundleHtml}</div>
@@ -297,16 +312,27 @@ export class PreScheduleEditPage {
 
             // 組合列
             let rowHtml = `
-                <td class="sticky-col col-1 text-center bg-white p-0 align-middle"><small>${staff.staffId || ''}</small></td>
-                <td class="sticky-col col-2 text-start bg-white p-0 ps-1 align-middle text-truncate" style="max-width: 80px; font-size: 0.85rem;">${staff.name} ${isSupport}</td>
+                <td class="sticky-col col-1 text-center fw-bold text-secondary bg-white"><small>${staff.staffId || ''}</small></td>
+                
+                <td class="sticky-col col-2 text-start p-0 ps-1 align-middle text-truncate ${nameCellClass}" 
+                    title="${nameCellTitle}" style="max-width: 90px; font-size: 0.85rem;">
+                    ${staff.name} ${isSupport}
+                </td>
+                
                 <td class="sticky-col col-3 text-center bg-white p-0 align-middle">${noteBadge}</td>
                 <td class="sticky-col col-4 bg-white p-0 align-middle border-end">${prefHtml}</td>
             `;
 
-            // 上月班表
+            // 3. 上月班表 (可編輯 - 右鍵選單或點擊)
             this.state.prevMonthLast6Days.forEach(d => {
                 const shift = (this.state.prevMonthData[staff.uid] || {})[d] || ''; 
-                rowHtml += `<td class="text-center p-0 align-middle bg-secondary bg-opacity-10 text-muted border-end border-light" style="font-size:0.75rem;">${shift}</td>`;
+                rowHtml += `
+                    <td class="text-center p-0 align-middle bg-secondary bg-opacity-10 text-muted border-end border-light" 
+                        style="border:1px solid #e0e0e0; font-size:0.75rem; cursor:pointer;"
+                        onclick="window.routerPage.editPrevMonthCell('${staff.uid}', ${d}, '${shift}')"
+                        title="上月 ${d} 日 (點擊修改)">
+                        ${shift}
+                    </td>`;
             });
 
             // 本月格子
@@ -317,19 +343,22 @@ export class PreScheduleEditPage {
                 let cellClass = '';
                 let cellText = wish;
                 
+                // 4. 字體變小，M_FF 改名
+                const smallFont = 'font-size: 0.75rem;';
+
                 if (wish === 'OFF') {
-                    cellClass = 'bg-warning text-dark'; 
+                    cellClass = 'bg-warning text-dark opacity-75'; 
                     cellText = 'OFF';
                     offCount++;
                 } else if (wish === 'M_OFF') {
                     cellClass = 'bg-dark text-white'; 
-                    cellText = '強休'; // 4. 優化顯示文字
+                    cellText = 'M_FF'; // 4. 修改文字
                     offCount++;
                 } else if (['D','E','N'].includes(wish)) {
                     cellClass = 'bg-info text-white fw-bold'; 
                 } else if (wish.startsWith('NO_')) {
                     cellClass = 'bg-danger text-white fw-bold'; 
-                    cellText = 'X'; // 簡化勿排顯示
+                    cellText = 'X'; 
                 } else if (wish) {
                     cellClass = 'bg-primary text-white'; 
                 }
@@ -343,7 +372,7 @@ export class PreScheduleEditPage {
                         style="cursor: pointer; height: 32px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; user-select: none;"
                         onclick="window.routerPage.handleCellClick('${staff.uid}', ${d})"
                         oncontextmenu="window.routerPage.handleCellRightClick(event, '${staff.uid}', ${d})">
-                        <div style="font-size: 0.8rem; font-weight: 500;">${cellText}</div>
+                        <div style="${smallFont} font-weight: 500;">${cellText}</div>
                     </td>
                 `;
             }
@@ -366,8 +395,8 @@ export class PreScheduleEditPage {
         const style = document.createElement('style');
         style.id = 'matrix-sticky-style';
         
-        // 計算各欄位寬度與位置 (Pixel Perfect 調整)
-        const w1 = 70, w2 = 80, w3 = 40;
+        // 調整寬度
+        const w1 = 70, w2 = 90, w3 = 40; // w2 改為 90
         const w4 = maxTypes === 3 ? 140 : 110; 
         
         style.innerHTML = `
@@ -376,12 +405,8 @@ export class PreScheduleEditPage {
             .col-2 { left: ${w1}px; width: ${w2}px; }
             .col-3 { left: ${w1+w2}px; width: ${w3}px; }
             .col-4 { left: ${w1+w2+w3}px; width: ${w4}px; box-shadow: 4px 0 5px -2px rgba(0,0,0,0.1); }
-            
             thead .sticky-col { z-index: 30 !important; }
             .dropdown-item:hover { background-color: #f8f9fa; color: #0d6efd; }
-            
-            /* 讓表頭日期直立顯示 (如果真的很擠) */
-            /* .th-date { writing-mode: vertical-lr; } */
         `;
         document.head.appendChild(style);
     }
@@ -405,7 +430,6 @@ export class PreScheduleEditPage {
         this.closeContextMenu();
 
         const menu = document.getElementById('context-menu');
-        // 2. 從設定讀取班別，若無則用預設
         const shifts = this.state.unitSettings?.settings?.shifts || [
             {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
         ];
@@ -433,7 +457,6 @@ export class PreScheduleEditPage {
         menu.innerHTML = menuHtml;
         menu.style.display = 'block';
         
-        // 防止選單超出視窗
         const menuWidth = 150; 
         let left = e.pageX;
         if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 10;
@@ -455,12 +478,35 @@ export class PreScheduleEditPage {
         this.renderMatrixGrid();
     }
 
+    // 3. 上月班表編輯 (即時更新)
+    async editPrevMonthCell(uid, day, currentVal) {
+        const newVal = prompt(`修改上個月 ${day} 日班別 (D, E, N, OFF):`, currentVal);
+        if (newVal !== null) {
+            const val = newVal.trim().toUpperCase();
+            
+            // 計算上個月的年份月份
+            let prevY = this.state.year, prevM = this.state.month - 1;
+            if (prevM === 0) { prevM = 12; prevY--; }
+
+            try {
+                // 直接寫入資料庫 (假設 ScheduleService 有此方法，若無請實作 updateShift)
+                await ScheduleService.updateShift(this.state.unitId, prevY, prevM, uid, day, val);
+                
+                // 更新本地暫存並重繪
+                if (!this.state.prevMonthData[uid]) this.state.prevMonthData[uid] = {};
+                this.state.prevMonthData[uid][day] = val;
+                this.renderMatrixGrid();
+            } catch (e) {
+                alert("更新失敗: " + e.message);
+            }
+        }
+    }
+
     closeContextMenu() {
         const menu = document.getElementById('context-menu');
         if (menu) menu.style.display = 'none';
     }
 
-    // 更新偏好設定 (管理者修改)
     updatePreference(uid, field, value) {
         if (!this.state.submissions[uid]) this.state.submissions[uid] = { wishes: {}, preferences: {} };
         if (!this.state.submissions[uid].preferences) this.state.submissions[uid].preferences = {};
@@ -482,7 +528,6 @@ export class PreScheduleEditPage {
         }
     }
 
-    // --- 支援人員邏輯 ---
     openAddSupportModal() { if(this.supportModal) this.supportModal.show(); }
     
     async searchStaff() {
@@ -520,6 +565,21 @@ export class PreScheduleEditPage {
             alert("加入成功！");
             if(this.supportModal) this.supportModal.hide();
         } catch(e) { alert("加入失敗: " + e.message); }
+    }
+    
+    // 6. 催繳名單列表
+    remindUnsubmitted() {
+        const unsubmitted = this.state.staffList.filter(s => {
+            const sub = this.state.submissions[s.uid];
+            return !sub || !sub.isSubmitted;
+        });
+        
+        if (unsubmitted.length === 0) {
+            alert("所有人員皆已提交！");
+        } else {
+            const names = unsubmitted.map(s => s.name).join(', ');
+            alert(`以下人員尚未提交預班，請通知：\n${names}`);
+        }
     }
     
     exportExcel() { alert("功能實作中"); }
