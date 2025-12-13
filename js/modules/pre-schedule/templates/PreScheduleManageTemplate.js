@@ -1,15 +1,16 @@
 export const PreScheduleManageTemplate = {
     // 1. 主框架
     renderLayout(year, month) {
-        // ✅ 修正：使用一個最外層的 DIV 包裹所有內容 (包含 Modal)
-        // 這樣可以避免 Router 只渲染第一個元素而遺失 Modal
+        // 加入 Log 證明 Template 有被執行
+        console.log("🎨 [Debug] Template renderLayout (v2.0) 被呼叫");
+
         return `
         <div class="page-wrapper">
             <div class="container-fluid p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
                         <h2 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核
+                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核 (v2.0)
                         </h2>
                         
                         <div id="unit-selector-container" class="ms-4" style="display:none;">
