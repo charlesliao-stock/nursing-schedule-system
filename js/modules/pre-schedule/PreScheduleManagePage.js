@@ -1,4 +1,5 @@
-import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js";
+// ✅ 修改：在檔名後加上 ?v=final 強制瀏覽器重抓檔案
+import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate.js?v=final"; 
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
@@ -31,22 +32,32 @@ export class PreScheduleManagePage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger">無效的單位參數</div>';
 
+        console.log("🚀 [System] Render 啟動");
         return PreScheduleManageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
     async afterRender() {
         window.routerPage = this; 
-        console.log("🚀 [Debug] Page.afterRender() 執行");
+        console.log("🚀 [System] AfterRender 啟動");
 
-        // 嘗試抓取 Modal
-        const modalEl = document.getElementById('detail-modal');
-        if (modalEl) {
-            this.detailModal = new bootstrap.Modal(modalEl);
-            console.log("✅ [Debug] Modal 初始化成功");
-        } else {
-            console.warn("⚠️ [Debug] 找不到 Modal 元素 (可能為快取問題)，跳過初始化以防止崩潰。");
+        // 1. 抓取 Modal (加入重試機制)
+        let modalEl = document.getElementById('detail-modal');
+        if (!modalEl) {
+            console.warn("⚠️ 尚未偵測到 Modal，嘗試延遲抓取...");
+            await new Promise(r => setTimeout(r, 100)); // 等 0.1 秒
+            modalEl = document.getElementById('detail-modal');
         }
 
+        if (modalEl) {
+            this.detailModal = new bootstrap.Modal(modalEl);
+            console.log("✅ Modal 初始化成功");
+        } else {
+            console.error("❌ 嚴重錯誤：畫面樣板 (Template) 仍是舊版！請務必清除瀏覽器快取。");
+            alert("系統偵測到畫面未更新，請按 Ctrl + F5 強制重新整理！");
+            return;
+        }
+
+        // 2. 權限判斷與載入單位
         if (auth.currentUser) {
             try {
                 const userDoc = await userService.getUserData(auth.currentUser.uid);
@@ -56,7 +67,7 @@ export class PreScheduleManagePage {
                     await this.loadUnits();
                 }
             } catch (error) {
-                console.error("讀取使用者資料失敗", error);
+                console.error("權限讀取錯誤", error);
             }
         }
 
@@ -69,7 +80,6 @@ export class PreScheduleManagePage {
             const selector = document.getElementById('unit-selector');
             const container = document.getElementById('unit-selector-container');
             
-            // 防呆檢查：如果 Template 是舊的，selector 會是 null
             if (selector && container) {
                 selector.innerHTML = '<option value="" disabled>切換單位...</option>';
                 units.forEach(unit => {
@@ -82,12 +92,12 @@ export class PreScheduleManagePage {
                     selector.appendChild(option);
                 });
                 container.style.display = 'block';
-                console.log("✅ [Debug] 單位選單載入完成");
+                console.log("✅ 單位選單載入完成");
             } else {
-                console.warn("⚠️ [Debug] 找不到單位選單 DOM，這確認了瀏覽器正在使用舊版 Template。");
+                console.error("❌ 找不到單位選單 DOM，樣板未更新");
             }
         } catch (error) {
-            console.error("載入單位列表失敗:", error);
+            console.error("載入單位失敗:", error);
         }
     }
 
@@ -110,11 +120,8 @@ export class PreScheduleManagePage {
             if (preSchedule) this.state.submissions = preSchedule.submissions || {};
 
             await this.loadPrevMonthData();
-
             this.enrichStaffData();
-
             this.updateProgress();
-
             this.handleSort(this.state.sortConfig.key, false);
 
         } catch (e) {
@@ -148,7 +155,6 @@ export class PreScheduleManagePage {
             }
             this.state.prevMonthData = map;
         } catch (e) {
-            console.warn("上個月班表載入失敗或不存在:", e);
             this.state.prevMonthData = {}; 
         }
     }
@@ -296,8 +302,7 @@ export class PreScheduleManagePage {
             `;
             this.detailModal.show();
         } else {
-            console.error("Modal 尚未初始化，請重新整理");
-            alert("系統偵測到您正在使用舊版頁面快取，請按 Ctrl+F5 強制重新整理。");
+            alert("系統初始化中，請稍後再試...");
         }
     }
     
