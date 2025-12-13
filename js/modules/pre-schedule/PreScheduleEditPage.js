@@ -3,7 +3,6 @@ import { ScheduleService } from "../../services/firebase/ScheduleService.js"; //
 import { authService } from "../../services/firebase/AuthService.js";
 import { userService } from "../../services/firebase/UserService.js";
 import { UnitService } from "../../services/firebase/UnitService.js";
-import { PreScheduleEditTemplate } from "./templates/PreScheduleEditTemplate.js";
 
 export class PreScheduleEditPage {
     constructor() {
