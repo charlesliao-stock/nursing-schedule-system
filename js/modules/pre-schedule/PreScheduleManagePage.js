@@ -1,5 +1,5 @@
-// ✅ 關鍵修改： ?v=2.2 (再次強制更新)
-import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate1.js?v=2.2"; 
+// ✅ 關鍵：檔名改為 PreScheduleManageTemplate1.js
+import { PreScheduleManageTemplate } from "./templates/PreScheduleManageTemplate1.js"; 
 import { PreScheduleService } from "../../services/firebase/PreScheduleService.js";
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
 import { userService } from "../../services/firebase/UserService.js";
@@ -32,7 +32,7 @@ export class PreScheduleManagePage {
 
         if (!this.state.unitId) return '<div class="alert alert-danger">無效的單位參數</div>';
 
-        console.log("🚀 [System] Render 啟動 (v2.2)");
+        console.log("🚀 [System] Render 啟動");
         return PreScheduleManageTemplate.renderLayout(this.state.year, this.state.month);
     }
 
@@ -41,11 +41,10 @@ export class PreScheduleManagePage {
         console.log("🚀 [System] AfterRender 啟動");
 
         // 1. 抓取 Modal
-        // 增加一個簡單的重試，但通常如果 Template 載入正確，這裡一定抓得到
         let modalEl = document.getElementById('detail-modal');
         if (!modalEl) {
-            console.warn("⚠️ 第一次抓不到 Modal，嘗試微小延遲...");
-            await new Promise(r => setTimeout(r, 50));
+            console.warn("⚠️ 尚未偵測到 Modal，等待 DOM...");
+            await new Promise(r => setTimeout(r, 100)); 
             modalEl = document.getElementById('detail-modal');
         }
 
@@ -53,7 +52,8 @@ export class PreScheduleManagePage {
             this.detailModal = new bootstrap.Modal(modalEl);
             console.log("✅ Modal 初始化成功");
         } else {
-            console.error("❌ [嚴重錯誤] Template 仍然是舊版！請檢查 Template 檔案是否確實存檔。");
+            console.error("❌ 嚴重錯誤：還是抓不到 Modal，請確認檔名是否修改正確！");
+            alert("系統錯誤：找不到 Template，請確認檔名是否已修改為 PreScheduleManageTemplate1.js");
             return;
         }
 
@@ -94,7 +94,7 @@ export class PreScheduleManagePage {
                 container.style.display = 'block';
                 console.log("✅ 單位選單載入完成");
             } else {
-                console.error("❌ 找不到單位選單 DOM，確認是舊版 Template。");
+                console.error("❌ 找不到單位選單 DOM");
             }
         } catch (error) {
             console.error("載入單位失敗:", error);
