@@ -1,16 +1,13 @@
 export const PreScheduleManageTemplate = {
-    // 1. 主框架
     renderLayout(year, month) {
-        // 加入 Log 證明 Template 有被執行
-        console.log("🎨 [Debug] Template renderLayout (v2.0) 被呼叫");
-
+        // 最外層包一個 DIV，包含單位選擇器 ID 與 Modal ID
         return `
         <div class="page-wrapper">
             <div class="container-fluid p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
                         <h2 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核 (v2.0)
+                            <i class="fas fa-calendar-check text-primary me-2"></i>預班管理與審核
                         </h2>
                         
                         <div id="unit-selector-container" class="ms-4" style="display:none;">
@@ -100,7 +97,6 @@ export const PreScheduleManageTemplate = {
         `;
     },
 
-    // 2. 渲染審核表格
     renderReviewTable(staffList, submissions, year, month, options = {}) {
         const { sortKey = 'staffId', sortDir = 'asc' } = options;
 
@@ -117,25 +113,12 @@ export const PreScheduleManageTemplate = {
                 <thead class="bg-light sticky-top" style="z-index: 10;">
                     <tr>
                         <th style="width: 50px;" class="text-center">#</th>
-                        
-                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">
-                            員編 ${getSortIcon('staffId')}
-                        </th>
-                        
+                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('staffId')">員編 ${getSortIcon('staffId')}</th>
                         <th style="width: 120px;">姓名</th>
-                        
-                        <th style="width: 90px; cursor: pointer;" onclick="window.routerPage.handleSort('group')">
-                            組別 ${getSortIcon('group')}
-                        </th>
-
+                        <th style="width: 90px; cursor: pointer;" onclick="window.routerPage.handleSort('group')">組別 ${getSortIcon('group')}</th>
                         <th style="min-width: 350px;">預班內容 (含上月月底)</th>
-
                         <th style="min-width: 250px; max-width: 300px;">特註 / 偏好</th>
-
-                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('status')">
-                            狀態 ${getSortIcon('status')}
-                        </th>
-                        
+                        <th style="width: 100px; cursor: pointer;" onclick="window.routerPage.handleSort('status')">狀態 ${getSortIcon('status')}</th>
                         <th style="width: 80px;">操作</th>
                     </tr>
                 </thead>
@@ -148,23 +131,15 @@ export const PreScheduleManageTemplate = {
             staffList.forEach((staff) => {
                 const sub = submissions[staff.uid] || {};
                 const wishes = sub.wishes || {};
-                
                 const isSubmitted = sub.isSubmitted;
                 const statusBadge = isSubmitted 
                     ? `<span class="badge bg-success-subtle text-success border border-success px-2 py-1">已送出</span>` 
                     : `<span class="badge bg-secondary-subtle text-secondary border px-2 py-1">未填寫</span>`;
                 const updateTime = sub.updatedAt ? new Date(sub.updatedAt.seconds * 1000).toLocaleDateString() : '';
-
-                let noteHtml = '';
-                if (sub.note) {
-                    noteHtml += `<div class="mb-1 text-dark" style="white-space: pre-wrap; font-size: 0.9rem;">${sub.note}</div>`;
-                }
+                let noteHtml = sub.note ? `<div class="mb-1 text-dark" style="white-space: pre-wrap; font-size: 0.9rem;">${sub.note}</div>` : '';
                 const wishSummary = this.getWishSummary(wishes);
-                if (wishSummary) {
-                    noteHtml += `<div class="text-primary small"><i class="fas fa-star me-1"></i>${wishSummary}</div>`;
-                }
+                if (wishSummary) noteHtml += `<div class="text-primary small"><i class="fas fa-star me-1"></i>${wishSummary}</div>`;
                 if (!noteHtml) noteHtml = '<span class="text-muted small">-</span>';
-
                 const gridHtml = this.renderGridVisual(staff, wishes, year, month);
 
                 html += `
@@ -174,90 +149,44 @@ export const PreScheduleManageTemplate = {
                         ondragstart="window.routerPage.handleDragStart(event)" 
                         ondragover="window.routerPage.handleDragOver(event)" 
                         ondrop="window.routerPage.handleDrop(event)">
-                        
-                        <td class="text-center text-muted" style="cursor: grab;" title="拖曳排序">
-                            <i class="fas fa-grip-vertical"></i>
-                        </td>
+                        <td class="text-center text-muted" style="cursor: grab;" title="拖曳排序"><i class="fas fa-grip-vertical"></i></td>
                         <td class="fw-bold text-secondary">${staff.staffId || ''}</td>
-                        <td>
-                            <div class="fw-bold text-dark">${staff.name}</div>
-                            <div class="small text-muted">${staff.rank || ''}</div>
-                        </td>
+                        <td><div class="fw-bold text-dark">${staff.name}</div><div class="small text-muted">${staff.rank || ''}</div></td>
                         <td><span class="badge bg-light text-dark border">${staff.group || '-'}</span></td>
                         <td class="py-2">${gridHtml}</td>
                         <td class="text-start align-top py-3">${noteHtml}</td>
+                        <td class="text-center">${statusBadge}<div class="small text-muted mt-1" style="font-size:0.75rem">${updateTime}</div></td>
                         <td class="text-center">
-                            ${statusBadge}
-                            <div class="small text-muted mt-1" style="font-size:0.75rem">${updateTime}</div>
-                        </td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-primary rounded-circle" 
-                                    style="width:32px; height:32px;"
-                                    onclick="window.routerPage.openDetailModal('${staff.uid}')" 
-                                    title="編輯">
-                                <i class="fas fa-pen"></i>
-                            </button>
+                            <button class="btn btn-sm btn-outline-primary rounded-circle" style="width:32px; height:32px;" onclick="window.routerPage.openDetailModal('${staff.uid}')" title="編輯"><i class="fas fa-pen"></i></button>
                         </td>
                     </tr>
                 `;
             });
         }
-
         html += `</tbody></table></div>`;
         return html;
     },
 
-    // 3. 視覺化格子
     renderGridVisual(staff, wishes, year, month) {
         let html = '<div class="d-flex align-items-center overflow-auto pb-1" style="max-width: 450px;">';
-
         const prevDays = staff.prevMonthDays || []; 
         const prevShifts = staff.prevMonthShifts || {};
-
         prevDays.forEach(d => {
             const shift = prevShifts[d] || '';
-            let styleClass = shift 
-                ? 'bg-secondary text-white opacity-50 border-secondary' 
-                : 'bg-white text-muted border-secondary border-dashed';
-            
-            const onClick = `onclick="window.routerPage.editPrevShift('${staff.uid}', ${d})"`
-            
-            html += `
-                <div class="text-center me-1 rounded border ${styleClass}" 
-                     style="min-width: 24px; cursor: pointer;" 
-                     title="上月 ${d} 日 (點擊編輯)" ${onClick}>
-                    <div class="bg-light border-bottom text-muted" style="font-size: 0.6rem; line-height: 12px;">${d}</div>
-                    <div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${shift || '?'}</div>
-                </div>
-            `;
+            let styleClass = shift ? 'bg-secondary text-white opacity-50 border-secondary' : 'bg-white text-muted border-secondary border-dashed';
+            html += `<div class="text-center me-1 rounded border ${styleClass}" style="min-width: 24px; cursor: pointer;" title="上月 ${d} 日" onclick="window.routerPage.editPrevShift('${staff.uid}', ${d})"><div class="bg-light border-bottom text-muted" style="font-size: 0.6rem; line-height: 12px;">${d}</div><div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${shift || '?'}</div></div>`;
         });
-
-        if (prevDays.length > 0) {
-            html += '<div class="border-end mx-2" style="height: 30px; border-color: #ddd;"></div>';
-        }
-
+        if (prevDays.length > 0) html += '<div class="border-end mx-2" style="height: 30px; border-color: #ddd;"></div>';
         let hasWishes = false;
         for (let d = 1; d <= 31; d++) {
             if (wishes[d]) {
                 hasWishes = true;
                 const w = wishes[d];
-                let bgClass = 'bg-primary text-white border-primary';
-                if (w === 'OFF') bgClass = 'bg-secondary text-white border-secondary';
-                if (w === 'M_OFF') bgClass = 'bg-dark text-white border-dark';
-
-                html += `
-                    <div class="text-center me-1 rounded border ${bgClass}" style="min-width: 24px;">
-                        <div class="bg-white text-dark border-bottom opacity-75" style="font-size: 0.6rem; line-height: 12px;">${d}</div>
-                        <div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${w}</div>
-                    </div>
-                `;
+                let bgClass = w === 'OFF' ? 'bg-secondary text-white border-secondary' : (w === 'M_OFF' ? 'bg-dark text-white border-dark' : 'bg-primary text-white border-primary');
+                html += `<div class="text-center me-1 rounded border ${bgClass}" style="min-width: 24px;"><div class="bg-white text-dark border-bottom opacity-75" style="font-size: 0.6rem; line-height: 12px;">${d}</div><div style="font-size: 0.75rem; font-weight: bold; line-height: 18px;">${w}</div></div>`;
             }
         }
-
-        if (!hasWishes) {
-            html += '<span class="text-muted small ms-1">無預班</span>';
-        }
-
+        if (!hasWishes) html += '<span class="text-muted small ms-1">無預班</span>';
         html += '</div>';
         return html;
     },
@@ -265,18 +194,11 @@ export const PreScheduleManageTemplate = {
     getWishSummary(wishes) {
         if (!wishes) return '';
         const counts = {};
-        Object.values(wishes).forEach(w => {
-            counts[w] = (counts[w] || 0) + 1;
-        });
+        Object.values(wishes).forEach(w => counts[w] = (counts[w] || 0) + 1);
         const parts = [];
         if (counts['OFF']) parts.push(`OFF:${counts['OFF']}`);
         if (counts['M_OFF']) parts.push(`管休:${counts['M_OFF']}`);
-        
-        Object.keys(counts).forEach(key => {
-            if (key !== 'OFF' && key !== 'M_OFF') {
-                parts.push(`${key}:${counts[key]}`);
-            }
-        });
+        Object.keys(counts).forEach(key => { if (key !== 'OFF' && key !== 'M_OFF') parts.push(`${key}:${counts[key]}`); });
         return parts.join(', ');
     }
 };
