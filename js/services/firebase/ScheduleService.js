@@ -1,11 +1,20 @@
 import { firebaseService } from "./FirebaseService.js";
 import { 
-    doc, getDoc, setDoc, updateDoc, serverTimestamp 
+    doc, 
+    getDoc, 
+    setDoc, 
+    updateDoc, 
+    serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export class ScheduleService {
 
+    // 產生班表 ID（保持與預班表不同的格式）
     static getScheduleId(unitId, year, month) {
+        if (!unitId || !year || !month) {
+            throw new Error('產生班表 ID 失敗：參數不完整');
+        }
+        // 月份補零，與預班表區別
         return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
     }
     
@@ -15,8 +24,16 @@ export class ScheduleService {
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? docSnap.data() : null;
-        } catch (error) { throw error; }
+            
+            if (!docSnap.exists()) {
+                return null;
+            }
+            
+            return docSnap.data();
+        } catch (error) { 
+            console.error('Error getting schedule:', error);
+            throw error; 
+        }
     }
 
     static async createEmptySchedule(unitId, year, month, staffList = []) {
@@ -28,14 +45,21 @@ export class ScheduleService {
             staffList.forEach(staffId => { assignments[staffId] = {}; });
             
             const initData = {
-                unitId, year, month, status: "draft", assignments: assignments,
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                unitId, 
+                year, 
+                month, 
+                status: "draft", 
+                assignments: assignments,
+                createdAt: serverTimestamp(), 
+                updatedAt: serverTimestamp()
             };
             
-            // 使用 setDoc 確保建立
             await setDoc(docRef, initData, { merge: true });
             return initData;
-        } catch (error) { throw error; }
+        } catch (error) { 
+            console.error('Error creating schedule:', error);
+            throw error; 
+        }
     }
 
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
@@ -45,14 +69,19 @@ export class ScheduleService {
             const docRef = doc(db, "schedules", scheduleId);
             const fieldPath = `assignments.${staffId}.${day}`;
             
-            // 單一更新仍可用 updateDoc，但若擔心文件遺失，可改用 setDoc merge
-            // 這裡為了效能維持 updateDoc，但前端需確保 Schedule 已初始化
-            await updateDoc(docRef, { [fieldPath]: shiftCode, updatedAt: serverTimestamp() });
+            // 使用 setDoc + merge 確保文件存在
+            await setDoc(docRef, { 
+                [fieldPath]: shiftCode, 
+                updatedAt: serverTimestamp() 
+            }, { merge: true });
+            
             return true;
-        } catch (error) { throw error; }
+        } catch (error) { 
+            console.error('Error updating shift:', error);
+            throw error; 
+        }
     }
 
-    // ✅ 修正：使用 setDoc + merge 解決 "No document to update"
     static async updateAllAssignments(unitId, year, month, assignments) {
         try {
             const db = firebaseService.getDb();
@@ -60,7 +89,9 @@ export class ScheduleService {
             const docRef = doc(db, "schedules", scheduleId);
             
             await setDoc(docRef, { 
-                unitId, year, month, // 確保基本欄位存在
+                unitId, 
+                year, 
+                month,
                 assignments: assignments, 
                 updatedAt: serverTimestamp() 
             }, { merge: true });
@@ -72,7 +103,6 @@ export class ScheduleService {
         }
     }
 
-    // ✅ 修正：同樣使用 setDoc + merge
     static async updateStatus(unitId, year, month, status) {
         try {
             const db = firebaseService.getDb();
