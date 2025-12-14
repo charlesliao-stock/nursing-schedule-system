@@ -7,9 +7,36 @@ import { firebaseService } from "./FirebaseService.js";
 export class UnitService {
     
     static COLLECTION_NAME = 'units';
+    
+    // ✅ 新增：快取容器
+    static _cache = new Map();
+    static CACHE_DURATION = 300000; // 5分鐘 (毫秒)
 
-    // ... (保留原本的 createUnit, updateUnit, deleteUnit, getAllUnits, getUnitById 等方法)
-    // 請將以下內容加入或覆蓋檔案：
+    // ✅ 新增：帶快取的讀取方法 (用於 AI 排班等頻繁讀取場景)
+    static async getUnitByIdWithCache(unitId) {
+        const now = Date.now();
+        
+        if (this._cache.has(unitId)) {
+            const cached = this._cache.get(unitId);
+            if (now - cached.timestamp < this.CACHE_DURATION) {
+                console.log(`[UnitService] 使用快取讀取單位: ${unitId}`);
+                return cached.data;
+            }
+        }
+
+        // 若無快取或過期，執行正常讀取
+        const data = await this.getUnitById(unitId);
+        if (data) {
+            this._cache.set(unitId, { data: data, timestamp: now });
+        }
+        return data;
+    }
+
+    // 清除快取 (例如更新設定後呼叫)
+    static clearCache(unitId) {
+        if(unitId) this._cache.delete(unitId);
+        else this._cache.clear();
+    }
 
     static async createUnit(unitData) {
         try {
@@ -38,6 +65,10 @@ export class UnitService {
             const db = firebaseService.getDb();
             const unitRef = doc(db, UnitService.COLLECTION_NAME, unitId);
             await updateDoc(unitRef, { ...updateData, updatedAt: serverTimestamp() });
+            
+            // ✅ 更新後清除該單位快取，確保下次讀到最新資料
+            this.clearCache(unitId);
+            
             return { success: true };
         } catch (error) { return { success: false, error: error.message }; }
     }
@@ -46,6 +77,7 @@ export class UnitService {
         try {
             const db = firebaseService.getDb();
             await deleteDoc(doc(db, UnitService.COLLECTION_NAME, unitId));
+            this.clearCache(unitId); // 清除快取
             return { success: true };
         } catch (error) { return { success: false, error: error.message }; }
     }
@@ -56,7 +88,7 @@ export class UnitService {
             const q = query(collection(db, UnitService.COLLECTION_NAME));
             const querySnapshot = await getDocs(q);
             const units = [];
-            querySnapshot.forEach((doc) => units.push({ id: doc.id, ...doc.data() })); // 確保 id 存在
+            querySnapshot.forEach((doc) => units.push({ id: doc.id, ...doc.data() })); 
             return units;
         } catch (error) { return []; }
     }
@@ -69,13 +101,9 @@ export class UnitService {
         } catch (error) { return null; }
     }
 
-    /**
-     * ✅ 新增：取得特定管理者所管理的所有單位
-     */
     static async getUnitsByManager(managerId) {
         try {
             const db = firebaseService.getDb();
-            // 查詢 managers 陣列包含此 ID
             const q = query(
                 collection(db, UnitService.COLLECTION_NAME), 
                 where("managers", "array-contains", managerId)
@@ -90,16 +118,6 @@ export class UnitService {
         }
     }
 
-    static async updateUnitShifts(unitId, shifts) {
-        try {
-            const db = firebaseService.getDb();
-            await updateDoc(doc(db, UnitService.COLLECTION_NAME, unitId), { 
-                "settings.shifts": shifts, updatedAt: serverTimestamp() 
-            });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-    }
-
     static async getUnitByCode(code) {
         const db = firebaseService.getDb();
         const q = query(collection(db, UnitService.COLLECTION_NAME), where("unitCode", "==", code));
@@ -107,6 +125,4 @@ export class UnitService {
         if (!snapshot.empty) return { unitId: snapshot.docs[0].id, ...snapshot.docs[0].data() };
         return null;
     }
-
-    static async importUnits(unitsData) { /*...保留原樣...*/ }
 }
