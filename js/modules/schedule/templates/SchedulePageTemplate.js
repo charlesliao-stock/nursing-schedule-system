@@ -4,7 +4,7 @@ export const SchedulePageTemplate = {
         return `
             <div class="schedule-container">
                 <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                    <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center text-nowrap">
                         <button class="btn btn-sm btn-outline-secondary me-3" onclick="window.location.hash='/schedule/list'">
                             <i class="fas fa-arrow-left"></i> 回列表
                         </button>
@@ -16,40 +16,39 @@ export const SchedulePageTemplate = {
                         </div>
                     </div>
                     
-                    <div id="loading-indicator" style="display:none;" class="text-primary fw-bold">
+                    <div id="loading-indicator" style="display:none;" class="text-primary fw-bold mx-3">
                         <i class="fas fa-spinner fa-spin"></i> 處理中...
                     </div>
 
-                    <div class="d-flex align-items-center bg-white border rounded px-3 py-1 shadow-sm" style="min-width: 180px;">
-                        <div class="me-3 text-end flex-grow-1">
-                            <div class="small text-muted fw-bold" style="font-size: 0.75rem;">排班品質總分</div>
-                            <div class="h4 mb-0 fw-bold text-primary" id="score-display">--</div>
+                    <div class="d-flex align-items-center bg-white border rounded px-3 py-1" style="min-width: 150px;">
+                        <div class="me-2 text-end flex-grow-1">
+                            <div class="small text-muted fw-bold" style="font-size: 0.7rem;">品質總分</div>
+                            <div class="h5 mb-0 fw-bold text-primary" id="score-display">--</div>
                         </div>
-                        <button class="btn btn-sm btn-outline-info rounded-circle" style="width:32px;height:32px;" 
-                                onclick="window.routerPage.showScoreDetails()" title="查看評分詳情">
-                            <i class="fas fa-info"></i>
+                        <button class="btn btn-sm btn-link text-info p-0" onclick="window.routerPage.showScoreDetails()" title="查看評分詳情">
+                            <i class="fas fa-info-circle fs-5"></i>
                         </button>
                     </div>
                 </div>
                 
-                <div class="schedule-toolbar d-flex justify-content-between mb-3">
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-outline-secondary btn-sm shadow-sm" onclick="window.location.hash='/unit/settings/rules'">
-                            <i class="fas fa-cog"></i> 規則與權重
+                <div class="schedule-toolbar d-flex justify-content-between align-items-center mb-3 flex-wrap flex-md-nowrap gap-2">
+                    <div class="d-flex gap-2 flex-nowrap">
+                        <button class="btn btn-outline-secondary btn-sm text-nowrap" onclick="window.location.hash='/unit/settings/rules'">
+                            <i class="fas fa-cog"></i> 規則
                         </button>
-                        <button id="btn-clear" class="btn btn-outline-danger btn-sm shadow-sm">
-                            <i class="fas fa-undo"></i> 重置回預班狀態
+                        <button id="btn-clear" class="btn btn-outline-danger btn-sm text-nowrap">
+                            <i class="fas fa-undo"></i> 重置狀態
                         </button>
                     </div>
 
-                    <div class="d-flex gap-2">
-                        <button id="btn-auto-schedule" class="btn btn-primary shadow-sm" style="background-color: #6366f1; border:none;">
+                    <div class="d-flex gap-2 flex-nowrap">
+                        <button id="btn-auto-schedule" class="btn btn-primary btn-sm text-nowrap" style="background-color: #6366f1; border:none;">
                             <i class="fas fa-magic"></i> 智慧排班 (AI)
                         </button>
-                        <button id="btn-validate" class="btn btn-secondary shadow-sm btn-sm">
+                        <button id="btn-validate" class="btn btn-outline-secondary btn-sm text-nowrap">
                             <i class="fas fa-check-circle"></i> 檢查
                         </button>
-                        <button id="btn-publish" class="btn btn-success shadow-sm btn-sm">
+                        <button id="btn-publish" class="btn btn-success btn-sm text-nowrap">
                             <i class="fas fa-paper-plane"></i> 發布
                         </button>
                     </div>
@@ -89,10 +88,9 @@ export const SchedulePageTemplate = {
         `;
     },
 
-    // 2. 渲染主表格 Grid (核心修正區塊)
+    // 2. 渲染主表格 Grid
     renderGrid(dataCtx, validationResult, options = {}) {
         const { year, month, daysInMonth, staffList, unitSettings } = dataCtx;
-        // 確保 assignments 存在，避免報錯
         const assignments = dataCtx.scheduleData?.assignments || {};
         const { staffReport, coverageErrors } = validationResult;
         const { isInteractive = true, isDropZone = false, versionIdx = null } = options;
@@ -100,7 +98,6 @@ export const SchedulePageTemplate = {
         const shiftDefs = unitSettings?.settings?.shifts || [];
         const shiftMap = {};
         shiftDefs.forEach(s => shiftMap[s.code] = s);
-        // 加入預設班別顏色
         shiftMap['OFF'] = { color: '#e5e7eb', name: '休' };
         shiftMap['M_OFF'] = { color: '#6f42c1', name: '管休' };
 
@@ -116,15 +113,10 @@ export const SchedulePageTemplate = {
 
         let bodyHtml = '<tbody>';
         staffList.forEach(staff => {
-            // ✅ 關鍵修正：確保這裡使用的是 uid，因為 AI 排班和資料庫都是存 uid
             const uid = staff.uid;
-            
-            // ✅ 防呆讀取：用 uid 去 assignments 查表，如果沒有就給空物件
             const staffAssignments = assignments[uid] || {};
-            
             const staffErrors = staffReport[uid]?.errors || {};
             
-            // 互動模式才顯示刪除按鈕
             const deleteBtn = isInteractive 
                 ? `<i class="fas fa-times text-danger ms-2" style="cursor:pointer;" onclick="window.routerPage.deleteStaff('${uid}')"></i>` 
                 : '';
@@ -141,26 +133,19 @@ export const SchedulePageTemplate = {
                 const code = staffAssignments[d] || '';
                 let style = '';
                 
-                // 處理顏色顯示
                 if(code === 'M_OFF') {
                     style = 'background-color:#6f42c1; color:white;';
                 } else if (code && shiftMap[code]) {
-                    // 使用半透明背景色，讓視覺更柔和
                     style = `background-color:${shiftMap[code].color}40; border-bottom: 2px solid ${shiftMap[code].color}`;
                 }
                 
-                // 處理錯誤顯示 (紅色邊框)
                 const errorMsg = staffErrors[d];
                 const borderStyle = errorMsg ? 'border: 2px solid red !important;' : '';
                 const title = errorMsg ? `title="${errorMsg}"` : '';
-                
                 const cellClass = isInteractive ? 'shift-cell' : ''; 
                 const cursor = isInteractive ? 'cursor:pointer;' : '';
-                
-                // 處理拖曳放置 (Drop Zone)
                 const dropAttrs = isDropZone ? `ondragover="event.preventDefault()" ondrop="window.routerPage.handleDrop(event, '${uid}', ${d}, ${versionIdx})"` : '';
 
-                // ✅ 這裡的 data-staff-id="${uid}" 非常重要，點擊選單會用到
                 bodyHtml += `<td class="${cellClass}" data-staff-id="${uid}" data-day="${d}" style="${cursor} ${style}; ${borderStyle}" ${title} ${dropAttrs}>${code === 'M_OFF' ? 'OFF' : code}</td>`;
             }
             bodyHtml += '</tr>';
@@ -169,10 +154,8 @@ export const SchedulePageTemplate = {
         return `<table class="schedule-table table table-bordered table-sm text-center mb-0">${headerHtml}${bodyHtml}</table>`;
     },
 
-    // 3. 渲染評分詳情
     renderScoreDetails(result) {
         if(!result || !result.details) return '<div class="p-3 text-center">尚無評分資料</div>';
-
         const d = result.details;
         const renderItem = (label, obj, extra='') => `
             <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -187,12 +170,12 @@ export const SchedulePageTemplate = {
             <div class="p-3 bg-light text-center border-bottom">
                 <h1 class="display-4 fw-bold mb-0 ${result.totalScore>=80?'text-success':'text-primary'}">${result.totalScore}</h1>
                 <div class="small text-muted">總分</div>
-                ${result.passed ? '<span class="badge bg-success">Hard Constraints Pass</span>' : '<span class="badge bg-danger">Hard Constraints Fail</span>'}
+                ${result.passed ? '<span class="badge bg-success">規則通過</span>' : '<span class="badge bg-danger">規則未通過</span>'}
             </div>
             <ul class="list-group list-group-flush">
-                ${renderItem('公平性', d.fairness, d.fairness && d.fairness.hoursSD ? `SD:${d.fairness.hoursSD}` : '')}
+                ${renderItem('公平性', d.fairness)}
                 ${renderItem('滿意度', d.satisfaction)}
-                ${renderItem('效率', d.efficiency, d.efficiency && d.efficiency.coverage ? d.efficiency.coverage : '')}
+                ${renderItem('效率', d.efficiency, d.efficiency?.coverage)}
                 ${renderItem('健康', d.health)}
                 ${renderItem('品質', d.quality)}
                 ${renderItem('成本', d.cost)}
@@ -200,10 +183,8 @@ export const SchedulePageTemplate = {
         `;
     },
 
-    // 4. 渲染缺班池 (Drop Zone)
     renderMissingPool(missing) {
         if (!missing || missing.length === 0) return '<div class="alert alert-success py-1 mb-2 small"><i class="fas fa-check"></i> 人力需求已全數滿足</div>';
-        
         let poolHtml = '<div class="card mb-2 border-danger"><div class="card-header bg-danger text-white py-1 small">缺班池 (請拖曳補班)</div><div class="card-body p-2 d-flex flex-wrap gap-2">';
         missing.forEach(m => { 
             poolHtml += `<span class="badge bg-dark p-2" style="cursor:grab;" draggable="true" ondragstart="window.routerPage.handleDragStart(event, '${m.shift}')">${m.day}日: ${m.shift} <span class="badge bg-light text-dark rounded-pill ms-1">${m.count}</span></span>`; 
