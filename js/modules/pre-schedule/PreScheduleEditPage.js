@@ -51,7 +51,7 @@ export class PreScheduleEditPage {
 
                 <div class="alert alert-info py-2 small d-flex align-items-center">
                     <i class="fas fa-info-circle me-2"></i>
-                    <span>提示：灰色底色區域為「上月月底資料」，點擊可修改 (修正 5)，將作為排班連續性檢查依據。</span>
+                    <span>提示：灰色底色區域為「上月月底資料」，點擊可修改，將作為排班連續性檢查依據。支援左鍵或右鍵開啟選單。</span>
                 </div>
 
                 <div class="card shadow-sm">
@@ -263,11 +263,13 @@ export class PreScheduleEditPage {
 
                     ${this.historyRange.map(d => {
                         const val = history[d] || '';
+                        // ✅ 新增：oncontextmenu 支援右鍵
                         return `<td class="history-cell bg-secondary bg-opacity-10" 
                                     data-uid="${uid}" 
                                     data-day="${d}" 
                                     data-type="history"
                                     onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer; border-right: ${d===this.historyRange[this.historyRange.length-1] ? '2px solid #dee2e6' : ''}">
                                     ${this.renderShiftBadge(val)}
                                 </td>`;
@@ -276,11 +278,13 @@ export class PreScheduleEditPage {
                     ${Array.from({length: daysInMonth}, (_, i) => {
                         const d = i + 1;
                         const val = wishes[d] || '';
+                        // ✅ 新增：oncontextmenu 支援右鍵
                         return `<td class="wish-cell" 
                                     data-uid="${uid}" 
                                     data-day="${d}" 
                                     data-type="current"
                                     onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer;">
                                     ${this.renderShiftBadge(val)}
                                 </td>`;
@@ -293,11 +297,9 @@ export class PreScheduleEditPage {
         document.getElementById('schedule-container').innerHTML = html;
     }
 
-    // 修正 3: 班別顏色 (M_OFF 為紫色)
     renderShiftBadge(code) {
         if (!code) return '';
         
-        // 勿排代碼
         if (code.startsWith('NO_')) {
             return `<i class="fas fa-ban text-danger"></i> <span class="small">${code.replace('NO_', '')}</span>`;
         }
@@ -309,9 +311,9 @@ export class PreScheduleEditPage {
             case 'D': bgStyle = 'background-color:#0d6efd; color:white;'; break;
             case 'E': bgStyle = 'background-color:#ffc107; color:black;'; break;
             case 'N': bgStyle = 'background-color:#212529; color:white;'; break;
-            case 'OFF': bgStyle = 'background-color:#ffc107; color:black;'; break; // 黃底 (Bootstrap warning)
+            case 'OFF': bgStyle = 'background-color:#ffc107; color:black;'; break; 
             case 'M_OFF': 
-                bgStyle = 'background-color:#6f42c1; color:white;'; // 紫底 (修正 3)
+                bgStyle = 'background-color:#6f42c1; color:white;'; 
                 text = 'M';
                 break;
             default: bgStyle = 'background-color:#6c757d; color:white;'; break;
@@ -337,28 +339,28 @@ export class PreScheduleEditPage {
         el.textContent = s.text;
     }
 
-    handleCellClick(cell, currentVal) {
-        const existing = document.getElementById('context-menu');
-        existing.style.display = 'none'; // 先關閉
+    // ✅ 修改：接收 event 參數，若有則阻止預設選單
+    handleCellClick(cell, currentVal, e = null) {
+        if (e) e.preventDefault(); // 阻止瀏覽器右鍵選單
 
-        const type = cell.dataset.type; // 'history' or 'current'
+        const existing = document.getElementById('context-menu');
+        existing.style.display = 'none'; 
+
+        const type = cell.dataset.type; 
         const uid = cell.dataset.uid;
         const day = cell.dataset.day;
 
         this.currentEditTarget = { uid, day, type, cell };
 
-        // 產生選單 (修正 2: 背景樣式已在 HTML 設定為 white opacity 1)
         let menuHtml = '';
         const shifts = ['D', 'E', 'N'];
         
         menuHtml += `<h6 class="dropdown-header">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
         
-        // 修正 3: 選單中的顏色與表格一致
         menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
         
         if (type === 'current') {
-            // M_OFF 紫色
-            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1;">M</span> 強迫預休</button>`;
+            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強迫預休</button>`;
         }
         menuHtml += `<div class="dropdown-divider"></div>`;
 
@@ -389,7 +391,6 @@ export class PreScheduleEditPage {
         if (!this.currentEditTarget) return;
         const { uid, day, type } = this.currentEditTarget;
 
-        // 修正 5: 支援上月資料編輯
         if (type === 'history') {
             if (!this.historyData[uid]) this.historyData[uid] = {};
             this.historyData[uid][day] = val;
@@ -407,7 +408,6 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').disabled = false;
     }
 
-    // 修正 6: 偏好編輯相關
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
@@ -449,7 +449,6 @@ export class PreScheduleEditPage {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 儲存中...';
 
         try {
-            // 修正 4: 儲存 submissions (含 preferences) 與 history
             const updates = {
                 submissions: this.scheduleData.submissions,
                 history: this.historyData, 
