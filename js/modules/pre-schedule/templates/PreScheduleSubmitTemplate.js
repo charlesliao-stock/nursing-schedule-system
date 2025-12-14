@@ -23,6 +23,14 @@ export const PreScheduleSubmitTemplate = {
                 }
                 .bottom-stats { position: absolute; bottom: 4px; right: 6px; font-size: 0.75rem; color: #858796; }
                 .bottom-stats.full { color: #e74a3b; font-weight: bold; }
+                
+                /* 修正 1: 確保右鍵選單不透明且白色背景 */
+                #user-shift-menu {
+                    background-color: #ffffff !important;
+                    opacity: 1 !important;
+                    border: 1px solid rgba(0,0,0,0.15);
+                    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.175);
+                }
             </style>
 
             <div class="container-fluid mt-4">
@@ -126,7 +134,7 @@ export const PreScheduleSubmitTemplate = {
         `;
     },
 
-    // 3. 偏好設定表單 (更新版：加入每月班別種類偏好)
+    // 3. 偏好設定表單
     renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}) {
         let html = '';
 
@@ -146,10 +154,10 @@ export const PreScheduleSubmitTemplate = {
                     </div>
                 </div>
             `;
-        }
+        } 
         
-        // ✅ 新增：每月班別種類偏好
-        const mixPref = savedPrefs.monthlyMix || '2'; // 預設為 2
+        // 每月班別種類偏好
+        const mixPref = savedPrefs.monthlyMix || '2'; 
         html += `
             <div class="mb-3">
                 <label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-random"></i> 本月班別種類偏好</label>
