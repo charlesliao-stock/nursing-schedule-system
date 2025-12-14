@@ -14,10 +14,10 @@ const WEIGHTS = {
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (v4.0 積分權重 + 回溯機制 + 包班調節 + 效能優化)
+     * 啟動排班引擎 (v4.1 Final: 效能優化 + 跨月邏輯 + 動態班別)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v4.0 Optimized)");
+        console.log("🚀 AI 排班引擎啟動 (v4.1 Final)");
 
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
@@ -107,13 +107,14 @@ export class AutoScheduler {
             // 處理歷史資料 (historyData: { uid: { 25:'D', ... } })
             Object.entries(historyData || {}).forEach(([uid, history]) => {
                 if (assignments[uid] && history) {
+                    // 取得所有日期並由大到小排序 (29, 28, 27...)
                     const days = Object.keys(history || {}).map(k => parseInt(k)).sort((a,b)=>b-a);
                     
                     if (days.length > 0) {
                         // 1. 取得上個月最後一天班別
                         lastMonthShifts[uid] = history[days[0]];
 
-                        // 2. 計算連續上班天數
+                        // 2. 計算連續上班天數 (倒推計算)
                         let cons = 0;
                         for (let d of days) {
                             const shift = history[d];
@@ -137,7 +138,8 @@ export class AutoScheduler {
         });
 
         const rawReq = unitSettings.staffRequirements || {};
-        const staffReq = { D: rawReq.D || {}, E: rawReq.E || {}, N: rawReq.N || {} };
+        // 這裡僅保留結構，具體班別需求 key 會動態對應
+        const staffReq = rawReq; 
         const shiftDefs = settings.shifts || [];
 
         return {
@@ -154,7 +156,7 @@ export class AutoScheduler {
             staffReq: staffReq,
             shiftDefs: shiftDefs,
             logs: [],
-            maxBacktrack: 30000, // 增加回溯上限
+            maxBacktrack: 30000,
             backtrackCount: 0,
             maxReachedDay: 0
         };
@@ -229,21 +231,34 @@ export class AutoScheduler {
         const staff = staffList[index];
         const prevShift = context.assignments[staff.uid][day - 1] || 'OFF';
 
-        // 4.1 產生候選班別 (OFF 一定是選項)
-        let possibleShifts = ['D', 'E', 'N', 'OFF'];
+        // 4.1 ✅ 修正：動態取得班別代碼 (Dynamic Shift Codes)
+        // 從 context.shiftDefs (來自 unitSettings) 提取 code
+        let possibleShifts = [];
+        if (context.shiftDefs && context.shiftDefs.length > 0) {
+            possibleShifts = context.shiftDefs.map(s => s.code);
+        } else {
+            possibleShifts = ['D', 'E', 'N']; // Fallback
+        }
+        
+        // 確保 OFF 永遠是選項，且在最後嘗試
+        if (!possibleShifts.includes('OFF')) possibleShifts.push('OFF');
         
         // 4.2 取得當前已排的人力計數 (用於計算 Need 分數)
-        const currentCounts = { D: 0, E: 0, N: 0 };
+        const currentCounts = {};
+        possibleShifts.forEach(k => currentCounts[k] = 0);
+
         context.staffList.forEach(s => {
             const sh = context.assignments[s.uid][day];
-            if (sh && sh !== 'OFF') currentCounts[sh] = (currentCounts[sh] || 0) + 1;
+            if (sh && sh !== 'OFF' && currentCounts[sh] !== undefined) {
+                currentCounts[sh]++;
+            }
         });
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
 
         const candidates = [];
         for (const shift of possibleShifts) {
-            // A. 硬限制快速檢查 (前置過濾，減輕 RuleEngine 負擔)
+            // A. 硬限制快速檢查
             const { valid } = this.checkHardConstraints(staff, shift, prevShift, context);
             if (!valid) continue; 
 
@@ -259,7 +274,7 @@ export class AutoScheduler {
         for (const cand of candidates) {
             const shift = cand.shift;
             
-            // 剪枝 (Pruning): 如果該班已滿且非高分連續班，則跳過 (提升效能)
+            // 剪枝 (Pruning): 如果該班已滿且非高分連續班，則跳過
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
             if (shift !== 'OFF' && currentCounts[shift] >= req && cand.score < 120) {
                 continue; 
@@ -281,17 +296,15 @@ export class AutoScheduler {
             );
 
             if (!ruleCheck.errors[day]) {
-                // 通過檢查，遞迴下一位
                 if (await this.solveRecursive(day, staffList, index + 1, context)) {
                     return true;
                 }
             }
 
-            // 回溯 (Backtrack): 清除指派，嘗試下一個候選班別
+            // 回溯
             delete context.assignments[staff.uid][day];
         }
 
-        // 若所有候選班別都失敗，回傳 false 觸發上一層回溯
         return false;
     }
 
@@ -300,7 +313,7 @@ export class AutoScheduler {
     // ============================================================
     
     static checkHardConstraints(staff, shift, prevShift, context) {
-        // 1. 間隔限制 (E 不接 D)
+        // 1. 間隔限制 (E 不接 D) - 這裡可根據動態班別擴充邏輯，目前保留 D/E 檢查
         if (context.rules.constraints?.minInterval11h) {
             if (prevShift === 'E' && shift === 'D') return { valid: false, reason: "Interval < 11h" };
         }
@@ -354,7 +367,10 @@ export class AutoScheduler {
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
 
-        ['N', 'E', 'D'].forEach(shift => {
+        // 取得所有設定的班別代碼 (不含 OFF)
+        const shiftsToCheck = context.shiftDefs.map(s => s.code);
+
+        shiftsToCheck.forEach(shift => {
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
             if (req === 0) return; 
 
@@ -406,13 +422,22 @@ export class AutoScheduler {
     static checkDailyManpower(day, context) {
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
-        const counts = { D: 0, E: 0, N: 0 };
+        const counts = {};
+        
+        // ✅ 修正：動態檢查所有班別
+        const shiftsToCheck = (context.shiftDefs && context.shiftDefs.length > 0) 
+            ? context.shiftDefs.map(s => s.code) 
+            : ['D', 'E', 'N'];
+            
+        shiftsToCheck.forEach(s => counts[s] = 0);
+
         Object.values(context.assignments).forEach(sch => {
             const s = sch[day];
             if (counts[s] !== undefined) counts[s]++;
         });
+        
         const missing = [];
-        ['D', 'E', 'N'].forEach(s => {
+        shiftsToCheck.forEach(s => {
             const req = (context.staffReq[s] && context.staffReq[s][w]) || 0;
             if (counts[s] < req) missing.push(`${s}:${counts[s]}/${req}`);
         });
