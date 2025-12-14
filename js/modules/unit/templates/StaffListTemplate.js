@@ -14,13 +14,10 @@ export const StaffListTemplate = {
                         <select id="unit-filter" class="form-select w-auto" ${isOneUnit ? 'disabled' : ''}>
                             ${unitOptionsHtml}
                         </select>
-                        
                         <div class="vr mx-2"></div>
-                        
                         <button id="btn-add-staff" class="btn btn-primary w-auto text-nowrap">
                             <i class="fas fa-plus"></i> 新增人員
                         </button>
-
                         <div class="ms-auto">
                             <input type="text" id="keyword-search" class="form-control form-control-sm" placeholder="搜尋姓名/編號...">
                         </div>
@@ -87,7 +84,7 @@ export const StaffListTemplate = {
         `).join('');
     },
 
-    // 3. Modal 結構 (靜態 HTML，資料由 JS 回填)
+    // 3. Modal 結構
     renderModalHtml(isAdmin) {
         return `
             <div class="modal fade" id="staff-modal" tabindex="-1">
@@ -144,7 +141,7 @@ export const StaffListTemplate = {
 
                                 <hr>
                                 <div class="mb-3">
-                                    <label class="form-label fw-bold text-primary">排班參數</label>
+                                    <label class="form-label fw-bold text-primary">排班參數 (母性保護)</label>
                                     <div class="row g-2 mb-2">
                                         <div class="col-6">
                                             <label class="small text-muted">連上上限</label>
@@ -155,16 +152,21 @@ export const StaffListTemplate = {
                                             <input type="number" id="edit-maxConsecutiveNights" class="form-control form-control-sm" min="1">
                                         </div>
                                     </div>
-                                    <div class="d-flex gap-3">
+                                    <div class="d-flex gap-3 mt-2">
                                         <div class="form-check">
                                             <input type="checkbox" id="edit-isPregnant" class="form-check-input">
-                                            <label class="form-check-label text-danger">懷孕 (不排夜)</label>
+                                            <label class="form-check-label text-danger fw-bold">懷孕</label>
                                         </div>
                                         <div class="form-check">
+                                            <input type="checkbox" id="edit-isPostpartum" class="form-check-input">
+                                            <label class="form-check-label text-danger fw-bold">產後哺乳</label>
+                                        </div>
+                                        <div class="form-check ms-auto">
                                             <input type="checkbox" id="edit-canBatch" class="form-check-input">
-                                            <label class="form-check-label">可包班</label>
+                                            <label class="form-check-label text-muted">可包班</label>
                                         </div>
                                     </div>
+                                    <div class="form-text small text-danger">※ 懷孕或產後哺乳者，系統將強制不排 22:00 後的班別。</div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label fw-bold text-primary">系統權限</label>
