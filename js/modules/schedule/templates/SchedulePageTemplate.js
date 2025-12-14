@@ -54,6 +54,18 @@ export const SchedulePageTemplate = {
                     </div>
                 </div>
 
+                <div id="ai-progress-container" class="card shadow-sm mb-3 border-primary" style="display:none;">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small fw-bold text-primary"><i class="fas fa-robot me-1"></i>AI 運算中...</span>
+                            <span class="small fw-bold text-muted" id="ai-progress-text">準備開始</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div id="ai-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="schedule-grid-container" class="schedule-grid-wrapper border rounded"></div>
 
                 <div class="modal fade" id="score-modal" tabindex="-1">
