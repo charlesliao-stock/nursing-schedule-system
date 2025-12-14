@@ -22,30 +22,24 @@ export class StaffListPage {
 
         try {
             let units = [];
-            // 1. 根據權限取得單位列表
             if (isAdmin) {
                 units = await UnitService.getAllUnits();
             } else {
                 units = await UnitService.getUnitsByManager(this.currentUser.uid);
-                // Fallback: 若非管理職但有綁定單位
                 if(units.length === 0 && this.currentUser.unitId) {
                     const u = await UnitService.getUnitById(this.currentUser.unitId);
                     if(u) units.push(u);
                 }
             }
 
-            // 建立 unitMap 供列表顯示使用
             units.forEach(u => this.unitMap[u.unitId] = u.unitName);
 
-            // 2. 產生下拉選單 HTML
             if (units.length === 0) {
                 unitOptionsHtml = '<option value="">無權限</option>';
             } else if (isAdmin) {
-                // 系統管理員：預設顯示 "請選擇"
                 unitOptionsHtml = `<option value="" disabled selected>請選擇單位...</option>` + 
                                   units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             } else {
-                // 單位主管
                 unitOptionsHtml = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
                 if (units.length === 1) isOneUnit = true;
             }
@@ -55,35 +49,29 @@ export class StaffListPage {
             unitOptionsHtml = '<option value="">(無法載入單位)</option>';
         }
 
-        // 使用 Template 渲染整體佈局
         return StaffListTemplate.renderLayout(unitOptionsHtml, isAdmin, isOneUnit) + StaffListTemplate.renderModalHtml(isAdmin);
     }
 
     async afterRender() {
         if(!this.currentUser) return;
-        window.routerPage = this; // 讓全域函數可呼叫 (如 onclick="window.routerPage.xxx")
+        window.routerPage = this;
         
         this.editModal = new bootstrap.Modal(document.getElementById('staff-modal'));
         const unitSelect = document.getElementById('unit-filter');
         const btnAdd = document.getElementById('btn-add-staff');
 
-        // 事件綁定
         unitSelect.addEventListener('change', () => this.loadData());
         btnAdd.addEventListener('click', () => this.openModal());
         document.getElementById('btn-save').addEventListener('click', () => this.handleSave());
         document.getElementById('keyword-search').addEventListener('input', (e) => this.filterData(e.target.value));
         
-        // Modal 內的單位切換連動組別
         document.getElementById('edit-unit').addEventListener('change', (e) => this.updateGroupOptions(e.target.value));
 
-        // 初始載入邏輯
         const isAdmin = this.currentUser.role === 'system_admin' || this.currentUser.originalRole === 'system_admin';
         
         if (!isAdmin && unitSelect.options.length > 0) {
-            // 一般管理者：如果有單位，自動載入第一個
             this.loadData();
         }
-        // 系統管理員：等待手動選擇，不自動載入
     }
 
     async loadData() {
@@ -101,12 +89,9 @@ export class StaffListPage {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center py-5"><span class="spinner-border spinner-border-sm"></span> 載入資料中...</td></tr>';
 
         try {
-            // 讀取該單位所有人員
             const list = await userService.getUsersByUnit(unitId);
-            
             this.staffList = list;
             this.applySortAndFilter();
-
         } catch(e) {
             console.error("Load Staff Error:", e);
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">載入失敗: ${e.message}</td></tr>`;
@@ -139,7 +124,6 @@ export class StaffListPage {
         const keyword = document.getElementById('keyword-search').value.toLowerCase();
         let filtered = this.staffList;
 
-        // 關鍵字過濾
         if (keyword) {
             filtered = this.staffList.filter(u => 
                 (u.name && u.name.toLowerCase().includes(keyword)) || 
@@ -148,7 +132,6 @@ export class StaffListPage {
             );
         }
 
-        // 排序
         const key = this.sortConfig.key;
         const dir = this.sortConfig.direction === 'asc' ? 1 : -1;
         
@@ -156,20 +139,17 @@ export class StaffListPage {
             let valA = a[key] || '';
             let valB = b[key] || '';
             
-            // 特殊欄位處理
             if (key === 'unitId') {
                 valA = this.unitMap[valA] || valA;
                 valB = this.unitMap[valB] || valB;
             }
 
-            // 數字排序優化 (如員編)
             const numA = parseFloat(valA);
             const numB = parseFloat(valB);
             if (!isNaN(numA) && !isNaN(numB) && String(numA) === String(valA)) {
                 return (numA - numB) * dir;
             }
 
-            // 字串排序
             valA = valA.toString().toLowerCase();
             valB = valB.toString().toLowerCase();
             if (valA < valB) return -1 * dir;
@@ -178,7 +158,6 @@ export class StaffListPage {
         });
 
         this.displayList = filtered;
-        // 渲染 HTML
         document.getElementById('staff-tbody').innerHTML = StaffListTemplate.renderRows(this.displayList, this.unitMap);
     }
 
@@ -186,7 +165,6 @@ export class StaffListPage {
         this.applySortAndFilter();
     }
 
-    // 更新 Modal 中的組別選項
     async updateGroupOptions(unitId, selectedGroup = '') {
         const groupSelect = document.getElementById('edit-group');
         groupSelect.innerHTML = '<option value="">載入中...</option>';
@@ -214,32 +192,31 @@ export class StaffListPage {
         const editUnit = document.getElementById('edit-unit');
         const filterUnit = document.getElementById('unit-filter');
         
-        // 將列表頁的單位選項複製到 Modal 中
         editUnit.innerHTML = filterUnit.innerHTML;
-        // 移除 "全部單位" 或 "請選擇" 的無效選項
         if(editUnit.options.length > 0 && editUnit.options[0].value === "") {
             editUnit.remove(0);
         }
 
         if(uid) {
-            // 編輯模式
             document.getElementById('modal-title').textContent = "編輯人員";
             const u = this.staffList.find(x => x.uid === uid);
             if (!u) { alert("找不到該人員資料"); return; }
             
-            document.getElementById('edit-uid').value = uid; // 隱藏欄位：Firebase Document ID
+            document.getElementById('edit-uid').value = uid;
             document.getElementById('edit-unit').value = u.unitId;
             document.getElementById('edit-staffId').value = u.staffId;
             document.getElementById('edit-name').value = u.name;
             document.getElementById('edit-email').value = u.email;
-            document.getElementById('edit-email').disabled = true; // Email 不可修改
+            document.getElementById('edit-email').disabled = true;
             document.getElementById('edit-level').value = u.rank;
             document.getElementById('edit-hireDate').value = u.hireDate || '';
             
             await this.updateGroupOptions(u.unitId, u.group);
             
-            // 權限與限制
             document.getElementById('edit-isPregnant').checked = !!u.constraints?.isPregnant;
+            // ✅ 新增：讀取產後哺乳狀態
+            document.getElementById('edit-isPostpartum').checked = !!u.constraints?.isPostpartum;
+            
             document.getElementById('edit-canBatch').checked = !!u.constraints?.canBatch;
             document.getElementById('edit-maxConsecutive').value = u.constraints?.maxConsecutive || 6;
             document.getElementById('edit-maxConsecutiveNights').value = u.constraints?.maxConsecutiveNights || 4;
@@ -247,18 +224,15 @@ export class StaffListPage {
             document.getElementById('edit-is-manager').checked = u.role === 'unit_manager';
             document.getElementById('edit-is-scheduler').checked = u.role === 'unit_scheduler';
         } else {
-            // 新增模式
             document.getElementById('modal-title').textContent = "新增人員";
             document.getElementById('edit-uid').value = "";
             document.getElementById('edit-email').disabled = false;
             
-            // 預設選取目前列表篩選的單位
             const currentFilter = filterUnit.value;
             if (currentFilter) {
                 editUnit.value = currentFilter;
                 await this.updateGroupOptions(currentFilter);
             } else if (editUnit.options.length > 0) {
-                // 若無篩選，選第一個並載入組別
                 editUnit.selectedIndex = 0;
                 await this.updateGroupOptions(editUnit.value);
             }
@@ -267,10 +241,9 @@ export class StaffListPage {
     }
 
     async handleSave() {
-        const uid = document.getElementById('edit-uid').value; // Document ID
+        const uid = document.getElementById('edit-uid').value;
         const btn = document.getElementById('btn-save');
         
-        // 收集表單資料
         const isManager = document.getElementById('edit-is-manager').checked;
         const isScheduler = document.getElementById('edit-is-scheduler').checked;
         
@@ -293,6 +266,8 @@ export class StaffListPage {
             },
             constraints: {
                 isPregnant: document.getElementById('edit-isPregnant').checked,
+                // ✅ 新增：儲存產後哺乳狀態
+                isPostpartum: document.getElementById('edit-isPostpartum').checked,
                 canBatch: document.getElementById('edit-canBatch').checked,
                 maxConsecutive: parseInt(document.getElementById('edit-maxConsecutive').value) || 6,
                 maxConsecutiveNights: parseInt(document.getElementById('edit-maxConsecutiveNights').value) || 4
@@ -304,18 +279,16 @@ export class StaffListPage {
 
         try {
             if(uid) {
-                // 更新
                 await userService.updateUser(uid, data);
                 alert("✅ 修改成功");
             } else {
-                // 新增 (需 Email)
                 const email = document.getElementById('edit-email').value;
                 const res = await userService.createStaff({ ...data, email }, "123456");
                 if(res.success) alert("✅ 新增成功 (預設密碼: 123456)");
                 else alert("新增失敗: " + res.error);
             }
             this.editModal.hide();
-            this.loadData(); // 重新載入列表
+            this.loadData();
         } catch(e) {
             alert("錯誤: " + e.message);
         } finally {
