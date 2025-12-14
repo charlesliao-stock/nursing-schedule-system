@@ -121,81 +121,100 @@ export class SchedulePage {
     //  數據載入
     // ============================================================
     
-    async loadData() {
-        if (this.state.isLoading) return;
+// 在 SchedulePage.js 中，替換 loadData 方法
+
+async loadData() {
+    if (this.state.isLoading) return;
+    
+    this.state.isLoading = true;
+    const container = document.getElementById('schedule-grid-container');
+    const loading = document.getElementById('loading-indicator');
+    
+    if(loading) loading.style.display = 'block';
+    container.innerHTML = `
+        <div class="text-center p-5">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p>資料載入中...</p>
+        </div>
+    `;
+
+    try {
+        // 並行載入數據
+        const [unit, staffList, schedule] = await Promise.all([
+            UnitService.getUnitById(this.state.currentUnitId),
+            userService.getUnitStaff(this.state.currentUnitId),
+            ScheduleService.getSchedule(this.state.currentUnitId, this.state.year, this.state.month)
+        ]);
+
+        if (!unit) {
+            throw new Error('找不到該單位資料');
+        }
+
+        this.state.unitSettings = unit;
+        this.state.staffList = staffList || [];
+        this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
         
-        this.state.isLoading = true;
-        const container = document.getElementById('schedule-grid-container');
-        const loading = document.getElementById('loading-indicator');
+        // ⭐ 處理班表數據（加強防禦）
+        if (!schedule) {
+            // 如果班表不存在，創建空白班表
+            this.state.scheduleData = {
+                unitId: this.state.currentUnitId, 
+                year: this.state.year, 
+                month: this.state.month,
+                status: 'draft', 
+                assignments: {},
+                metadata: {
+                    createdAt: new Date().toISOString(),
+                    createdBy: null,
+                    lastModified: new Date().toISOString()
+                }
+            };
+            
+            // ⭐ 初始化所有員工的班表（確保每個員工都有 assignments entry）
+            this.state.staffList.forEach(s => {
+                this.state.scheduleData.assignments[s.uid] = {};
+            });
+            
+            // 重置為預班
+            await this.resetToPreSchedule(false);
+        } else {
+            this.state.scheduleData = schedule;
+            
+            // ⭐ 確保 assignments 存在
+            if (!this.state.scheduleData.assignments) {
+                this.state.scheduleData.assignments = {};
+            }
+            
+            // ⭐ 確保每個員工都有 assignments entry
+            this.state.staffList.forEach(s => {
+                if (!this.state.scheduleData.assignments[s.uid]) {
+                    this.state.scheduleData.assignments[s.uid] = {};
+                }
+            });
+            
+            this.renderGrid();
+            this.updateStatusBadge();
+            await this.updateScoreDisplay();
+        }
         
-        if(loading) loading.style.display = 'block';
+        // 顯示統計資訊
+        this.updateStatistics();
+        
+    } catch (error) {
+        console.error('載入失敗:', error);
         container.innerHTML = `
-            <div class="text-center p-5">
-                <div class="spinner-border text-primary mb-3" role="status"></div>
-                <p>資料載入中...</p>
+            <div class="alert alert-danger m-3">
+                <i class="fas fa-exclamation-circle"></i> 載入失敗: ${error.message}
+                <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">
+                    重新載入
+                </button>
             </div>
         `;
-
-        try {
-            // 並行載入數據
-            const [unit, staffList, schedule] = await Promise.all([
-                UnitService.getUnitById(this.state.currentUnitId),
-                userService.getUnitStaff(this.state.currentUnitId),
-                ScheduleService.getSchedule(this.state.currentUnitId, this.state.year, this.state.month)
-            ]);
-
-            if (!unit) {
-                throw new Error('找不到該單位資料');
-            }
-
-            this.state.unitSettings = unit;
-            this.state.staffList = staffList || [];
-            this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
-            
-            // 處理班表數據
-            if (!schedule) {
-                this.state.scheduleData = {
-                    unitId: this.state.currentUnitId, 
-                    year: this.state.year, 
-                    month: this.state.month,
-                    status: 'draft', 
-                    assignments: {},
-                    metadata: {
-                        createdAt: new Date().toISOString(),
-                        createdBy: null,
-                        lastModified: new Date().toISOString()
-                    }
-                };
-                
-                // 初始化所有員工的班表
-                staffList.forEach(s => this.state.scheduleData.assignments[s.uid] = {});
-                
-                await this.resetToPreSchedule(false);
-            } else {
-                this.state.scheduleData = schedule;
-                this.renderGrid();
-                this.updateStatusBadge();
-                await this.updateScoreDisplay();
-            }
-            
-            // 顯示統計資訊
-            this.updateStatistics();
-            
-        } catch (error) {
-            console.error('載入失敗:', error);
-            container.innerHTML = `
-                <div class="alert alert-danger m-3">
-                    <i class="fas fa-exclamation-circle"></i> 載入失敗: ${error.message}
-                    <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">
-                        重新載入
-                    </button>
-                </div>
-            `;
-        } finally {
-            this.state.isLoading = false;
-            if(loading) loading.style.display = 'none';
-        }
+    } finally {
+        this.state.isLoading = false;
+        if(loading) loading.style.display = 'none';
     }
+}
 
     // ============================================================
     //  重置為預班
