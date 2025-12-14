@@ -29,7 +29,14 @@ export class ScheduleService {
                 return null;
             }
             
-            return docSnap.data();
+            const data = docSnap.data();
+            
+            // ⭐ 確保 assignments 存在且為物件
+            if (!data.assignments || typeof data.assignments !== 'object') {
+                data.assignments = {};
+            }
+            
+            return data;
         } catch (error) { 
             console.error('Error getting schedule:', error);
             throw error; 
