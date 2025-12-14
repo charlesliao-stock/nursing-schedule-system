@@ -71,21 +71,22 @@ export class RuleSettings {
                                         <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-danger"><i class="fas fa-gavel"></i> 勞基法與硬性規範 (不可違反)</h6></div>
                                         <div class="card-body">
                                             <div class="form-check form-switch mb-3">
-                                                <input class="form-check-input" type="checkbox" id="rule-min-11h" checked disabled>
+                                                <input class="form-check-input" type="checkbox" id="rule-min-11h" checked>
                                                 <label class="form-check-label fw-bold">班與班間隔至少 11 小時</label>
                                                 <div class="form-text text-danger small">
-                                                    系統將強制禁止「小接白 (E-D)」等間隔不足 11 小時之排法。<br>
-                                                    註：大夜(N) 接白(D) 或小(E) 因間隔足夠，視為允許。
+                                                    啟用後，系統將標記「小接白 (E-D)」等間隔不足 11 小時之排法為錯誤。
                                                 </div>
                                             </div>
                                             <hr>
                                             <div class="mb-3">
-                                                <label class="form-label fw-bold">一週內班別種類上限</label>
-                                                <select class="form-select" id="rule-max-types-week">
-                                                    <option value="2">最多 2 種 (如: D/E 或 D/N)</option>
-                                                    <option value="3">最多 3 種 (如: D/E/N 皆有)</option>
-                                                </select>
-                                                <div class="form-text small">一週內 (週一至週日) 混合班別的種類限制。</div>
+                                                <label class="form-label fw-bold text-danger">一週內班別種類上限</label>
+                                                <input type="text" class="form-control bg-light" value="最多 2 種 (如: D/E 或 D/N)" disabled>
+                                                <div class="form-text small text-danger">
+                                                    <i class="fas fa-exclamation-triangle"></i> 此為硬性規範，系統強制檢查每 7 天滑動區間內不可出現 3 種班別。
+                                                </div>
+                                            </div>
+                                            <div class="alert alert-danger py-2 small">
+                                                <i class="fas fa-female"></i> <strong>母性保護：</strong> 懷孕或產後哺乳期間，系統強制不排 22:00 後之班別 (包含 E 班與 N 班)。
                                             </div>
                                         </div>
                                     </div>
@@ -98,9 +99,19 @@ export class RuleSettings {
                                             <div class="form-check form-switch mb-3">
                                                 <input class="form-check-input" type="checkbox" id="rule-first-n-off" checked>
                                                 <label class="form-check-label fw-bold">排大夜 (N) 的前一天必須是 N 或 OFF</label>
-                                                <div class="form-text small">避免由 D 或 E 直接跳接 N (逆向且間隔短)。</div>
+                                                <div class="form-text small">避免由 D 或 E 直接跳接 N。</div>
+                                            </div>
+                                            
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-month-mix" checked>
+                                                <label class="form-check-label fw-bold">尊重每月班別種類偏好</label>
+                                                <div class="form-text small">
+                                                    允許人員選擇「一個月只排 2 種班」或「可接受 3 種班」。
+                                                    若開啟，AI 將嘗試滿足此偏好 (軟性)。
+                                                </div>
                                             </div>
 
+                                            <hr>
                                             <div class="row g-3">
                                                 <div class="col-6">
                                                     <label class="form-label fw-bold">同種班最少連續</label>
@@ -117,11 +128,12 @@ export class RuleSettings {
                                                     </div>
                                                 </div>
                                                 <div class="col-12">
-                                                    <label class="form-label fw-bold">最大連續上班天數</label>
+                                                    <label class="form-label fw-bold text-danger">最大連續上班天數</label>
                                                     <div class="input-group">
-                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1">
+                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1" max="12">
                                                         <span class="input-group-text">天</span>
                                                     </div>
+                                                    <div class="form-text small">若設定為 6，則第 7 天必須為 OFF (七休一)。</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -134,45 +146,38 @@ export class RuleSettings {
                             <div class="card shadow mb-4">
                                 <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-dark"><i class="fas fa-robot text-primary me-2"></i>AI 排班流程控制</h6></div>
                                 <div class="card-body">
-                                    <div class="alert alert-light border-primary border-start border-4 small">
-                                        <i class="fas fa-info-circle me-2"></i>此處設定可讓您決定 AI 演算法的執行步驟。開啟越多最佳化選項，排班結果通常越符合人性，但計算時間可能稍長。
-                                    </div>
-
                                     <div class="list-group">
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
                                                 <h6 class="mb-1 fw-bold text-primary"><i class="fas fa-layer-group me-2"></i>1. 包班優先預填 (Batch Pre-fill)</h6>
-                                                <small class="text-muted d-block">在排其他人之前，先將包班人員 (如包大夜、包小夜) 的整月班表填滿。</small>
+                                                <small class="text-muted d-block">優先填滿包班人員，並自動強制安插 OFF 以符合連續上班限制。</small>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input fs-5" type="checkbox" id="proc-batch-prefill" checked>
                                             </div>
                                         </div>
-
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
                                                 <h6 class="mb-1 fw-bold text-info"><i class="fas fa-history me-2"></i>2. 歷史資料整合 (History Check)</h6>
-                                                <small class="text-muted d-block">讀取上個月最後一天的班表，確保 1 號的排班間隔符合規定 (如上月 30 號是大夜，則 1 號不可排白班)。</small>
+                                                <small class="text-muted d-block">讀取上月最後一天，確保跨月銜接的間隔與連續天數正確。</small>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input fs-5" type="checkbox" id="proc-history" checked>
                                             </div>
                                         </div>
-
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
                                                 <h6 class="mb-1 fw-bold text-warning"><i class="fas fa-cut me-2"></i>3. 自動調節過剩人力 (Auto Pruning)</h6>
-                                                <small class="text-muted d-block">若當日某班別 (如大夜) 人數超過需求，AI 會自動將「累積上班天數最多」的包班人員調整為 OFF。</small>
+                                                <small class="text-muted d-block">若當日人力過剩，自動將部分人員調整為休假。</small>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input fs-5" type="checkbox" id="proc-pruning" checked>
                                             </div>
                                         </div>
-
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
                                                 <h6 class="mb-1 fw-bold text-danger"><i class="fas fa-forward me-2"></i>4. 盡力而為模式 (Force Push)</h6>
-                                                <small class="text-muted d-block">若遇到人力不足的死路，允許 AI 保留缺口繼續排下一天，而非直接報錯停止 (建議開啟)。</small>
+                                                <small class="text-muted d-block">遇到無解情況時，允許保留缺口繼續排下一天。</small>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input fs-5" type="checkbox" id="proc-force" checked>
@@ -190,7 +195,7 @@ export class RuleSettings {
                                     <div>總權重: <span id="total-weight-display" class="badge bg-secondary fs-6">100%</span></div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="alert alert-info small mb-3"><i class="fas fa-info-circle"></i> 請調整各細項權重，總和建議為 100%。關閉的項目不計分。</div>
+                                    <div class="alert alert-info small mb-3"><i class="fas fa-info-circle"></i> 請調整各細項權重，總和建議為 100%。</div>
                                     <div class="row g-3" id="scoring-config-container"></div>
                                 </div>
                             </div>
@@ -306,27 +311,26 @@ export class RuleSettings {
             }
         });
 
-        // 1. 回填人力需求
         document.querySelectorAll('.req-input').forEach(input => {
             input.value = staffReq[input.dataset.shift]?.[input.dataset.day] || 0;
         });
 
-        // 2. 回填排班規則
         const constraints = savedRules.constraints || {};
         document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
-        document.getElementById('rule-max-types-week').value = constraints.maxShiftTypesWeek || 3;
+        // rule-max-types-week 改為靜態顯示，不需讀取 value
         document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false;
         document.getElementById('rule-min-consecutive').value = constraints.minConsecutiveSame || 2;
         document.getElementById('rule-max-night').value = constraints.maxConsecutiveNight || 4;
+        document.getElementById('rule-min-11h').checked = constraints.minInterval11h !== false;
+        // ✅ 讀取新參數
+        document.getElementById('rule-month-mix').checked = constraints.allowMonthlyMixPref !== false; 
 
-        // 3. 回填排班流程 (Process Config)
         const proc = savedRules.processConfig || {};
-        document.getElementById('proc-batch-prefill').checked = proc.enableBatchPrefill !== false; // 預設 true
+        document.getElementById('proc-batch-prefill').checked = proc.enableBatchPrefill !== false; 
         document.getElementById('proc-history').checked = proc.enableHistory !== false;
         document.getElementById('proc-pruning').checked = proc.enablePruning !== false;
         document.getElementById('proc-force').checked = proc.enableForcePush !== false;
 
-        // 4. 回填評分權重
         const container = document.getElementById('scoring-config-container');
         container.innerHTML = '';
         const categories = ['fairness', 'satisfaction', 'efficiency', 'health', 'quality', 'cost'];
@@ -364,23 +368,22 @@ export class RuleSettings {
         btn.disabled = true;
 
         try {
-            // 1. 收集人力需求
             const staffReq = { D:{}, E:{}, N:{} };
             document.querySelectorAll('.req-input').forEach(input => {
                 staffReq[input.dataset.shift][input.dataset.day] = parseInt(input.value) || 0;
             });
 
-            // 2. 收集排班規則
             const constraints = {
-                maxShiftTypesWeek: parseInt(document.getElementById('rule-max-types-week').value),
+                maxShiftTypesWeek: 2, // ⚠️ 強制設定為 2
                 firstNRequiresOFF: document.getElementById('rule-first-n-off').checked,
                 minConsecutiveSame: parseInt(document.getElementById('rule-min-consecutive').value) || 2,
                 maxConsecutiveNight: parseInt(document.getElementById('rule-max-night').value) || 4,
-                minInterval11h: true, // 預設強制開啟
+                minInterval11h: document.getElementById('rule-min-11h').checked,
+                // ✅ 儲存新參數
+                allowMonthlyMixPref: document.getElementById('rule-month-mix').checked, 
                 shiftSequence: ['OFF', 'N', 'D', 'E']
             };
 
-            // 3. 收集排班流程
             const processConfig = {
                 enableBatchPrefill: document.getElementById('proc-batch-prefill').checked,
                 enableHistory: document.getElementById('proc-history').checked,
@@ -388,7 +391,6 @@ export class RuleSettings {
                 enableForcePush: document.getElementById('proc-force').checked
             };
 
-            // 4. 收集評分權重
             const newConfig = { hard: { enabled: true, weight: 0 } };
             const categories = ['fairness', 'satisfaction', 'efficiency', 'health', 'quality', 'cost'];
             
@@ -407,7 +409,7 @@ export class RuleSettings {
             const rulesData = { 
                 maxConsecutiveWork: parseInt(document.getElementById('maxConsecutiveDays').value) || 6,
                 constraints: constraints, 
-                processConfig: processConfig, // 新增此欄位
+                processConfig: processConfig,
                 scoringConfig: newConfig
             };
 
