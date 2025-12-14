@@ -3,7 +3,10 @@ import { authService } from "../../services/firebase/AuthService.js";
 import { ScoringService } from "../../services/ScoringService.js";
 
 export class RuleSettings {
-    constructor() { this.targetUnitId = null; this.currentConfig = null; }
+    constructor() { 
+        this.targetUnitId = null; 
+        this.currentConfig = null; 
+    }
 
     async render() {
         return `
@@ -19,8 +22,13 @@ export class RuleSettings {
                         <select id="rule-unit-select" class="form-select w-auto">
                             <option value="">載入中...</option>
                         </select>
-                        <div class="ms-auto">
-                            <button id="btn-save-rules" class="btn btn-primary w-auto shadow-sm"><i class="fas fa-save"></i> 儲存設定</button>
+                        <div class="ms-auto d-flex gap-2">
+                            <button id="btn-reset-defaults" class="btn btn-outline-secondary w-auto">
+                                <i class="fas fa-undo"></i> 恢復預設
+                            </button>
+                            <button id="btn-save-rules" class="btn btn-primary w-auto shadow-sm">
+                                <i class="fas fa-save"></i> 儲存設定
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -50,20 +58,38 @@ export class RuleSettings {
                     </ul>
 
                     <div class="tab-content">
+                        <!-- Tab 1: 人力需求 -->
                         <div class="tab-pane fade show active" id="tab-min">
                             <div class="card shadow mb-4">
-                                <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-primary">每日最低人力 (Min Staff)</h6></div>
+                                <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 fw-bold text-primary">每日最低人力 (Min Staff)</h6>
+                                    <button class="btn btn-sm btn-outline-primary" id="btn-copy-week">
+                                        <i class="fas fa-copy"></i> 複製平日到週末
+                                    </button>
+                                </div>
                                 <div class="card-body">
                                     <div class="table-responsive">
                                         <table class="table table-bordered text-center table-sm align-middle">
-                                            <thead class="table-light"><tr><th style="width:10%">班別</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th class="text-danger">六</th><th class="text-danger">日</th></tr></thead>
-                                            <tbody>${this.renderRow('D', '白班')}${this.renderRow('E', '小夜')}${this.renderRow('N', '大夜')}</tbody>
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width:10%">班別</th>
+                                                    <th>一</th><th>二</th><th>三</th><th>四</th><th>五</th>
+                                                    <th class="text-danger">六</th>
+                                                    <th class="text-danger">日</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${this.renderRow('D', '白班')}
+                                                ${this.renderRow('E', '小夜')}
+                                                ${this.renderRow('N', '大夜')}
+                                            </tbody>
                                         </table>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- Tab 2: 規則限制 -->
                         <div class="tab-pane fade" id="tab-constraints">
                             <div class="row">
                                 <div class="col-lg-6">
@@ -82,7 +108,7 @@ export class RuleSettings {
                                             <div class="form-check form-switch mb-3">
                                                 <input class="form-check-input" type="checkbox" id="rule-pregnant-protect">
                                                 <label class="form-check-label fw-bold">孕婦保護條款</label>
-                                                <div class="form-text small">禁止孕婦排入午後 10 點至翌晨 6 點之工作 (N/E 班)。</div>
+                                                <div class="form-text small">禁止孕婦排入凌晨 10 點至翌晨 6 點之工作 (N/E 班)。</div>
                                             </div>
 
                                             <div class="form-check form-switch mb-3">
@@ -97,6 +123,7 @@ export class RuleSettings {
                                                 <select class="form-select" id="rule-max-types-week">
                                                     <option value="2">最多 2 種 (如: D/E 或 D/N)</option>
                                                     <option value="3">最多 3 種 (如: D/E/N 皆有)</option>
+                                                    <option value="99">不限制</option>
                                                 </select>
                                                 <div class="form-text small">避免一週內班別變動過於劇烈。</div>
                                             </div>
@@ -134,6 +161,7 @@ export class RuleSettings {
                                                         <input type="number" id="rule-min-consecutive" class="form-control" value="2" min="1">
                                                         <span class="input-group-text">天</span>
                                                     </div>
+                                                    <div class="form-text small">避免頻繁換班</div>
                                                 </div>
                                                 <div class="col-6">
                                                     <label class="form-label fw-bold">夜班連續上限</label>
@@ -141,13 +169,15 @@ export class RuleSettings {
                                                         <input type="number" id="rule-max-night" class="form-control" value="4" min="1">
                                                         <span class="input-group-text">天</span>
                                                     </div>
+                                                    <div class="form-text small">保護健康</div>
                                                 </div>
                                                 <div class="col-12">
                                                     <label class="form-label fw-bold">最大連續上班天數</label>
                                                     <div class="input-group input-group-sm">
-                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1">
+                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1" max="14">
                                                         <span class="input-group-text">天</span>
                                                     </div>
+                                                    <div class="form-text small">超過此數值將強制休息</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -156,10 +186,20 @@ export class RuleSettings {
                             </div>
                         </div>
 
+                        <!-- Tab 3: 演算策略 -->
                         <div class="tab-pane fade" id="tab-process">
                             <div class="card shadow mb-4">
-                                <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-dark"><i class="fas fa-cogs text-primary me-2"></i>C. 排班策略與演算法行為</h6></div>
+                                <div class="card-header py-3 bg-white">
+                                    <h6 class="m-0 fw-bold text-dark">
+                                        <i class="fas fa-cogs text-primary me-2"></i>C. 排班策略與演算法行為
+                                    </h6>
+                                </div>
                                 <div class="card-body">
+                                    <div class="alert alert-info small mb-3">
+                                        <i class="fas fa-info-circle"></i> 
+                                        這些設定控制 AI 排班引擎的行為與策略，影響排班速度與品質。
+                                    </div>
+                                    
                                     <div class="list-group">
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
@@ -174,7 +214,7 @@ export class RuleSettings {
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
                                                 <h6 class="mb-1 fw-bold text-info">2. 歷史資料整合 (History Check)</h6>
-                                                <small class="text-muted">連結上個月底班表，確保跨月班距與連續性。</small>
+                                                <small class="text-muted">連結上個月底班表，確保跨月班跟與連續性。</small>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input fs-5" type="checkbox" id="proc-history" checked>
@@ -203,12 +243,24 @@ export class RuleSettings {
 
                                         <div class="list-group-item d-flex align-items-center justify-content-between py-3">
                                             <div>
-                                                <h6 class="mb-1 fw-bold text-dark">5. AI 回溯深度 (Backtracking Depth)</h6>
+                                                <h6 class="mb-1 fw-bold text-success">5. 工作負擔平衡 (Load Balancing)</h6>
+                                                <small class="text-muted">自動平衡員工工作天數，避免某些人工作過多或過少。</small>
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input fs-5" type="checkbox" id="proc-balance" checked>
+                                            </div>
+                                        </div>
+
+                                        <div class="list-group-item d-flex align-items-center justify-content-between py-3">
+                                            <div>
+                                                <h6 class="mb-1 fw-bold text-dark">6. AI 回溯深度 (Backtracking Depth)</h6>
                                                 <small class="text-muted">決定 AI 遇到死路時往回修正的深度。深度越高越精準，但速度越慢。</small>
                                             </div>
                                             <select class="form-select w-auto" id="proc-backtrack-depth">
-                                                <option value="2000">標準 (2000 steps)</option>
+                                                <option value="2000">快速 (2000 steps)</option>
+                                                <option value="10000">標準 (10000 steps)</option>
                                                 <option value="20000" selected>深度思考 (20000 steps)</option>
+                                                <option value="50000">極致精準 (50000 steps, 慢)</option>
                                             </select>
                                         </div>
                                     </div>
@@ -216,14 +268,22 @@ export class RuleSettings {
                             </div>
                         </div>
 
+                        <!-- Tab 4: 評分權重 -->
                         <div class="tab-pane fade" id="tab-scoring">
                             <div class="card shadow mb-4">
                                 <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
                                     <h6 class="m-0 fw-bold text-success">評分權重配置</h6>
-                                    <div>總權重: <span id="total-weight-display" class="badge bg-secondary fs-6">100%</span></div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="small text-muted">總權重:</span>
+                                        <span id="total-weight-display" class="badge bg-secondary fs-6">100%</span>
+                                    </div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="alert alert-info small mb-3"><i class="fas fa-info-circle"></i> 請調整各細項權重，總和建議為 100%。關閉的項目不計分。</div>
+                                    <div class="alert alert-info small mb-3">
+                                        <i class="fas fa-info-circle"></i> 
+                                        請調整各細項權重，總和建議為 100%。關閉的項目不計分。
+                                        評分系統會根據這些權重計算每個版本的優劣。
+                                    </div>
                                     <div class="row g-3" id="scoring-config-container"></div>
                                 </div>
                             </div>
@@ -236,7 +296,10 @@ export class RuleSettings {
 
     renderRow(shift, label) {
         let html = `<tr><td class="fw-bold bg-light">${label}</td>`;
-        [1, 2, 3, 4, 5, 6, 0].forEach(d => html += `<td><input type="number" class="form-control form-control-sm text-center req-input" data-shift="${shift}" data-day="${d}" value="0" min="0"></td>`);
+        [1, 2, 3, 4, 5, 6, 0].forEach(d => 
+            html += `<td><input type="number" class="form-control form-control-sm text-center req-input" 
+                               data-shift="${shift}" data-day="${d}" value="0" min="0" max="99"></td>`
+        );
         return html + '</tr>';
     }
 
@@ -278,7 +341,14 @@ export class RuleSettings {
     }
 
     getColor(key) {
-        const map = { fairness: 'primary', satisfaction: 'info', efficiency: 'success', health: 'warning', quality: 'danger', cost: 'secondary' };
+        const map = { 
+            fairness: 'primary', 
+            satisfaction: 'info', 
+            efficiency: 'success', 
+            health: 'warning', 
+            quality: 'danger', 
+            cost: 'secondary' 
+        };
         return map[key] || 'primary';
     }
 
@@ -299,7 +369,8 @@ export class RuleSettings {
         }
 
         if (units.length === 0) {
-            unitSelect.innerHTML = '<option>無單位</option>'; unitSelect.disabled = true;
+            unitSelect.innerHTML = '<option>無單位</option>'; 
+            unitSelect.disabled = true;
         } else {
             unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             if (units.length === 1) unitSelect.disabled = true;
@@ -309,6 +380,8 @@ export class RuleSettings {
         }
 
         document.getElementById('btn-save-rules').addEventListener('click', () => this.saveRules());
+        document.getElementById('btn-reset-defaults').addEventListener('click', () => this.resetToDefaults());
+        document.getElementById('btn-copy-week').addEventListener('click', () => this.copyWeekdayToWeekend());
         
         document.getElementById('rule-content').addEventListener('input', (e) => {
             if (e.target.classList.contains('sub-weight') || e.target.classList.contains('sub-enable')) {
@@ -334,12 +407,10 @@ export class RuleSettings {
         });
 
         // 2. 回填規則限制 (A/B)
-        // Hard
-        document.getElementById('rule-min-11h').checked = constraints.minInterval11h !== false; // Default true
-        document.getElementById('rule-pregnant-protect').checked = constraints.pregnantProtection !== false; // Default true
-        document.getElementById('rule-two-week-off').checked = constraints.checkTwoWeekOff !== false; // Default true
+        document.getElementById('rule-min-11h').checked = constraints.minInterval11h !== false;
+        document.getElementById('rule-pregnant-protect').checked = constraints.pregnantProtection !== false;
+        document.getElementById('rule-two-week-off').checked = constraints.checkTwoWeekOff !== false;
         
-        // Soft / Fatigue
         document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
         document.getElementById('rule-max-types-week').value = constraints.maxShiftTypesWeek || 3;
         document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false;
@@ -352,6 +423,7 @@ export class RuleSettings {
         document.getElementById('proc-history').checked = proc.enableHistory !== false;
         document.getElementById('proc-pruning').checked = proc.enablePruning !== false;
         document.getElementById('proc-force').checked = proc.enableForcePush !== false;
+        document.getElementById('proc-balance').checked = proc.enableBalance !== false;
         document.getElementById('proc-backtrack-depth').value = proc.backtrackDepth || 20000;
 
         // 4. 回填評分權重
@@ -387,12 +459,16 @@ export class RuleSettings {
         categories.forEach(key => {
             let catTotal = 0;
             document.querySelectorAll(`.sub-weight[data-cat="${key}"]`).forEach(input => {
-                const enabled = document.getElementById(`sub-enable-${key}-${input.dataset.sub}`).checked;
+                const enableCheckbox = document.getElementById(`sub-enable-${key}-${input.dataset.sub}`);
+                const enabled = enableCheckbox ? enableCheckbox.checked : false;
                 if (enabled) {
                     catTotal += (parseInt(input.value) || 0);
                 }
             });
-            document.getElementById(`cat-total-${key}`).textContent = catTotal + '%';
+            const catElement = document.getElementById(`cat-total-${key}`);
+            if (catElement) {
+                catElement.textContent = catTotal + '%';
+            }
             grandTotal += catTotal;
         });
 
@@ -403,7 +479,9 @@ export class RuleSettings {
 
     async saveRules() {
         const btn = document.getElementById('btn-save-rules');
+        const originalText = btn.innerHTML;
         btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 儲存中...';
 
         try {
             // 1. 收集人力需求
@@ -434,6 +512,7 @@ export class RuleSettings {
                 enableHistory: document.getElementById('proc-history').checked,
                 enablePruning: document.getElementById('proc-pruning').checked,
                 enableForcePush: document.getElementById('proc-force').checked,
+                enableBalance: document.getElementById('proc-balance').checked,
                 backtrackDepth: parseInt(document.getElementById('proc-backtrack-depth').value)
             };
 
@@ -445,10 +524,11 @@ export class RuleSettings {
                 newConfig[key] = { label: this.currentConfig[key].label, subs: {} };
                 document.querySelectorAll(`.sub-weight[data-cat="${key}"]`).forEach(input => {
                     const subKey = input.dataset.sub;
+                    const enableCheckbox = document.getElementById(`sub-enable-${key}-${subKey}`);
                     newConfig[key].subs[subKey] = {
                         label: this.currentConfig[key].subs[subKey].label,
                         weight: parseInt(input.value) || 0,
-                        enabled: document.getElementById(`sub-enable-${key}-${subKey}`).checked
+                        enabled: enableCheckbox ? enableCheckbox.checked : false
                     };
                 });
             });
@@ -465,10 +545,130 @@ export class RuleSettings {
                 staffRequirements: staffReq 
             });
             
-            if (res.success) alert('✅ 設定已儲存，AI 排班引擎將採用新規則。');
-            else alert('儲存失敗: ' + res.error);
+            if (res.success) {
+                btn.classList.add('btn-success');
+                btn.classList.remove('btn-primary');
+                btn.innerHTML = '<i class="fas fa-check"></i> 儲存成功';
+                
+                setTimeout(() => {
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 2000);
+                
+                // 顯示成功訊息
+                this.showNotification('✅ 設定已儲存，AI 排班引擎將採用新規則。', 'success');
+            } else {
+                throw new Error(res.error || '儲存失敗');
+            }
 
-        } catch (e) { console.error(e); alert("系統錯誤"); } 
-        finally { btn.disabled = false; }
+        } catch (e) { 
+            console.error(e); 
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            this.showNotification('❌ 儲存失敗: ' + e.message, 'danger');
+        }
+    }
+
+    // ============================================================
+    //  新增: 恢復預設值
+    // ============================================================
+    
+    resetToDefaults() {
+        if (!confirm('確定要恢復所有設定為預設值嗎？\n這將清除目前的所有自訂規則。')) return;
+        
+        // 人力需求清零
+        document.querySelectorAll('.req-input').forEach(input => {
+            input.value = 0;
+        });
+        
+        // 硬性規則預設值
+        document.getElementById('rule-min-11h').checked = true;
+        document.getElementById('rule-pregnant-protect').checked = true;
+        document.getElementById('rule-two-week-off').checked = true;
+        document.getElementById('rule-max-types-week').value = '3';
+        
+        // 軟性規則預設值
+        document.getElementById('rule-first-n-off').checked = true;
+        document.getElementById('rule-n-to-d-strategy').value = 'penalty_high';
+        document.getElementById('rule-min-consecutive').value = '2';
+        document.getElementById('rule-max-night').value = '4';
+        document.getElementById('maxConsecutiveDays').value = '6';
+        
+        // 流程配置預設值
+        document.getElementById('proc-batch-prefill').checked = true;
+        document.getElementById('proc-history').checked = true;
+        document.getElementById('proc-pruning').checked = true;
+        document.getElementById('proc-force').checked = true;
+        document.getElementById('proc-balance').checked = true;
+        document.getElementById('proc-backtrack-depth').value = '20000';
+        
+        // 評分權重恢復預設
+        const defaultConfig = ScoringService.getDefaultConfig();
+        this.currentConfig = defaultConfig;
+        
+        const container = document.getElementById('scoring-config-container');
+        container.innerHTML = '';
+        const categories = ['fairness', 'satisfaction', 'efficiency', 'health', 'quality', 'cost'];
+        categories.forEach(key => {
+            container.innerHTML += this.renderCategoryCard(key, this.currentConfig[key]);
+        });
+        
+        this.updateTotalWeightDisplay();
+        this.showNotification('✅ 已恢復預設值，記得點擊「儲存設定」以套用。', 'info');
+    }
+
+    // ============================================================
+    //  新增: 複製平日到週末
+    // ============================================================
+    
+    copyWeekdayToWeekend() {
+        ['D', 'E', 'N'].forEach(shift => {
+            // 計算平日平均值 (一~五)
+            let sum = 0;
+            for (let d = 1; d <= 5; d++) {
+                const input = document.querySelector(`.req-input[data-shift="${shift}"][data-day="${d}"]`);
+                sum += parseInt(input.value) || 0;
+            }
+            const avg = Math.round(sum / 5);
+            
+            // 套用到週六(6)和週日(0)
+            [6, 0].forEach(d => {
+                const input = document.querySelector(`.req-input[data-shift="${shift}"][data-day="${d}"]`);
+                if (input) input.value = avg;
+            });
+        });
+        
+        this.showNotification('✅ 已將平日平均值複製到週末', 'success');
+    }
+
+    // ============================================================
+    //  新增: 通知提示 UI
+    // ============================================================
+    
+    showNotification(message, type = 'info') {
+        // 移除舊的通知
+        const oldNotif = document.getElementById('rule-notification');
+        if (oldNotif) oldNotif.remove();
+        
+        const notif = document.createElement('div');
+        notif.id = 'rule-notification';
+        notif.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+        notif.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+        notif.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        document.body.appendChild(notif);
+        
+        // 3 秒後自動消失
+        setTimeout(() => {
+            if (notif && notif.parentNode) {
+                notif.classList.remove('show');
+                setTimeout(() => notif.remove(), 150);
+            }
+        }, 3000);
     }
 }
