@@ -1,40 +1,28 @@
 import { RuleEngine } from "./RuleEngine.js";
 
-// AI 權重設定
 const WEIGHTS = {
     BASE: 100,
-    NEED_HIGH: 50,      // 人力極缺
-    NEED_LOW: 10,       // 人力微缺
-    PREFERENCE: 20,     // 員工願望/偏好
-    CONTINUITY: 10,     // 連續上班
-    PENALTY_FATIGUE: -80, // 疲勞罰分 (如 N->D)
-    RECOVERY: 20        // OFF 的恢復分
+    NEED_HIGH: 50,      
+    NEED_LOW: 10,       
+    PREFERENCE: 20,     
+    CONTINUITY: 10,     
+    PENALTY_FATIGUE: -80, 
+    RECOVERY: 20        
 };
 
 export class AutoScheduler {
 
-    /**
-     * 啟動排班引擎 (v4.2 Final: 七休一強制修正版)
-     */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v4.2 Fix Rules)");
+        console.log("🚀 AI 排班引擎啟動 (v4.3 Rules Updated)");
 
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
-            
-            // 1. 包班預填 (關鍵修復：現在會自動插入 OFF 以符合七休一)
             this.prefillBatchShifts(context);
-
-            console.log("🔹 開始每日步進排班...");
-            
-            // 2. 每日排班 (遞迴+回溯)
             const success = await this.solveDay(1, context);
 
-            if (success) {
-                console.log("✅ 排班成功！");
-            } else {
-                console.warn(`⚠️ 排班勉強完成，最後停留在 Day ${context.maxReachedDay}`);
-            }
+            if (success) console.log("✅ 排班成功！");
+            else console.warn(`⚠️ 排班勉強完成，最後停留在 Day ${context.maxReachedDay}`);
+            
             return { assignments: context.assignments, logs: context.logs };
 
         } catch (e) {
@@ -43,9 +31,6 @@ export class AutoScheduler {
         }
     }
 
-    // ============================================================
-    //  1. 上下文準備
-    // ============================================================
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
@@ -62,7 +47,7 @@ export class AutoScheduler {
                 const newS = { ...s };
                 newS.uid = s.uid || s.id;
                 newS.constraints = s.constraints || {};
-                if (newS.constraints.maxConsecutive === undefined) newS.constraints.maxConsecutive = 6; // 預設改為 6
+                if (newS.constraints.maxConsecutive === undefined) newS.constraints.maxConsecutive = 6;
                 if (newS.constraints.maxConsecutiveNights === undefined) newS.constraints.maxConsecutiveNights = 4;
                 return newS;
             });
@@ -76,12 +61,11 @@ export class AutoScheduler {
         validStaffList.forEach(s => {
             assignments[s.uid] = {};
             wishes[s.uid] = {};
-            preferences[s.uid] = { p1: null, p2: null, batch: null }; 
+            preferences[s.uid] = { p1: null, p2: null, batch: null, monthlyMix: '2' }; 
             lastMonthShifts[s.uid] = 'OFF'; 
             lastMonthConsecutive[s.uid] = 0;
         });
 
-        // 讀取預班/偏好/歷史
         try {
             Object.entries(submissions || {}).forEach(([uid, sub]) => {
                 if (assignments[uid]) {
@@ -95,7 +79,8 @@ export class AutoScheduler {
                         preferences[uid] = {
                             p1: sub.preferences.priority1 || null,
                             p2: sub.preferences.priority2 || null,
-                            batch: sub.preferences.batch || null
+                            batch: sub.preferences.batch || null,
+                            monthlyMix: sub.preferences.monthlyMix || '2'
                         };
                     }
                 }
@@ -121,8 +106,7 @@ export class AutoScheduler {
             assignments[s.uid][0] = lastMonthShifts[s.uid] || 'OFF';
         });
 
-        const rawReq = unitSettings.staffRequirements || {};
-        const staffReq = rawReq; 
+        const staffReq = unitSettings.staffRequirements || {};
         const shiftDefs = settings.shifts || [];
 
         return {
@@ -145,9 +129,6 @@ export class AutoScheduler {
         };
     }
 
-    // ============================================================
-    //  2. 包班預填 (🔥 關鍵修正：強制插入 OFF)
-    // ============================================================
     static prefillBatchShifts(context) {
         context.staffList.forEach(staff => {
             const prefBatch = context.preferences[staff.uid]?.batch;
@@ -157,54 +138,39 @@ export class AutoScheduler {
 
             if ((canBatch || prefBatch) && batchType) {
                 context.preferences[staff.uid].realBatch = batchType;
-                
-                // 讀取個人的最大連續上班天數 (預設 6)
                 const maxCons = staff.constraints.maxConsecutive || context.rules.maxConsecutiveWork || 6;
-                
-                // 初始化計數器 (承接上個月)
                 let currentConsecutive = context.lastMonthConsecutive[staff.uid] || 0;
 
                 for (let day = 1; day <= context.daysInMonth; day++) {
-                    // 如果該日已經有使用者指定的預班 (Wish)
                     if (context.assignments[staff.uid][day]) {
                         const existingShift = context.assignments[staff.uid][day];
-                        if (existingShift === 'OFF' || existingShift === 'M_OFF') {
-                            currentConsecutive = 0; // 休假重置
-                        } else {
-                            currentConsecutive++; // 工作累積
-                        }
-                        continue; // 跳過，不覆蓋使用者的 Wish
+                        if (existingShift === 'OFF' || existingShift === 'M_OFF') currentConsecutive = 0;
+                        else currentConsecutive++;
+                        continue; 
                     }
 
-                    // 檢查是否違反連續上班規則
                     if (currentConsecutive >= maxCons) {
-                        // ⚠️ 達到上限，強制排 OFF
                         context.assignments[staff.uid][day] = 'OFF';
                         if (!context.assignments[staff.uid].autoTags) context.assignments[staff.uid].autoTags = {};
                         context.assignments[staff.uid].autoTags[day] = 'forced_rest';
-                        currentConsecutive = 0; // 重置
+                        currentConsecutive = 0; 
                     } else {
-                        // 正常排入包班班別
                         context.assignments[staff.uid][day] = batchType;
                         if (!context.assignments[staff.uid].autoTags) context.assignments[staff.uid].autoTags = {};
                         context.assignments[staff.uid].autoTags[day] = 'batch_auto';
-                        currentConsecutive++; // 累積
+                        currentConsecutive++; 
                     }
                 }
             }
         });
     }
 
-    // ============================================================
-    //  3. 每日步進 (Loop)
-    // ============================================================
     static async solveDay(day, context) {
         if (day > context.maxReachedDay) context.maxReachedDay = day;
         if (day > context.daysInMonth) return true;
 
         this.adjustBatchOverstaffing(day, context);
 
-        // 過濾掉已經有班的人 (包含 Wish 和 剛剛預填的 Batch/OFF)
         const pendingStaff = context.staffList.filter(s => !context.assignments[s.uid][day]);
         this.shuffleArray(pendingStaff);
 
@@ -222,9 +188,6 @@ export class AutoScheduler {
         }
     }
 
-    // ============================================================
-    //  4. AI 核心：計分與遞迴 (Recursive Solver)
-    // ============================================================
     static async solveRecursive(day, staffList, index, context) {
         if (index >= staffList.length) return true;
 
@@ -268,11 +231,8 @@ export class AutoScheduler {
 
         for (const cand of candidates) {
             const shift = cand.shift;
-            
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
-            if (shift !== 'OFF' && currentCounts[shift] >= req && cand.score < 120) {
-                continue; 
-            }
+            if (shift !== 'OFF' && currentCounts[shift] >= req && cand.score < 120) continue; 
 
             context.assignments[staff.uid][day] = shift;
             
@@ -299,16 +259,15 @@ export class AutoScheduler {
         return false;
     }
 
-    // ============================================================
-    //  5. 輔助邏輯
-    // ============================================================
-    
     static checkHardConstraints(staff, shift, prevShift, context) {
         if (context.rules.constraints?.minInterval11h) {
             if (prevShift === 'E' && shift === 'D') return { valid: false, reason: "Interval < 11h" };
         }
-        if (staff.constraints.isPregnant && (shift === 'N' || shift === 'E')) {
-            return { valid: false, reason: "Pregnant protection" };
+        
+        // ✅ 修正：母性保護包含產後哺乳 (isPostpartum)
+        const isProtected = staff.constraints.isPregnant || staff.constraints.isPostpartum;
+        if (isProtected && (shift === 'N' || shift === 'E')) {
+            return { valid: false, reason: "Maternal protection" };
         }
         return { valid: true, reason: "" };
     }
@@ -335,6 +294,27 @@ export class AutoScheduler {
         if (prefs.p1 === shift) { score += WEIGHTS.PREFERENCE; details.push("P1"); }
         if (prevShift === shift && shift !== 'OFF') { score += WEIGHTS.CONTINUITY; details.push("Cont."); }
         if (prevShift === 'N' && shift === 'D') { score += WEIGHTS.PENALTY_FATIGUE; details.push("Fatigue"); }
+
+        // ✅ 新增：每月班別種類偏好檢查 (Soft Constraint)
+        // 若單位允許設定，且該班別不是 OFF
+        if (context.rules.constraints?.allowMonthlyMixPref && shift !== 'OFF') {
+            const desiredMix = prefs.monthlyMix || '2'; // 預設為 2
+            
+            if (desiredMix === '2') {
+                const usedTypes = new Set();
+                // 檢查本月目前已排的班別種類 (1 ~ day-1)
+                for(let d=1; d<day; d++) {
+                    const s = context.assignments[staff.uid][d];
+                    if(s && s !== 'OFF' && s !== 'M_OFF') usedTypes.add(s);
+                }
+                
+                // 如果目前已經用了 >= 2 種，且現在嘗試的新班別 (shift) 是第 3 種
+                if (usedTypes.size >= 2 && !usedTypes.has(shift)) {
+                    score -= 40; // 扣分懲罰
+                    details.push("Mix3(Avoid)");
+                }
+            }
+        }
 
         const consecutive = this.calculateConsecutiveWork(staff.uid, day, context);
         if (shift === 'OFF' && consecutive > 5) {
