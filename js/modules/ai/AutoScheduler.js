@@ -14,10 +14,10 @@ const WEIGHTS = {
 export class AutoScheduler {
 
     /**
-     * 啟動排班引擎 (v4.0 積分權重 + 回溯機制 + 包班調節)
+     * 啟動排班引擎 (v4.0 積分權重 + 回溯機制 + 包班調節 + 效能優化)
      */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v4.0 Full Version)");
+        console.log("🚀 AI 排班引擎啟動 (v4.0 Optimized)");
 
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
@@ -73,16 +73,19 @@ export class AutoScheduler {
         const wishes = {}; 
         const preferences = {}; 
         const lastMonthShifts = {}; 
+        const lastMonthConsecutive = {}; // ✅ 新增：記錄上個月底連續天數
 
         validStaffList.forEach(s => {
             assignments[s.uid] = {};
             wishes[s.uid] = {};
             preferences[s.uid] = { p1: null, p2: null, batch: null }; 
             lastMonthShifts[s.uid] = 'OFF'; 
+            lastMonthConsecutive[s.uid] = 0;
         });
 
         // 讀取預班/偏好/歷史
         try {
+            // 處理預班與偏好
             Object.entries(submissions || {}).forEach(([uid, sub]) => {
                 if (assignments[uid]) {
                     if (sub && sub.wishes) {
@@ -100,15 +103,36 @@ export class AutoScheduler {
                     }
                 }
             });
+
+            // 處理歷史資料 (historyData: { uid: { 25:'D', ... } })
             Object.entries(historyData || {}).forEach(([uid, history]) => {
                 if (assignments[uid] && history) {
                     const days = Object.keys(history || {}).map(k => parseInt(k)).sort((a,b)=>b-a);
-                    if (days.length > 0) lastMonthShifts[uid] = history[days[0]];
+                    
+                    if (days.length > 0) {
+                        // 1. 取得上個月最後一天班別
+                        lastMonthShifts[uid] = history[days[0]];
+
+                        // 2. 計算連續上班天數
+                        let cons = 0;
+                        for (let d of days) {
+                            const shift = history[d];
+                            if (shift && shift !== 'OFF' && shift !== 'M_OFF') {
+                                cons++;
+                            } else {
+                                break; // 遇到休假中斷
+                            }
+                        }
+                        lastMonthConsecutive[uid] = cons;
+                    }
                 }
             });
-        } catch(e) {}
+        } catch(e) {
+            console.warn("History parse error", e);
+        }
 
         validStaffList.forEach(s => {
+            // 將 index 0 設為上個月最後一天，供 RuleEngine 使用
             assignments[s.uid][0] = lastMonthShifts[s.uid] || 'OFF';
         });
 
@@ -125,11 +149,12 @@ export class AutoScheduler {
             wishes: wishes,
             preferences: preferences,
             lastMonthShifts: lastMonthShifts,
+            lastMonthConsecutive: lastMonthConsecutive, // ✅ 傳入 Context
             rules: rules,
             staffReq: staffReq,
             shiftDefs: shiftDefs,
             logs: [],
-            maxBacktrack: 20000, // 增加回溯上限
+            maxBacktrack: 30000, // 增加回溯上限
             backtrackCount: 0,
             maxReachedDay: 0
         };
@@ -147,6 +172,7 @@ export class AutoScheduler {
             if ((staff.constraints?.canBatch || prefBatch) && batchType) {
                 context.preferences[staff.uid].realBatch = batchType;
                 for (let day = 1; day <= context.daysInMonth; day++) {
+                    // 只填沒有 Wish 的空格
                     if (!context.assignments[staff.uid][day]) {
                         context.assignments[staff.uid][day] = batchType;
                         if (!context.assignments[staff.uid].autoTags) context.assignments[staff.uid].autoTags = {};
@@ -182,6 +208,7 @@ export class AutoScheduler {
             if (day % 3 === 0) await new Promise(r => setTimeout(r, 0));
             return await this.solveDay(day + 1, context);
         } else {
+            // 嘗試容錯推進 (Force Push)
             context.logs.push(`[Day ${day}] Warn: Manpower shortage. Forced proceed.`);
             console.warn(`⚠️ [Day ${day}] 人力缺口: ${check.missing}`);
             await this.solveDay(day + 1, context);
@@ -202,7 +229,7 @@ export class AutoScheduler {
         const staff = staffList[index];
         const prevShift = context.assignments[staff.uid][day - 1] || 'OFF';
 
-        // 4.1 產生候選班別 (Wish 已在 Loop 前被 filter 掉，這裡只處理 pending)
+        // 4.1 產生候選班別 (OFF 一定是選項)
         let possibleShifts = ['D', 'E', 'N', 'OFF'];
         
         // 4.2 取得當前已排的人力計數 (用於計算 Need 分數)
@@ -216,8 +243,8 @@ export class AutoScheduler {
 
         const candidates = [];
         for (const shift of possibleShifts) {
-            // A. 硬限制檢查
-            const { valid, reason } = this.checkHardConstraints(staff, shift, prevShift, context, day);
+            // A. 硬限制快速檢查 (前置過濾，減輕 RuleEngine 負擔)
+            const { valid } = this.checkHardConstraints(staff, shift, prevShift, context);
             if (!valid) continue; 
 
             // B. 評分
@@ -229,7 +256,6 @@ export class AutoScheduler {
         candidates.sort((a, b) => b.score - a.score);
 
         // 4.4 嘗試指派
-        let foundValidShift = false;
         for (const cand of candidates) {
             const shift = cand.shift;
             
@@ -241,29 +267,31 @@ export class AutoScheduler {
 
             // 執行指派
             context.assignments[staff.uid][day] = shift;
-            foundValidShift = true;
             
-            // 驗證整體規則
+            // ✅ 關鍵修正：呼叫 RuleEngine 時傳入上月狀態，並限制檢查範圍 (checkUpToDay)
             const ruleCheck = RuleEngine.validateStaff(
                 context.assignments[staff.uid], 
                 context.daysInMonth, 
                 context.shiftDefs, 
                 context.rules, 
-                staff.constraints
+                staff.constraints,
+                context.assignments[staff.uid][0],        // 上月最後一天
+                context.lastMonthConsecutive[staff.uid],  // 上月連續天數
+                day                                       // ⚡️ 只檢查到今天，避免當機
             );
 
             if (!ruleCheck.errors[day]) {
-                // 遞迴下一位
+                // 通過檢查，遞迴下一位
                 if (await this.solveRecursive(day, staffList, index + 1, context)) {
                     return true;
                 }
             }
 
-            // 回溯 (Backtrack)
+            // 回溯 (Backtrack): 清除指派，嘗試下一個候選班別
             delete context.assignments[staff.uid][day];
         }
 
-        // 如果連 OFF 都不能排 (例如連續上班天數爆了且無法 OFF)，這裡會回傳 false，觸發上一層的回溯
+        // 若所有候選班別都失敗，回傳 false 觸發上一層回溯
         return false;
     }
 
@@ -271,21 +299,15 @@ export class AutoScheduler {
     //  5. 輔助邏輯：硬限制與評分
     // ============================================================
     
-    static checkHardConstraints(staff, shift, prevShift, context, day) {
-        // 1. 間隔限制
+    static checkHardConstraints(staff, shift, prevShift, context) {
+        // 1. 間隔限制 (E 不接 D)
         if (context.rules.constraints?.minInterval11h) {
             if (prevShift === 'E' && shift === 'D') return { valid: false, reason: "Interval < 11h" };
-            if (prevShift === 'D' && shift === 'N') return { valid: false, reason: "Interval < 11h" };
         }
         
         // 2. 孕婦保護
         if (staff.constraints.isPregnant && (shift === 'N' || shift === 'E')) {
             return { valid: false, reason: "Pregnant protection" };
-        }
-
-        // 3. 連續夜班限制 (Soft -> Hard 視規則強度)
-        if (shift === 'N') {
-             // 簡易檢查，詳細由 RuleEngine 把關
         }
 
         return { valid: true, reason: "" };
@@ -321,7 +343,7 @@ export class AutoScheduler {
         // 4. 需要休息 (連續上班太多天，OFF 分數變高)
         const consecutive = this.calculateConsecutiveWork(staff.uid, day, context);
         if (shift === 'OFF' && consecutive > 5) {
-            score += (consecutive * 10);
+            score += (consecutive * 15); // 增加休息權重
             details.push(`RestNeed(${consecutive})`);
         }
 
@@ -362,11 +384,22 @@ export class AutoScheduler {
 
     static calculateConsecutiveWork(uid, currentDay, context) {
         let count = 0;
-        for (let d = currentDay - 1; d >= 0; d--) {
+        // 包含上個月天數
+        let initialCons = context.lastMonthConsecutive[uid] || 0;
+        
+        // 往回追溯
+        for (let d = currentDay - 1; d >= 1; d--) {
             const shift = context.assignments[uid][d];
             if (shift && shift !== 'OFF' && shift !== 'M_OFF') count++;
-            else break;
+            else return count; // 中斷直接回傳
         }
+        
+        // 如果追溯到第 1 天都是連續上班，則加上上個月底的天數
+        const firstDayShift = context.assignments[uid][1];
+        if (firstDayShift && firstDayShift !== 'OFF' && firstDayShift !== 'M_OFF') {
+            return count + initialCons;
+        }
+        
         return count;
     }
 
