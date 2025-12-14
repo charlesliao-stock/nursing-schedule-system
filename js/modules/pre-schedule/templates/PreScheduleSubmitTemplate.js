@@ -126,10 +126,12 @@ export const PreScheduleSubmitTemplate = {
         `;
     },
 
-    // 3. 偏好設定表單 (核心邏輯分離)
+    // 3. 偏好設定表單 (更新版：加入每月班別種類偏好)
     renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}) {
+        let html = '';
+
         if (canBatch) {
-            return `
+            html += `
                 <div class="mb-3">
                     <label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-moon"></i> 包班意願 (選擇一種)</label>
                     <div class="btn-group w-100 btn-group-sm" role="group">
@@ -144,26 +146,45 @@ export const PreScheduleSubmitTemplate = {
                     </div>
                 </div>
             `;
-        } else {
-            let html = `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
-            
-            const renderSelect = (idx, val) => `
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text">順位 ${idx}</span>
-                    <select class="form-select pref-select" id="pref-${idx}">
-                        <option value="">請選擇</option>
-                        <option value="D" ${val==='D'?'selected':''}>白班 (D)</option>
-                        <option value="E" ${val==='E'?'selected':''}>小夜 (E)</option>
-                        <option value="N" ${val==='N'?'selected':''}>大夜 (N)</option>
-                    </select>
-                </div>`;
-
-            html += renderSelect(1, savedPrefs.priority1);
-            html += renderSelect(2, savedPrefs.priority2);
-            if (maxTypes === 3) html += renderSelect(3, savedPrefs.priority3);
-            
-            html += `<div class="form-text small mb-2">請依序選擇 ${maxTypes} 種班別意願</div>`;
-            return html;
         }
+        
+        // ✅ 新增：每月班別種類偏好
+        const mixPref = savedPrefs.monthlyMix || '2'; // 預設為 2
+        html += `
+            <div class="mb-3">
+                <label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-random"></i> 本月班別種類偏好</label>
+                <div class="btn-group w-100 btn-group-sm" role="group">
+                    <input type="radio" class="btn-check" name="monthlyMix" id="mix-2" value="2" ${mixPref==='2' ? 'checked' : ''}>
+                    <label class="btn btn-outline-secondary" for="mix-2">單純 (2種)</label>
+                    
+                    <input type="radio" class="btn-check" name="monthlyMix" id="mix-3" value="3" ${mixPref==='3' ? 'checked' : ''}>
+                    <label class="btn btn-outline-secondary" for="mix-3">彈性 (3種)</label>
+                </div>
+                <div class="form-text small" style="font-size:0.75rem;">
+                    2種: D/E 或 D/N (較規律)<br>
+                    3種: D/E/N 皆有 (配合度高)
+                </div>
+            </div>
+        `;
+
+        html += `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
+        
+        const renderSelect = (idx, val) => `
+            <div class="input-group input-group-sm mb-2">
+                <span class="input-group-text">順位 ${idx}</span>
+                <select class="form-select pref-select" id="pref-${idx}">
+                    <option value="">請選擇</option>
+                    <option value="D" ${val==='D'?'selected':''}>白班 (D)</option>
+                    <option value="E" ${val==='E'?'selected':''}>小夜 (E)</option>
+                    <option value="N" ${val==='N'?'selected':''}>大夜 (N)</option>
+                </select>
+            </div>`;
+
+        html += renderSelect(1, savedPrefs.priority1);
+        html += renderSelect(2, savedPrefs.priority2);
+        html += renderSelect(3, savedPrefs.priority3);
+        
+        html += `<div class="form-text small mb-2">請依序選擇希望的班別優先順序</div>`;
+        return html;
     }
 };
