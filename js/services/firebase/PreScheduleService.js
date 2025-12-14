@@ -2,6 +2,7 @@ import {
     db, 
     collection, 
     doc, 
+    getDoc, 
     getDocs, 
     setDoc, 
     updateDoc, 
@@ -17,6 +18,23 @@ class PreScheduleService {
         this.collectionName = "pre_schedules";
     }
 
+    // ✅ 新增：透過 ID 取得預班表 (這是 EditPage 呼叫的方法)
+    async getPreScheduleById(id) {
+        try {
+            const docRef = doc(db, this.collectionName, id);
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                return { id: docSnap.id, ...docSnap.data() };
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error("Error getting pre-schedule by ID:", error);
+            throw error;
+        }
+    }
+
     // 取得特定單位的預班表清單
     async getPreSchedulesList(unitId) {
         try {
@@ -30,12 +48,11 @@ class PreScheduleService {
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error getting pre-schedules list:", error);
-            // 避免因為索引未建立導致卡死，回傳空陣列
             return [];
         }
     }
 
-    // 取得單一預班表詳細資料
+    // 取得單一預班表詳細資料 (舊有方法，保留相容性)
     async getPreSchedule(unitId, year, month) {
         try {
             const q = query(
@@ -64,13 +81,12 @@ class PreScheduleService {
     // 建立新預班表
     async createPreSchedule(data) {
         try {
-            // 使用 unitId_year_month 作為 ID，確保唯一性且好搜尋
             const docId = `${data.unitId}_${data.year}_${data.month}`;
             const docRef = doc(db, this.collectionName, docId);
             
             const payload = {
                 ...data,
-                createdAt: new Date(), // 改用 new Date()
+                createdAt: new Date(),
                 updatedAt: new Date()
             };
             
@@ -90,7 +106,7 @@ class PreScheduleService {
                 settings: data.settings,
                 staffIds: data.staffIds,
                 staffSettings: data.staffSettings,
-                supportStaffIds: data.supportStaffIds || [], // 確保支援人員欄位存在
+                supportStaffIds: data.supportStaffIds || [],
                 updatedAt: new Date()
             });
         } catch (error) {
@@ -105,6 +121,20 @@ class PreScheduleService {
             await deleteDoc(doc(db, this.collectionName, id));
         } catch (error) {
             console.error("Error deleting pre-schedule:", error);
+            throw error;
+        }
+    }
+
+    // 更新整筆文件 (EditPage 用，包含 history)
+    async updatePreSchedule(id, data) {
+        try {
+            const docRef = doc(db, this.collectionName, id);
+            await updateDoc(docRef, {
+                ...data,
+                updatedAt: new Date()
+            });
+        } catch (error) {
+            console.error("Error updating pre-schedule:", error);
             throw error;
         }
     }
@@ -139,7 +169,6 @@ class PreScheduleService {
 
             const docRef = doc(db, this.collectionName, schedule.id);
             
-            // 全量更新 submissions 欄位
             await updateDoc(docRef, {
                 submissions: submissions,
                 updatedAt: new Date()
@@ -158,10 +187,9 @@ class PreScheduleService {
 
             const docRef = doc(db, this.collectionName, schedule.id);
             
-            // 使用 arrayUnion 避免重複加入
             await updateDoc(docRef, {
-                staffIds: arrayUnion(uid),        // 確保他出現在總名單
-                supportStaffIds: arrayUnion(uid), // 標記為支援
+                staffIds: arrayUnion(uid),
+                supportStaffIds: arrayUnion(uid),
                 updatedAt: new Date()
             });
         } catch (error) {
@@ -172,5 +200,4 @@ class PreScheduleService {
 }
 
 export const PreScheduleServiceInstance = new PreScheduleService();
-// 為了相容您目前的 import 方式，我們 export instance 作為 named export
 export { PreScheduleServiceInstance as PreScheduleService };
