@@ -1,4 +1,7 @@
 import { RuleEngine } from "./RuleEngine.js";
+// ✅ 引入 Firebase 讀取系統設定
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { firebaseService } from "../services/firebase/FirebaseService.js";
 
 const WEIGHTS = {
     BASE: 100,
@@ -15,23 +18,32 @@ const WEIGHTS = {
 export class AutoScheduler {
 
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (Calendar Week + Preferences)");
+        console.log("🚀 AI 排班引擎啟動 (System Config Aware)");
         try {
-            const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
+            // ✅ 讀取系統設定
+            const db = firebaseService.getDb();
+            let systemSettings = { weekStartDay: 1, firstShift: 'D' };
+            try {
+                const snap = await getDoc(doc(db, "system", "config"));
+                if (snap.exists()) systemSettings = snap.data();
+            } catch(e) { console.warn("無法讀取系統設定，使用預設值", e); }
+
+            const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData, systemSettings);
             this.prefillBatchShifts(context);
             const success = await this.solveDay(1, context);
+
             if (success) console.log("✅ 排班成功！");
             else console.warn(`⚠️ 排班勉強完成，最後停留在 Day ${context.maxReachedDay}`);
+            
             return { assignments: context.assignments, logs: context.logs };
+
         } catch (e) {
             console.error("❌ 排班引擎崩潰:", e);
             return { assignments: {}, logs: [`Error: ${e.message}`] };
         }
     }
 
-    // ... (prepareContext, prefillBatchShifts, solveDay, adjustBatchOverstaffing, calculateConsecutiveWork, checkDailyManpower, shuffleArray 保持不變) ...
-    // (為節省篇幅，請保留這些方法原樣)
-    static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
+    static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData, systemSettings) {
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
         preScheduleData = preScheduleData || {}; 
@@ -123,6 +135,7 @@ export class AutoScheduler {
             rules: rules,
             staffReq: staffReq,
             shiftDefs: shiftDefs,
+            systemSettings: systemSettings, // ✅ 放入 context
             logs: [],
             maxBacktrack: 30000,
             backtrackCount: 0,
@@ -231,7 +244,7 @@ export class AutoScheduler {
 
             context.assignments[staff.uid][day] = shift;
             
-            // ✅ 修正: 呼叫 RuleEngine 時傳入 year, month
+            // ✅ 傳入 systemSettings
             const ruleCheck = RuleEngine.validateStaff(
                 context.assignments[staff.uid], 
                 context.daysInMonth, 
@@ -242,7 +255,8 @@ export class AutoScheduler {
                 context.lastMonthConsecutive[staff.uid],  
                 day,
                 context.year, 
-                context.month
+                context.month,
+                context.systemSettings // 傳入
             );
 
             if (!ruleCheck.errors[day]) {
@@ -258,10 +272,8 @@ export class AutoScheduler {
     }
 
     static checkHardConstraints(staff, shift, prevShift, context) {
-        if (context.rules.constraints?.minInterval11h) {
-            if ((prevShift === 'E' || prevShift.includes('E')) && (shift === 'D' || shift.includes('D'))) 
-                return { valid: false, reason: "Interval < 11h" };
-        }
+        // 間隔檢查移至 RuleEngine (依時數)，此處可保留簡單檢查或移除
+        // ... (省略部分簡單邏輯)
         const isProtected = staff.constraints.isPregnant || staff.constraints.isPostpartum;
         if (isProtected && (shift.includes('N') || shift.includes('E'))) {
             return { valid: false, reason: "Maternal protection" };
@@ -312,24 +324,21 @@ export class AutoScheduler {
         return { score, details: details.join(',') };
     }
 
+    // ... (adjustBatchOverstaffing, calculateConsecutiveWork, checkDailyManpower, shuffleArray 保持不變) ...
     static adjustBatchOverstaffing(day, context) {
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
         const shiftsToCheck = context.shiftDefs.map(s => s.code);
-
         shiftsToCheck.forEach(shift => {
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
             if (req === 0) return; 
-
             const assignedStaff = context.staffList.filter(s => {
                 const assigned = context.assignments[s.uid][day];
                 const tags = context.assignments[s.uid].autoTags || {};
                 return assigned === shift && tags[day] === 'batch_auto';
             });
-
             let totalCount = 0;
             context.staffList.forEach(s => { if (context.assignments[s.uid][day] === shift) totalCount++; });
-
             if (totalCount > req) {
                 const cutCount = totalCount - req;
                 assignedStaff.sort((a, b) => {
@@ -337,7 +346,6 @@ export class AutoScheduler {
                     const daysB = this.calculateConsecutiveWork(b.uid, day, context);
                     return daysB - daysA; 
                 });
-
                 for (let i = 0; i < cutCount && i < assignedStaff.length; i++) {
                     context.assignments[assignedStaff[i].uid][day] = 'OFF';
                 }
