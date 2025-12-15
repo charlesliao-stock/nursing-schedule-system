@@ -5,9 +5,7 @@ import { UnitService } from "../../services/firebase/UnitService.js";
 import { PreScheduleSubmitTemplate } from "./templates/PreScheduleSubmitTemplate.js"; 
 
 export class PreScheduleSubmitPage {
-    // ... (constructor & render & bindEvents ... 保持原樣，省略部分程式碼) ...
     constructor() {
-        // ... (保持原樣)
         const today = new Date();
         let targetMonth = today.getMonth() + 1 + 1; 
         let targetYear = today.getFullYear();
@@ -15,23 +13,19 @@ export class PreScheduleSubmitPage {
 
         this.year = targetYear;
         this.month = targetMonth;
-        
         this.realUser = null;       
         this.currentUser = null;    
         this.targetUnitId = null;   
         this.currentUnit = null;    
-        
         this.preSchedulesList = []; 
         this.currentSchedule = null; 
         this.myWishes = {};
         this.unitAggregate = {}; 
         this.unitNames = {}; 
         this.unitStaffMap = {};
-        
         this.isReadOnly = false;
         this.isAdminMode = false;
         this.isImpersonating = false; 
-        
         this.shiftTypes = {
             'OFF':   { label: 'OFF',  color: '#dc3545', bg: '#dc3545', text: 'white' },
             'M_OFF': { label: 'M',    color: '#212529', bg: '#212529', text: 'white' }, 
@@ -45,8 +39,6 @@ export class PreScheduleSubmitPage {
     }
 
     async render() {
-        // ... (Template 內容與之前相同，略)
-        // (請保留原有的 render 方法內容)
         return PreScheduleSubmitTemplate.renderLayout(this.year, this.month);
     }
 
@@ -78,7 +70,6 @@ export class PreScheduleSubmitPage {
             if(menu && !e.target.closest('#user-shift-menu')) menu.style.display = 'none';
         });
         
-        // 年月切換按鈕
         const btnPrev = document.getElementById('btn-prev-year');
         const btnNext = document.getElementById('btn-next-year');
         const selectMonth = document.getElementById('month-select');
@@ -91,7 +82,7 @@ export class PreScheduleSubmitPage {
     }
 
     // ... (initRegularUser, setupAdminUI, handleAdminSwitch, loadContextData, tryLoadSchedule, showListView, calculateAggregate, renderCalendar, toggleDay, handleRightClick, applyShiftFromMenu, checkLimits, updateCounters 保持原樣) ...
-    // (為了節省篇幅，請保留原有的中間輔助函式)
+    // (為了節省篇幅，這部分代碼與先前相同，請保留)
     
     async initRegularUser() {
         this.targetUnitId = this.realUser.unitId;
@@ -217,7 +208,7 @@ export class PreScheduleSubmitPage {
         document.getElementById('preference-container').innerHTML = 
             PreScheduleSubmitTemplate.renderPreferencesForm(canBatch, maxTypes, savedPref, unitShifts, settings);
 
-        // ✅ 新增：綁定 Radio Change 事件，控制第 3 順位顯示
+        // ✅ 綁定 Radio Change 事件
         const radios = document.getElementsByName('monthlyMix');
         if (radios.length > 0) {
             radios.forEach(r => {
@@ -242,10 +233,10 @@ export class PreScheduleSubmitPage {
         const p3Container = document.getElementById('container-pref-3');
         if (p3Container) {
             if (mixValue === '3') {
-                p3Container.style.display = 'flex';
+                p3Container.style.display = 'flex'; // 顯示 (flex 因為是 input-group)
             } else {
                 p3Container.style.display = 'none';
-                // 選擇 2 種時，清空第 3 順位的值 (可選)
+                // 清空值
                 const p3Select = document.getElementById('pref-3');
                 if(p3Select) p3Select.value = "";
             }
@@ -283,6 +274,13 @@ export class PreScheduleSubmitPage {
         
         for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none; min-height:100px;"></div>`; 
         
+        const unitShifts = this.currentUnit.settings?.shifts || [];
+        const shiftColorMap = {
+            'OFF': { bg:'#dc3545', color:'white' },
+            'M_OFF': { bg:'#212529', color:'white' }
+        };
+        unitShifts.forEach(s => shiftColorMap[s.code] = { bg:s.color, color:'white' });
+
         for(let d=1; d<=daysInMonth; d++) { 
             const date = new Date(year, month - 1, d); 
             const w = date.getDay(); 
@@ -305,9 +303,16 @@ export class PreScheduleSubmitPage {
             
             let tagHtml = ''; 
             if(myType) { 
-                const cfg = this.shiftTypes[myType] || { bg:'#6c757d', color:'white' };
-                const style = `background:${cfg.bg}; color:${cfg.text};`; 
-                tagHtml = `<span class="shift-badge" style="${style}">${myType}</span>`; 
+                let style = '';
+                if (myType.startsWith('NO_')) {
+                    const code = myType.replace('NO_', '');
+                    style = `background:#f8f9fa; color:#dc3545; border:1px solid #dc3545;`;
+                    tagHtml = `<span class="shift-badge" style="${style}">勿${code}</span>`;
+                } else {
+                    const cfg = shiftColorMap[myType] || { bg:'#6c757d', color:'white' };
+                    style = `background:${cfg.bg}; color:${cfg.color};`;
+                    tagHtml = `<span class="shift-badge" style="${style}">${myType}</span>`;
+                }
             } 
             
             if (this.currentSchedule.settings.showOtherNames && this.unitNames[d]) { 
@@ -319,7 +324,7 @@ export class PreScheduleSubmitPage {
             
             if(!this.isReadOnly) { 
                 cell.onclick = () => this.toggleDay(d); 
-                cell.oncontextmenu = (e) => { e.preventDefault(); /* 右鍵邏輯可選 */ }; 
+                cell.oncontextmenu = (e) => this.handleRightClick(e, d); 
             } 
             grid.appendChild(cell); 
         } 
@@ -333,6 +338,66 @@ export class PreScheduleSubmitPage {
         } 
         this.renderCalendar(); 
         this.updateCounters(); 
+    }
+
+    handleRightClick(e, day) { 
+        e.preventDefault(); 
+        this.tempTarget = day; 
+        const menu = document.getElementById('user-shift-menu'); 
+        
+        if(menu) {
+            const unitShifts = this.currentUnit.settings?.shifts || [
+                {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
+            ];
+
+            let menuHtml = `<h6 class="dropdown-header bg-light py-1">設定 ${day} 日</h6>`;
+            menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+            
+            unitShifts.forEach(s => {
+                menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</button>`;
+            });
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+
+            unitShifts.forEach(s => {
+                menuHtml += `<button class="dropdown-item py-1 text-danger" onclick="window.routerPage.applyShiftFromMenu('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
+            });
+            
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+            menuHtml += `<button class="dropdown-item py-1 text-secondary" onclick="window.routerPage.applyShiftFromMenu('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</button>`;
+
+            menu.innerHTML = menuHtml;
+
+            const menuWidth = 180; 
+            let left = e.clientX;
+            let top = e.clientY;
+            
+            if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 10;
+            if (top + menu.offsetHeight > window.innerHeight) top = window.innerHeight - menu.offsetHeight - 10;
+
+            menu.style.left = `${left}px`; 
+            menu.style.top = `${top}px`; 
+            menu.style.display = 'block'; 
+        }
+    }
+
+    applyShiftFromMenu(type) { 
+        if(!this.tempTarget) return; 
+        const day = this.tempTarget; 
+        
+        if(type) { 
+            if (!this.myWishes[day]) {
+                if (type === 'OFF' && !this.checkLimits(day)) return; 
+            }
+            this.myWishes[day] = type; 
+        } else { 
+            delete this.myWishes[day]; 
+        } 
+        
+        this.renderCalendar(); 
+        this.updateCounters(); 
+        const menu = document.getElementById('user-shift-menu');
+        if(menu) menu.style.display = 'none'; 
     }
 
     checkLimits(day) { 
@@ -376,13 +441,16 @@ export class PreScheduleSubmitPage {
         
         const settings = this.currentSchedule.settings;
         const allow3 = settings.allowThreeTypesVoluntary !== false; 
+        const limit = settings.shiftTypesLimit || 2;
         
         if (canBatch) {
             const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
             preferences.batch = batchPref;
         }
 
-        if (allow3) {
+        // 邏輯修正：僅當顯示混合選項時才讀取，否則預設 2
+        const showMixOption = (limit === 3) || (limit === 2 && allow3);
+        if (showMixOption) {
             const mixPref = document.querySelector('input[name="monthlyMix"]:checked')?.value || "2";
             preferences.monthlyMix = mixPref;
         } else {
@@ -401,7 +469,12 @@ export class PreScheduleSubmitPage {
 
         preferences.priority1 = p1;
         preferences.priority2 = p2;
-        if (allow3) preferences.priority3 = p3; 
+        // 修正：僅當 P3 顯示時才儲存
+        if (showMixOption && preferences.monthlyMix === '3') {
+            preferences.priority3 = p3; 
+        } else if (limit === 3) {
+            preferences.priority3 = p3;
+        }
 
         const btn = document.getElementById('btn-submit');
         btn.disabled = true;
