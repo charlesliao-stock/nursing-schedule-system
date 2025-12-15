@@ -12,9 +12,7 @@ export class RuleEngine {
         const staffMaxNight = staffConstraints?.maxConsecutiveNights || 4;
         const maxConsecutiveNights = Math.min(unitMaxNight, staffMaxNight);
         
-        // ✅ 修正：母性保護包含懷孕與產後哺乳 (檢查 isPostpartum)
         const isProtected = !!staffConstraints?.isPregnant || !!staffConstraints?.isPostpartum;
-        
         const minConsecutiveSame = constraints.minConsecutiveSame || 2;
         const firstNRequiresOFF = constraints.firstNRequiresOFF !== false;
         const minInterval11h = constraints.minInterval11h !== false;
@@ -35,26 +33,26 @@ export class RuleEngine {
 
             const isWorking = shift && shift !== 'OFF' && shift !== 'M_OFF';
 
-            // --- A. 母性保護 (硬性) ---
-            // 勞基法：懷孕與哺乳期間不得於 22:00-06:00 工作
-            if (isProtected && (shift === 'N' || shift === 'E')) {
-                errors[d] = "懷孕/哺乳不可排 22點後班別";
+            // ✅ 修正 3: 母性保護 (通用判斷: N/E/大/小)
+            if (isProtected && (shift.includes('N') || shift.includes('E') || shift.includes('大') || shift.includes('小'))) {
+                errors[d] = "懷孕/哺乳不可排夜班";
             }
 
             if (isWorking) consecutiveDays++; else consecutiveDays = 0;
             if (consecutiveDays > maxConsecutive) errors[d] = `連${consecutiveDays} (上限${maxConsecutive})`;
             
-            if (shift === 'N') consecutiveNights++; else consecutiveNights = 0;
-            if (consecutiveNights > maxConsecutiveNights) errors[d] = `連大夜${consecutiveNights} (上限${maxConsecutiveNights})`;
+            if (shift.includes('N')) consecutiveNights++; else consecutiveNights = 0;
+            if (consecutiveNights > maxConsecutiveNights) errors[d] = `連夜${consecutiveNights} (上限${maxConsecutiveNights})`;
 
             const prevIsWorking = prevShift && prevShift !== 'OFF' && prevShift !== 'M_OFF';
             
-            if (minInterval11h && prevShift === 'E' && shift === 'D') {
-                errors[d] = "間隔不足11hr (E接D)";
+            // ✅ 修正 3: 間隔不足 (簡易版: E接D 或 晚接早)
+            if (minInterval11h && (prevShift.includes('E') || prevShift.includes('小')) && (shift.includes('D') || shift.includes('白'))) {
+                errors[d] = "間隔不足11hr";
             }
             
-            if (firstNRequiresOFF && shift === 'N') {
-                if (prevIsWorking && prevShift !== 'N') {
+            if (firstNRequiresOFF && shift.includes('N')) {
+                if (prevIsWorking && !prevShift.includes('N')) {
                     errors[d] = "大夜前需OFF (或連N)";
                 }
             }
@@ -75,8 +73,6 @@ export class RuleEngine {
             prevShift = shift;
         }
 
-        // --- E. 一週內班別種類 (硬性限制：最多 2 種) ---
-        // 強制檢查 7 天滑動區間
         if (!checkUpToDay) {
             for (let d = 7; d <= daysInMonth; d++) {
                 const types = new Set();
@@ -86,7 +82,6 @@ export class RuleEngine {
                         types.add(code);
                     }
                 }
-                // ✅ 強制鎖定上限為 2 種
                 if (types.size > 2) {
                     errors[d] = `7天內${types.size}種班(上限2種)`;
                 }
@@ -98,9 +93,10 @@ export class RuleEngine {
 
     static validateDailyCoverage(scheduleData, daysInMonth, unitSettings) {
         const coverageErrors = {};
-        const minStaffReq = unitSettings?.staffRequirements || { D:{}, E:{}, N:{} };
+        const minStaffReq = unitSettings?.staffRequirements || {};
         const dailyCounts = {};
 
+        // ✅ 修正 3: 動態取得所有班別代碼
         const shiftCodes = unitSettings?.settings?.shifts ? unitSettings.settings.shifts.map(s=>s.code) : ['D','E','N'];
         
         for(let d=1; d<=daysInMonth; d++) {
@@ -152,7 +148,6 @@ export class RuleEngine {
                 if (!uid) return;
 
                 const staffAssignments = scheduleData?.assignments ? scheduleData.assignments[uid] : {};
-                
                 const result = this.validateStaff(
                     staffAssignments, 
                     daysInMonth, 
