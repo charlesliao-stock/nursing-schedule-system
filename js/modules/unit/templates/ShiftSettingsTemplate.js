@@ -21,8 +21,8 @@ export const ShiftSettingsTemplate = {
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-hover align-middle mb-0">
-                                <thead class="table-light"><tr><th>代號</th><th>名稱</th><th>時間</th><th>顏色</th><th class="text-end pe-3">操作</th></tr></thead>
-                                <tbody id="table-body"><tr><td colspan="5" class="text-center py-5 text-muted">請先選擇單位</td></tr></tbody>
+                                <thead class="table-light"><tr><th>代號</th><th>名稱</th><th>時間</th><th>時數</th><th>顏色</th><th class="text-end pe-3">操作</th></tr></thead>
+                                <tbody id="table-body"><tr><td colspan="6" class="text-center py-5 text-muted">請先選擇單位</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -31,15 +31,16 @@ export const ShiftSettingsTemplate = {
         `;
     },
 
-    // 2. 表格行渲染
+    // 2. 表格行渲染 (修正 4: 新增時數欄位)
     renderRows(shifts) {
-        if (shifts.length === 0) return '<tr><td colspan="5" class="text-center py-5 text-muted">無班別資料</td></tr>';
+        if (shifts.length === 0) return '<tr><td colspan="6" class="text-center py-5 text-muted">無班別資料</td></tr>';
 
         return shifts.map((s, i) => `
             <tr>
                 <td class="fw-bold" style="color:${s.color}">${s.code}</td>
                 <td>${s.name}</td>
                 <td>${s.startTime} ~ ${s.endTime}</td>
+                <td>${s.hours || 8} hr</td>
                 <td><span class="badge rounded-pill border" style="background:${s.color}; width:24px; height:24px;">&nbsp;</span></td>
                 <td class="text-end pe-3">
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="window.routerPage.openModal(${i})"><i class="fas fa-edit"></i></button>
@@ -49,7 +50,7 @@ export const ShiftSettingsTemplate = {
         `).join('');
     },
 
-    // 3. Modal 結構
+    // 3. Modal 結構 (修正 4: 新增時數輸入框)
     renderModal() {
         return `
             <div class="modal fade" id="shift-modal" tabindex="-1">
@@ -69,7 +70,16 @@ export const ShiftSettingsTemplate = {
                                         <input type="time" id="start-time" class="form-control" value="08:00"><span class="input-group-text">~</span><input type="time" id="end-time" class="form-control" value="16:00">
                                     </div>
                                 </div>
-                                <div class="mb-3"><label class="form-label fw-bold">顏色</label><input type="color" id="shift-color" class="form-control w-100" value="#3b82f6"></div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold">工時 (小時)</label>
+                                        <input type="number" id="shift-hours" class="form-control" value="8" step="0.5" min="0">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold">顏色</label>
+                                        <input type="color" id="shift-color" class="form-control w-100" value="#3b82f6">
+                                    </div>
+                                </div>
                             </form>
                         </div>
                         <div class="modal-footer">
