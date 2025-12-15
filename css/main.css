@@ -242,7 +242,7 @@ body {
     .schedule-table th, .schedule-table td { padding: 4px; height: 32px; min-width: 32px; }
     
     /* 隱藏非必要元素 */
-    .user-info span { display: none; } /* 隱藏使用者名稱，只留圖示 */
+    .user-info span { display: none; } 
     
     /* 工具列調整 */
     .schedule-toolbar { gap: 10px; }
