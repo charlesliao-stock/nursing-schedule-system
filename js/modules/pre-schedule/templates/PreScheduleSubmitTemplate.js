@@ -121,18 +121,18 @@ export const PreScheduleSubmitTemplate = {
         `;
     },
 
-    renderContextMenu(shiftTypes) {
-        return ``;
-    },
+    renderContextMenu(shiftTypes) { return ``; },
 
-    // 3. 偏好設定表單 (修正：支援動態顯示)
+    // 3. 偏好設定表單 (修正：完全對應管理者端的顯示邏輯)
     renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = [], settings = {}) {
         let html = '';
         
         const limit = settings.shiftTypesLimit || 2; 
         const allow3 = settings.allowThreeTypesVoluntary !== false; 
+        
+        // 判斷是否顯示混合選項：(限制為3) OR (限制為2且允許自願3)
+        const showMixOption = (limit === 3) || (limit === 2 && allow3);
 
-        // 1. 包班選項
         if (canBatch) {
             html += `
                 <div class="mb-3">
@@ -151,9 +151,7 @@ export const PreScheduleSubmitTemplate = {
             `;
         } 
         
-        // 2. 班別種類偏好 (僅當 Limit=2 且 Allow3=True 時顯示)
-        const showMixOption = (limit === 2 && allow3);
-        
+        // 修正：依條件渲染混合偏好
         if (showMixOption) {
             const mixPref = savedPrefs.monthlyMix || '2'; 
             html += `
@@ -172,9 +170,11 @@ export const PreScheduleSubmitTemplate = {
                     </div>
                 </div>
             `;
+        } else {
+            // 隱藏時，讓 JS 邏輯可以讀取到預設值
+            html += `<input type="hidden" name="monthlyMix" value="2">`;
         }
 
-        // 3. 排班順位
         html += `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
         
         const shiftOptions = unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
@@ -191,15 +191,9 @@ export const PreScheduleSubmitTemplate = {
         html += renderSelect(1, savedPrefs.priority1);
         html += renderSelect(2, savedPrefs.priority2);
         
-        // 第3順位顯示邏輯：
-        // A. Limit=3 -> 永遠顯示
-        // B. Limit=2, Allow=False -> 永遠隱藏
-        // C. Limit=2, Allow=True -> 根據 JS 動態顯示 (預設先渲染，JS 會再隱藏)
-        
-        if (limit === 3) {
-            html += renderSelect(3, savedPrefs.priority3);
-        } else if (allow3) {
-            // 這種情況下，HTML 存在，但 JS 會根據 monthlyMix 決定是否隱藏
+        // P3 容器，顯示控制交由 JS
+        // 如果 showMixOption 為 false，則永遠不顯示 P3
+        if (showMixOption) {
             html += renderSelect(3, savedPrefs.priority3, 'container-pref-3');
         }
         
