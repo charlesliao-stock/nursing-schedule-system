@@ -12,14 +12,12 @@ export class PreScheduleEditPage {
         this.staffList = [];
         this.isDirty = false;
         
-        // 用於儲存上個月最後 6 天的資料
         this.historyData = {}; 
         this.prevYear = 0;
         this.prevMonth = 0;
         this.prevMonthDays = 0;
         this.historyRange = []; 
         
-        // 暫存偏好編輯
         this.editingPrefUid = null;
         this.prefModal = null;
     }
@@ -29,7 +27,56 @@ export class PreScheduleEditPage {
         const params = new URLSearchParams(hash.split('?')[1]);
         this.scheduleId = params.get('id');
 
-        return `
+        // 加入樣式控制
+        const style = `
+        <style>
+            /* 修正 1: 表格佈局優化 */
+            .schedule-table-container {
+                overflow-x: auto; /* 若螢幕真的太小仍保留捲軸，但盡量不顯示 */
+            }
+            .schedule-table {
+                width: 100%;
+                table-layout: auto; /* 讓瀏覽器自動分配，但依賴下方 min-width */
+                font-size: 0.85rem;
+            }
+            .schedule-table th, .schedule-table td {
+                padding: 4px 2px !important; /* 縮小內距 */
+                white-space: nowrap; /* 不換行 */
+                vertical-align: middle;
+            }
+            
+            /* 指定欄位寬度 */
+            .col-staff-id { width: 70px; max-width: 70px; }
+            .col-name { width: 90px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+            .col-note { width: 35px; max-width: 35px; }
+            .col-pref { width: 110px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+            .col-date { min-width: 28px; } /* 日期欄位最小寬度 */
+
+            /* 選單樣式 */
+            #context-menu {
+                display: none; 
+                position: fixed; 
+                z-index: 9999; 
+                background-color: white; 
+                opacity: 1;
+                border: 1px solid rgba(0,0,0,.15);
+                box-shadow: 0 .5rem 1rem rgba(0,0,0,.175);
+                border-radius: .25rem;
+                padding: .5rem 0;
+                min-width: 160px;
+            }
+            #context-menu .dropdown-item {
+                padding: 0.25rem 1rem;
+                font-size: 0.9rem;
+                cursor: pointer;
+            }
+            #context-menu .dropdown-item:hover {
+                background-color: #f8f9fa;
+            }
+        </style>
+        `;
+
+        return style + `
             <div class="container-fluid mt-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="d-flex align-items-center gap-3">
@@ -41,29 +88,29 @@ export class PreScheduleEditPage {
                             <i class="fas fa-arrow-left"></i> 返回
                         </button>
                         <button id="btn-save" class="btn btn-primary" disabled>
-                            <i class="fas fa-save"></i> 儲存變更
+                            <i class="fas fa-save"></i> 儲存
                         </button>
                         <button id="btn-auto-schedule" class="btn btn-success" disabled>
-                            <i class="fas fa-robot"></i> 產生排班
+                            <i class="fas fa-robot"></i> 排班
                         </button>
                     </div>
                 </div>
 
                 <div class="alert alert-info py-2 small d-flex align-items-center">
                     <i class="fas fa-info-circle me-2"></i>
-                    <span>提示：灰色底色區域為「上月月底資料」，點擊可修改，將作為排班連續性檢查依據。支援左鍵或右鍵開啟選單。</span>
+                    <span>提示：灰色底色區域為「上月月底資料」，點擊可修改。支援左鍵或右鍵開啟選單。</span>
                 </div>
 
                 <div class="card shadow-sm">
                     <div class="card-body p-0">
-                        <div class="table-responsive" id="schedule-container">
+                        <div class="schedule-table-container" id="schedule-container">
                             <div class="text-center p-5"><span class="spinner-border text-primary"></span> 資料載入中...</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div id="context-menu" class="dropdown-menu shadow" style="display:none; position:fixed; z-index:9999; background-color: white; opacity: 1;"></div>
+            <div id="context-menu" class="shadow"></div>
 
             <div class="modal fade" id="pref-modal" tabindex="-1">
                 <div class="modal-dialog">
@@ -98,9 +145,12 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').addEventListener('click', () => this.saveData());
         document.getElementById('btn-auto-schedule').addEventListener('click', () => this.goToAutoSchedule());
         
+        // 點擊空白處關閉選單
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('context-menu');
-            if (menu && !e.target.closest('#context-menu')) menu.style.display = 'none';
+            if (menu && menu.style.display === 'block' && !e.target.closest('#context-menu')) {
+                menu.style.display = 'none';
+            }
         });
 
         window.onbeforeunload = (e) => {
@@ -122,7 +172,7 @@ export class PreScheduleEditPage {
             const staff = await userService.getUnitStaff(this.scheduleData.unitId);
             this.staffList = staff.sort((a, b) => (a.rank || 'Z').localeCompare(b.rank || 'Z'));
 
-            document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}年${this.scheduleData.month}月 預班編輯`;
+            document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}年${this.scheduleData.month}月`;
             this.updateStatusBadge(this.scheduleData.status);
 
             await this.ensureHistoryData();
@@ -182,23 +232,23 @@ export class PreScheduleEditPage {
         const submissions = this.scheduleData.submissions || {};
 
         let html = `
-        <table class="table table-bordered table-sm text-center align-middle schedule-table user-select-none" style="font-size:0.9rem;">
+        <table class="table table-bordered table-sm text-center align-middle schedule-table user-select-none">
             <thead class="table-light sticky-top" style="z-index: 5;">
                 <tr>
-                    <th rowspan="2" style="min-width:80px; width:80px;">職編</th>
-                    <th rowspan="2" style="min-width:90px; width:90px;">姓名</th>
-                    <th rowspan="2" style="width:40px;">註</th>
-                    <th rowspan="2" style="width:140px;">排班偏好 <i class="fas fa-edit text-muted ms-1"></i></th>
+                    <th rowspan="2" class="col-staff-id">職編</th>
+                    <th rowspan="2" class="col-name">姓名</th>
+                    <th rowspan="2" class="col-note">註</th>
+                    <th rowspan="2" class="col-pref">排班偏好 <i class="fas fa-edit text-muted"></i></th>
                     <th colspan="6" class="bg-secondary bg-opacity-10 border-end border-2">上月 (${this.prevMonth}月)</th>
                     <th colspan="${daysInMonth}">本月 (${this.scheduleData.month}月)</th>
                 </tr>
                 <tr>
-                    ${this.historyRange.map(d => `<th class="bg-secondary bg-opacity-10 text-muted small">${d}</th>`).join('')}
+                    ${this.historyRange.map(d => `<th class="bg-secondary bg-opacity-10 text-muted small col-date">${d}</th>`).join('')}
                     ${Array.from({length: daysInMonth}, (_, i) => {
                         const d = i + 1;
                         const weekDay = new Date(this.scheduleData.year, this.scheduleData.month - 1, d).getDay();
                         const isWeekend = weekDay === 0 || weekDay === 6;
-                        return `<th class="${isWeekend ? 'text-danger' : ''}">${d}<br><span class="small" style="font-size:0.75rem">${this.getWeekName(weekDay)}</span></th>`;
+                        return `<th class="col-date ${isWeekend ? 'text-danger' : ''}">${d}<br><span class="small" style="font-size:0.75rem">${this.getWeekName(weekDay)}</span></th>`;
                     }).join('')}
                 </tr>
             </thead>
@@ -214,16 +264,16 @@ export class PreScheduleEditPage {
 
             let prefStr = '';
             if (pref.batch) prefStr += `<span class="badge bg-primary me-1">包${pref.batch}</span>`;
-            if (pref.priority1) prefStr += `<small class="text-muted d-block">${pref.priority1} > ${pref.priority2||'-'}</small>`;
-            if (!prefStr) prefStr = '<span class="text-muted small">- 點擊編輯 -</span>';
+            if (pref.priority1) prefStr += `<small class="text-muted d-block">${pref.priority1} > ${pref.priority2||'-'} > ${pref.priority3||'-'}</small>`;
+            if (!prefStr) prefStr = '<span class="text-muted small">-</span>';
 
             html += `
                 <tr>
-                    <td class="text-muted small">${staff.staffId || ''}</td>
-                    <td class="fw-bold text-start ps-2">${staff.name}</td>
-                    <td>${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill">孕</span>' : ''}</td>
+                    <td class="text-muted small col-staff-id">${staff.staffId || ''}</td>
+                    <td class="fw-bold text-start ps-1 col-name" title="${staff.name}">${staff.name}</td>
+                    <td class="col-note">${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill">孕</span>' : ''}</td>
                     
-                    <td onclick="window.routerPage.openPrefModal('${uid}')" style="cursor:pointer;" class="hover-bg-light" title="點擊編輯偏好">
+                    <td onclick="window.routerPage.openPrefModal('${uid}')" style="cursor:pointer;" class="hover-bg-light col-pref" title="點擊編輯偏好">
                         ${prefStr}
                     </td>
 
@@ -233,7 +283,7 @@ export class PreScheduleEditPage {
                                     data-uid="${uid}" 
                                     data-day="${d}" 
                                     data-type="history"
-                                    onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    onclick="window.routerPage.handleCellClick(this, '${val}', event)"
                                     oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer; border-right: ${d===this.historyRange[this.historyRange.length-1] ? '2px solid #dee2e6' : ''}">
                                     ${this.renderShiftBadge(val)}
@@ -247,7 +297,7 @@ export class PreScheduleEditPage {
                                     data-uid="${uid}" 
                                     data-day="${d}" 
                                     data-type="current"
-                                    onclick="window.routerPage.handleCellClick(this, '${val}')"
+                                    onclick="window.routerPage.handleCellClick(this, '${val}', event)"
                                     oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer;">
                                     ${this.renderShiftBadge(val)}
@@ -263,17 +313,21 @@ export class PreScheduleEditPage {
 
     renderShiftBadge(code) {
         if (!code) return '';
-        if (code.startsWith('NO_')) return `<i class="fas fa-ban text-danger"></i> <span class="small">${code.replace('NO_', '')}</span>`;
+        
+        if (code.startsWith('NO_')) {
+            // 勿排使用紅色空心
+            return `<span class="badge border border-danger text-danger bg-light" style="padding:2px;">勿${code.replace('NO_', '')}</span>`;
+        }
 
         let bgStyle = 'background-color:#6c757d; color:white;';
-        if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
-        else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;';
+        if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;'; // Bootstrap warning color
+        else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;'; // 紫色
         else {
             const s = this.unitData.settings?.shifts?.find(x => x.code === code);
             if(s) bgStyle = `background-color:${s.color}; color:white;`;
         }
 
-        return `<span class="badge w-100" style="${bgStyle}">${code === 'M_OFF' ? 'M' : code}</span>`;
+        return `<span class="badge w-100" style="${bgStyle}; padding:3px 0;">${code === 'M_OFF' ? 'M' : code}</span>`;
     }
 
     getWeekName(day) {
@@ -293,52 +347,79 @@ export class PreScheduleEditPage {
         el.textContent = s.text;
     }
 
+    // 修正 1: 右鍵選單位置防切邊邏輯
     handleCellClick(cell, currentVal, e = null) {
-        if (e) e.preventDefault(); 
+        if (e) {
+            e.preventDefault(); 
+            e.stopPropagation(); // 防止冒泡
+        }
 
-        const existing = document.getElementById('context-menu');
-        existing.style.display = 'none'; 
+        const menu = document.getElementById('context-menu');
+        if (!menu) return;
 
+        // 設定內容
         const type = cell.dataset.type; 
         const uid = cell.dataset.uid;
         const day = cell.dataset.day;
-
         this.currentEditTarget = { uid, day, type, cell };
 
         const unitShifts = this.unitData.settings?.shifts || [
-            {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
+            {code:'D', name:'白班', color:'#0d6efd'}, 
+            {code:'E', name:'小夜', color:'#ffc107'}, 
+            {code:'N', name:'大夜', color:'#212529'}
         ];
 
-        let menuHtml = `<h6 class="dropdown-header">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
+        let menuHtml = `<h6 class="dropdown-header bg-light">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
         
-        menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
+        menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休</div>`;
         
         if (type === 'current') {
-            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強迫預休</button>`;
+            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強休</div>`;
         }
         menuHtml += `<div class="dropdown-divider"></div>`;
 
         unitShifts.forEach(s => {
-            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> ${s.name}</button>`;
+            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</div>`;
         });
 
         if (type === 'current') {
             menuHtml += `<div class="dropdown-divider"></div>`;
             unitShifts.forEach(s => {
-                menuHtml += `<button class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
+                menuHtml += `<div class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</div>`;
             });
         }
 
         menuHtml += `<div class="dropdown-divider"></div>`;
-        menuHtml += `<button class="dropdown-item text-muted" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</button>`;
+        menuHtml += `<div class="dropdown-item text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
 
-        const menu = document.getElementById('context-menu');
         menu.innerHTML = menuHtml;
-        
-        const rect = cell.getBoundingClientRect();
-        menu.style.left = `${rect.left}px`;
-        menu.style.top = `${rect.bottom + 5}px`;
+
+        // 計算位置
         menu.style.display = 'block';
+        
+        // 取得視窗與選單尺寸
+        const menuRect = menu.getBoundingClientRect();
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
+        // 預設位置 (滑鼠點擊處 或 元素邊緣)
+        let left = e ? e.clientX : cell.getBoundingClientRect().left;
+        let top = e ? e.clientY : cell.getBoundingClientRect().bottom;
+
+        // 1. 水平邊界檢查 (若超出右側，改為往左長)
+        if (left + menuRect.width > windowWidth) {
+            left = windowWidth - menuRect.width - 10;
+        }
+
+        // 2. 垂直邊界檢查 (若超出下方，改為往上長)
+        if (top + menuRect.height > windowHeight) {
+            // 如果是滑鼠觸發，改為滑鼠上方；如果是元素觸發，改為元素上方
+            if (e) top = e.clientY - menuRect.height;
+            else top = cell.getBoundingClientRect().top - menuRect.height;
+        }
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
     }
 
     applyShift(val) {
@@ -362,22 +443,16 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').disabled = false;
     }
 
-    // ✅ 修正：動態產生偏好表單，實作連動邏輯
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
         const pref = sub.preferences || {};
         
-        // 讀取設定
         const settings = this.scheduleData.settings || {};
         const limit = settings.shiftTypesLimit || 2;
         const allow3 = settings.allowThreeTypesVoluntary !== false;
         
-        // 動態生成 HTML
-        let html = '';
-        
-        // 1. 包班
-        html += `
+        let html = `
             <div class="mb-3">
                 <label class="form-label fw-bold">包班意願</label>
                 <select id="edit-pref-batch" class="form-select">
@@ -387,7 +462,6 @@ export class PreScheduleEditPage {
                 </select>
             </div>`;
 
-        // 2. 混合偏好 (僅當 Limit=2 且 Allow3=True 時顯示)
         if (limit === 2 && allow3) {
             html += `
             <div class="mb-3">
@@ -398,11 +472,9 @@ export class PreScheduleEditPage {
                 </select>
             </div>`;
         } else {
-            // 隱藏欄位，用於取值
             html += `<input type="hidden" id="edit-pref-mix" value="2">`;
         }
 
-        // 3. 順位選擇
         const unitShifts = this.unitData.settings?.shifts || [];
         const optionsHtml = `<option value="">-</option>` + unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
         
@@ -422,10 +494,9 @@ export class PreScheduleEditPage {
             </div>
         </div>`;
 
-        // 注入 HTML
         document.getElementById('pref-dynamic-content').innerHTML = html;
 
-        // 回填數值
+        // 回填值
         document.getElementById('edit-pref-batch').value = pref.batch || '';
         if (limit === 2 && allow3) {
             document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
@@ -434,10 +505,8 @@ export class PreScheduleEditPage {
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
 
-        // 控制 P3 顯示/隱藏的函式
         const toggleP3 = (mixValue) => {
             const p3 = document.getElementById('container-admin-p3');
-            // 顯示條件：Limit=3 (這裡沒做UI, 預設顯示) OR (Limit=2 & Allow3 & Mix=3)
             if (limit === 3) {
                 p3.style.display = 'block';
             } else if (limit === 2 && allow3 && mixValue === '3') {
@@ -448,10 +517,8 @@ export class PreScheduleEditPage {
             }
         };
 
-        // 初始化 P3 狀態
         toggleP3(pref.monthlyMix || '2');
 
-        // 綁定事件：當混合偏好改變時，切換 P3
         const mixSelect = document.getElementById('edit-pref-mix');
         if (mixSelect && mixSelect.type !== 'hidden') {
             mixSelect.addEventListener('change', (e) => toggleP3(e.target.value));
@@ -501,7 +568,7 @@ export class PreScheduleEditPage {
             alert("儲存失敗: " + e.message);
         } finally {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-save"></i> 儲存變更';
+            btn.innerHTML = '<i class="fas fa-save"></i> 儲存';
         }
     }
 
