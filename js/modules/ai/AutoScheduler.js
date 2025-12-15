@@ -1,40 +1,36 @@
 import { RuleEngine } from "./RuleEngine.js";
 
-// AI 權重設定
 const WEIGHTS = {
     BASE: 100,
-    NEED_HIGH: 50,      // 人力極缺
-    NEED_LOW: 10,       // 人力微缺
-    PREFERENCE: 20,     // 員工願望/偏好
-    CONTINUITY: 10,     // 連續上班
-    PENALTY_FATIGUE: -80, // 疲勞罰分 (如 N->D)
-    RECOVERY: 20        // OFF 的恢復分
+    NEED_HIGH: 50,      
+    NEED_LOW: 10,       
+    PREFERENCE: 20,     
+    PREFERENCE_2: 15,   
+    PREFERENCE_3: 10,   
+    CONTINUITY: 10,     
+    PENALTY_FATIGUE: -80, 
+    RECOVERY: 20        
 };
 
 export class AutoScheduler {
 
-    /**
-     * 啟動排班引擎 (v4.3 Rules Updated & Dynamic Shifts)
-     */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (Dynamic)");
-
+        console.log("🚀 AI 排班引擎啟動 (Calendar Week + Preferences)");
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
             this.prefillBatchShifts(context);
             const success = await this.solveDay(1, context);
-
             if (success) console.log("✅ 排班成功！");
             else console.warn(`⚠️ 排班勉強完成，最後停留在 Day ${context.maxReachedDay}`);
-            
             return { assignments: context.assignments, logs: context.logs };
-
         } catch (e) {
             console.error("❌ 排班引擎崩潰:", e);
             return { assignments: {}, logs: [`Error: ${e.message}`] };
         }
     }
 
+    // ... (prepareContext, prefillBatchShifts, solveDay, adjustBatchOverstaffing, calculateConsecutiveWork, checkDailyManpower, shuffleArray 保持不變) ...
+    // (為節省篇幅，請保留這些方法原樣)
     static prepareContext(currentSchedule, staffList, unitSettings, preScheduleData) {
         currentSchedule = currentSchedule || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         unitSettings = unitSettings || {};
@@ -65,7 +61,7 @@ export class AutoScheduler {
         validStaffList.forEach(s => {
             assignments[s.uid] = {};
             wishes[s.uid] = {};
-            preferences[s.uid] = { p1: null, p2: null, batch: null, monthlyMix: '2' }; 
+            preferences[s.uid] = { p1: null, p2: null, p3: null, batch: null, monthlyMix: '2' }; 
             lastMonthShifts[s.uid] = 'OFF'; 
             lastMonthConsecutive[s.uid] = 0;
         });
@@ -83,6 +79,7 @@ export class AutoScheduler {
                         preferences[uid] = {
                             p1: sub.preferences.priority1 || null,
                             p2: sub.preferences.priority2 || null,
+                            p3: sub.preferences.priority3 || null, 
                             batch: sub.preferences.batch || null,
                             monthlyMix: sub.preferences.monthlyMix || '2'
                         };
@@ -111,7 +108,6 @@ export class AutoScheduler {
         });
 
         const staffReq = unitSettings.staffRequirements || {};
-        // ✅ 修正 3: 確保班別定義存在
         const shiftDefs = settings.shifts || [{code:'D'}, {code:'E'}, {code:'N'}];
 
         return {
@@ -202,7 +198,6 @@ export class AutoScheduler {
         const staff = staffList[index];
         const prevShift = context.assignments[staff.uid][day - 1] || 'OFF';
 
-        // ✅ 修正 3: 從設定讀取候選班別
         let possibleShifts = context.shiftDefs.map(s => s.code);
         if (!possibleShifts.includes('OFF')) possibleShifts.push('OFF');
         
@@ -236,6 +231,7 @@ export class AutoScheduler {
 
             context.assignments[staff.uid][day] = shift;
             
+            // ✅ 修正: 呼叫 RuleEngine 時傳入 year, month
             const ruleCheck = RuleEngine.validateStaff(
                 context.assignments[staff.uid], 
                 context.daysInMonth, 
@@ -244,7 +240,9 @@ export class AutoScheduler {
                 staff.constraints,
                 context.assignments[staff.uid][0],        
                 context.lastMonthConsecutive[staff.uid],  
-                day                                       
+                day,
+                context.year, 
+                context.month
             );
 
             if (!ruleCheck.errors[day]) {
@@ -261,15 +259,10 @@ export class AutoScheduler {
 
     static checkHardConstraints(staff, shift, prevShift, context) {
         if (context.rules.constraints?.minInterval11h) {
-            // ✅ 修正 3: 這裡的班別代碼判斷可能需要更通用的邏輯 (目前維持 E接D 為例)
-            // 若要支援自訂班別，需在班別設定中加入「類型」欄位 (早/晚/夜)
-            // 暫時假設代碼為 D, E, N 的變體
             if ((prevShift === 'E' || prevShift.includes('E')) && (shift === 'D' || shift.includes('D'))) 
                 return { valid: false, reason: "Interval < 11h" };
         }
-        
         const isProtected = staff.constraints.isPregnant || staff.constraints.isPostpartum;
-        // 假設 N 是夜班，E 是小夜
         if (isProtected && (shift.includes('N') || shift.includes('E'))) {
             return { valid: false, reason: "Maternal protection" };
         }
@@ -285,20 +278,16 @@ export class AutoScheduler {
         if (shift !== 'OFF') {
             const req = (context.staffReq[shift] && context.staffReq[shift][w]) || 0;
             const current = currentCounts[shift] || 0;
-            if (current < req) {
-                score += WEIGHTS.NEED_HIGH;
-                details.push("Need++");
-            } else if (current >= req) {
-                score -= 50; 
-                details.push("Full--");
-            }
+            if (current < req) { score += WEIGHTS.NEED_HIGH; details.push("Need++"); }
+            else if (current >= req) { score -= 50; details.push("Full--"); }
         }
 
         const prefs = context.preferences[staff.uid];
         if (prefs.p1 === shift) { score += WEIGHTS.PREFERENCE; details.push("P1"); }
+        else if (prefs.p2 === shift) { score += WEIGHTS.PREFERENCE_2; details.push("P2"); }
+        else if (prefs.p3 === shift) { score += WEIGHTS.PREFERENCE_3; details.push("P3"); }
+
         if (prevShift === shift && shift !== 'OFF') { score += WEIGHTS.CONTINUITY; details.push("Cont."); }
-        
-        // 疲勞扣分 (逆向排班)
         if (prevShift.includes('N') && shift.includes('D')) { score += WEIGHTS.PENALTY_FATIGUE; details.push("Fatigue"); }
 
         if (context.rules.constraints?.allowMonthlyMixPref && shift !== 'OFF') {
@@ -310,16 +299,14 @@ export class AutoScheduler {
                     if(s && s !== 'OFF' && s !== 'M_OFF') usedTypes.add(s);
                 }
                 if (usedTypes.size >= 2 && !usedTypes.has(shift)) {
-                    score -= 40; 
-                    details.push("Mix3(Avoid)");
+                    score -= 40; details.push("Mix3(Avoid)");
                 }
             }
         }
 
         const consecutive = this.calculateConsecutiveWork(staff.uid, day, context);
         if (shift === 'OFF' && consecutive > 5) {
-            score += (consecutive * 15); 
-            details.push(`RestNeed(${consecutive})`);
+            score += (consecutive * 15); details.push(`RestNeed(${consecutive})`);
         }
 
         return { score, details: details.join(',') };
@@ -361,18 +348,12 @@ export class AutoScheduler {
     static calculateConsecutiveWork(uid, currentDay, context) {
         let count = 0;
         let initialCons = context.lastMonthConsecutive[uid] || 0;
-        
         for (let d = currentDay - 1; d >= 1; d--) {
             const shift = context.assignments[uid][d];
-            if (shift && shift !== 'OFF' && shift !== 'M_OFF') count++;
-            else return count; 
+            if (shift && shift !== 'OFF' && shift !== 'M_OFF') count++; else return count; 
         }
-        
         const firstDayShift = context.assignments[uid][1];
-        if (firstDayShift && firstDayShift !== 'OFF' && firstDayShift !== 'M_OFF') {
-            return count + initialCons;
-        }
-        
+        if (firstDayShift && firstDayShift !== 'OFF' && firstDayShift !== 'M_OFF') return count + initialCons;
         return count;
     }
 
@@ -380,16 +361,12 @@ export class AutoScheduler {
         const date = new Date(context.year, context.month - 1, day);
         const w = date.getDay();
         const counts = {};
-        
-        // ✅ 修正 3: 動態檢查所有班別
         const shiftsToCheck = context.shiftDefs.map(s => s.code);
         shiftsToCheck.forEach(s => counts[s] = 0);
-
         Object.values(context.assignments).forEach(sch => {
             const s = sch[day];
             if (counts[s] !== undefined) counts[s]++;
         });
-        
         const missing = [];
         shiftsToCheck.forEach(s => {
             const req = (context.staffReq[s] && context.staffReq[s][w]) || 0;
