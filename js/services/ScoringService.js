@@ -1,192 +1,227 @@
 export class ScoringService {
-    /**
-     * 計算班表總分與細項 (支援動態權重)
-     */
+    
+    // 定義預設結構 (含預設 Tiers)
+    static getDefaultConfig() {
+        return {
+            efficiency: {
+                label: "效率 (人力)",
+                subs: {
+                    lackDays: { 
+                        label: "缺人天數", weight: 20, enabled: true, 
+                        tiers: [{limit:0, score:100, label:'優秀'}, {limit:2, score:80, label:'良好'}, {limit:5, score:60, label:'普通'}, {limit:99, score:40, label:'差'}] 
+                    },
+                    severeLack: { 
+                        label: "嚴重缺口(≥2)", weight: 20, enabled: true,
+                        tiers: [{limit:0, score:100, label:'優秀'}, {limit:0, score:60, label:'不佳'}]
+                    }
+                }
+            },
+            satisfaction: {
+                label: "滿意度 (偏好)",
+                subs: {
+                    wishRate: { 
+                        label: "預班達成率", weight: 20, enabled: true,
+                        // 特殊邏輯：數值越大越好，這裡用反向思考：未達成率 <= X
+                        // 或簡單處理：我們計算「未達成率(%)」傳入
+                        tiers: [{limit:2, score:100, label:'優秀'}, {limit:10, score:80, label:'良好'}, {limit:20, score:60, label:'普通'}]
+                    },
+                    violateNo: { 
+                        label: "違反勿排", weight: 10, enabled: true,
+                        tiers: [{limit:0, score:100, label:'優秀'}, {limit:1, score:60, label:'普通'}, {limit:99, score:0, label:'嚴重'}]
+                    }
+                }
+            },
+            fairness: {
+                label: "公平性",
+                subs: {
+                    diffTotal: { 
+                        label: "總班數差異", weight: 10, enabled: true,
+                        tiers: [{limit:1, score:100, label:'優秀'}, {limit:2, score:80, label:'良好'}, {limit:4, score:60, label:'普通'}, {limit:6, score:40, label:'差'}]
+                    },
+                    diffNight: { 
+                        label: "夜班數差異", weight: 10, enabled: true,
+                        tiers: [{limit:1, score:100, label:'優秀'}, {limit:3, score:80, label:'良好'}, {limit:5, score:60, label:'普通'}]
+                    }
+                }
+            },
+            health: {
+                label: "健康 (法規)",
+                subs: {
+                    nToD: { 
+                        label: "N接D (疲勞)", weight: 10, enabled: true,
+                        tiers: [{limit:0, score:100, label:'優秀'}, {limit:0, score:40, label:'危險'}]
+                    }
+                }
+            }
+        };
+    }
+
     static calculate(schedule, staffList, unitSettings, preSchedule) {
         if (!schedule || !schedule.assignments) return { totalScore: 0, details: {} };
 
         const assignments = schedule.assignments;
         const daysInMonth = new Date(schedule.year, schedule.month, 0).getDate();
-        const config = unitSettings?.scoringConfig || {};
-
-        // 1. 讀取並計算各類別的配置權重 (Max Score)
-        const weights = {
-            efficiency: this.getCategoryWeight(config.efficiency),   // 對應: 人力覆蓋
-            satisfaction: this.getCategoryWeight(config.satisfaction), // 對應: 個人偏好
-            fairness: this.getCategoryWeight(config.fairness),       // 對應: 公平性
-            health: this.getCategoryWeight(config.health)            // 對應: 健康/法規
-        };
-
-        // 2. 初始化結果物件
-        // 若單位未設定或權重為 0，則該項 Max 為 0
-        let scores = {
-            efficiency: { score: 0, max: weights.efficiency, label: config.efficiency?.label || "效率 (人力覆蓋)", desc: "滿足每日人力需求之程度" },
-            satisfaction: { score: 0, max: weights.satisfaction, label: config.satisfaction?.label || "滿意度 (偏好)", desc: "符合員工預班與志願之比例" },
-            fairness: { score: 0, max: weights.fairness, label: config.fairness?.label || "公平性", desc: "休假天數與夜班分佈之平均度" },
-            health: { score: 0, max: weights.health, label: config.health?.label || "健康 (班表邏輯)", desc: "避免疲勞班表與符合間隔規範" }
-        };
-
-        // 3. 執行計算 (僅當權重 > 0 時才計算，節省效能)
-        if (scores.efficiency.max > 0) {
-            scores.efficiency.score = this.calcCoverage(assignments, daysInMonth, unitSettings, scores.efficiency.max);
-        }
         
-        if (scores.satisfaction.max > 0) {
-            scores.satisfaction.score = this.calcPreferences(assignments, daysInMonth, preSchedule, scores.satisfaction.max);
-        }
+        // 使用單位設定，若無則用預設
+        const config = unitSettings.scoringConfig || this.getDefaultConfig();
+        
+        // 1. 計算所有原始數據 (Raw Metrics)
+        const metrics = this.calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule);
 
-        if (scores.fairness.max > 0) {
-            scores.fairness.score = this.calcFairness(assignments, staffList, scores.fairness.max);
-        }
+        let totalScore = 0;
+        let totalMax = 0;
+        const details = {};
 
-        if (scores.health.max > 0) {
-            scores.health.score = this.calcHealth(assignments, daysInMonth, scores.health.max);
-        }
+        // 2. 根據 Config 與 Metrics 計算分數
+        Object.keys(config).forEach(catKey => {
+            const catConfig = config[catKey];
+            const subItems = [];
+            let catMax = 0;
+            let catScoreSum = 0;
 
-        // 4. 匯總總分
-        const total = Object.values(scores).reduce((sum, item) => sum + item.score, 0);
-        // 計算總權重 (通常應為 100，但允許使用者設定不同)
-        const totalMax = Object.values(scores).reduce((sum, item) => sum + item.max, 0);
+            if (catConfig.subs) {
+                Object.keys(catConfig.subs).forEach(subKey => {
+                    const sub = catConfig.subs[subKey];
+                    if (sub.enabled) {
+                        const rawValue = metrics[subKey] || 0; // 取得該項目的原始數值 (如: 3天)
+                        
+                        // 根據 Tiers 轉換分數
+                        const tier = this.getTieredScore(rawValue, sub.tiers);
+                        
+                        // 加權計算
+                        // 該細項得分 = (階梯分數 / 100) * 權重
+                        const weight = parseInt(sub.weight) || 0;
+                        const itemScore = (tier.score / 100) * weight;
+
+                        catMax += weight;
+                        catScoreSum += itemScore;
+
+                        subItems.push({
+                            name: sub.label,
+                            value: this.formatValue(subKey, rawValue),
+                            score: tier.score, // 顯示階梯分數 (0-100)
+                            grade: tier.label
+                        });
+                    }
+                });
+            }
+
+            details[catKey] = {
+                label: catConfig.label,
+                score: catScoreSum,
+                max: catMax,
+                subItems: subItems,
+                rawScore: catMax > 0 ? (catScoreSum / catMax * 100) : 0
+            };
+
+            totalScore += catScoreSum;
+            totalMax += catMax;
+        });
 
         return {
-            totalScore: Math.round(total),
-            totalMax: totalMax, // 實際總滿分
-            passed: total >= (totalMax * 0.6), // 及格標準 60%
-            details: scores
+            totalScore: Math.round(totalScore),
+            totalMax: totalMax,
+            passed: totalScore >= (totalMax * 0.6),
+            details: details
         };
     }
 
-    /**
-     * 輔助：計算該類別下所有「已啟用」細項的權重總和
-     */
-    static getCategoryWeight(categoryConfig) {
-        if (!categoryConfig || !categoryConfig.subs) return 0;
-        let total = 0;
-        Object.values(categoryConfig.subs).forEach(sub => {
-            if (sub.enabled) {
-                total += (parseInt(sub.weight) || 0);
-            }
-        });
-        return total;
+    static getTieredScore(value, tiers) {
+        if (!tiers || tiers.length === 0) return { score: 0, label: '未設定' };
+        // 假設 tiers 已排序 (由小到大)
+        for (const t of tiers) {
+            if (value <= t.limit) return { score: t.score, label: t.label };
+        }
+        // 超過最大限制，回傳最後一個 (通常是最差)
+        const last = tiers[tiers.length - 1];
+        return { score: last.score, label: last.label };
     }
 
-    // --- A. 效率/人力覆蓋 (Coverage) ---
-    static calcCoverage(assignments, daysInMonth, unitSettings, maxScore) {
-        const req = unitSettings?.staffRequirements || { D:{}, E:{}, N:{} };
-        let totalReqPoints = 0;
-        let metPoints = 0;
+    static formatValue(key, val) {
+        if (key.includes('Rate')) return val + '% (未達成)';
+        if (key.includes('diff')) return '差異 ' + val;
+        return val + ' 次/天';
+    }
 
-        // 取得所有定義的班別
-        const shiftDefs = unitSettings?.settings?.shifts || [{code:'D'}, {code:'E'}, {code:'N'}];
-        const shiftCodes = shiftDefs.map(s => s.code);
+    // ==========================================
+    //  計算所有原始指標 (Metrics)
+    // ==========================================
+    static calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule) {
+        const req = unitSettings?.staffRequirements || {};
+        const shiftCodes = unitSettings?.settings?.shifts ? unitSettings.settings.shifts.map(s=>s.code) : ['D','E','N'];
+        const submissions = preSchedule?.submissions || {};
 
+        let lackDays = 0, severeLack = 0;
+        let nToD = 0;
+        let wishMiss = 0, totalWish = 0, violateNo = 0;
+
+        // 1. 每日檢查 (效率、健康)
         for (let d = 1; d <= daysInMonth; d++) {
-            // 簡易計算星期 (假設連續) - 實務上建議傳入 year/month 以精確計算
-            // 這裡沿用之前的簡化邏輯，若有 Context 可優化
             const dayOfWeek = (d % 7); 
-
             const counts = {};
             shiftCodes.forEach(c => counts[c] = 0);
 
             Object.values(assignments).forEach(row => {
-                const shift = row[d];
-                if (counts[shift] !== undefined) counts[shift]++;
+                const s = row[d];
+                if (s && counts[s] !== undefined) counts[s]++;
             });
 
-            shiftCodes.forEach(shift => {
-                const needed = req[shift]?.[dayOfWeek] || 0;
-                if (needed > 0) {
-                    totalReqPoints += needed;
-                    metPoints += Math.min(counts[shift], needed);
-                }
+            let dayLack = 0;
+            shiftCodes.forEach(s => {
+                const needed = req[s]?.[dayOfWeek] || 0;
+                if (needed > 0 && counts[s] < needed) dayLack += (needed - counts[s]);
             });
+            if (dayLack > 0) lackDays++;
+            if (dayLack >= 2) severeLack++;
         }
 
-        if (totalReqPoints === 0) return maxScore;
-        // 依照達成率給分
-        return (metPoints / totalReqPoints) * maxScore;
-    }
+        // 2. 個人檢查 (健康、偏好、公平)
+        const totalCounts = [];
+        const nightCounts = [];
 
-    // --- B. 滿意度/個人偏好 (Preferences) ---
-    static calcPreferences(assignments, daysInMonth, preSchedule, maxScore) {
-        const submissions = preSchedule?.submissions || {};
-        let totalWishes = 0;
-        let metWishes = 0;
-
-        Object.keys(assignments).forEach(uid => {
+        staffList.forEach(staff => {
+            const uid = staff.uid;
+            const row = assignments[uid] || {};
             const wishes = submissions[uid]?.wishes || {};
-            const actual = assignments[uid] || {};
+            
+            // 統計班數
+            const shifts = Object.values(row).filter(v => v && v !== 'OFF' && v !== 'M_OFF');
+            totalCounts.push(shifts.length);
+            nightCounts.push(shifts.filter(v => v === 'N' || v === 'E').length);
 
-            Object.entries(wishes).forEach(([day, wishShift]) => {
-                if (wishShift === 'M_OFF') return; // 強制休假不計入(這是硬規則)
-                
-                totalWishes++;
-                // 處理 NO_ 前綴
-                if (wishShift.startsWith('NO_')) {
-                    const avoid = wishShift.replace('NO_', '');
-                    if (actual[day] !== avoid) metWishes++;
-                } else {
-                    if (actual[day] === wishShift) metWishes++;
-                }
-            });
-        });
-
-        if (totalWishes === 0) return maxScore;
-        return (metWishes / totalWishes) * maxScore;
-    }
-
-    // --- C. 公平性 (Fairness) ---
-    static calcFairness(assignments, staffList, maxScore) {
-        if (staffList.length === 0) return maxScore;
-
-        const offCounts = staffList.map(s => {
-            const row = assignments[s.uid] || {};
-            return Object.values(row).filter(v => v === 'OFF').length;
-        });
-
-        // 計算標準差 (Standard Deviation)
-        const mean = offCounts.reduce((a,b)=>a+b, 0) / offCounts.length;
-        const variance = offCounts.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / offCounts.length;
-        const stdDev = Math.sqrt(variance);
-
-        // 標準差越大扣越多
-        // 假設標準差 0 (完全平均) -> 得滿分
-        // 標準差每增加 0.5，扣除 20% 分數 (此為經驗參數，可調整)
-        const deductionRatio = Math.min(1, stdDev / 2.5); 
-        
-        return maxScore * (1 - deductionRatio);
-    }
-
-    // --- D. 健康/規則 (Health) ---
-    static calcHealth(assignments, daysInMonth, maxScore) {
-        let violations = 0;
-        let totalShifts = 0;
-
-        Object.values(assignments).forEach(row => {
+            // 檢查 N-D
             let prev = 'OFF';
             for(let d=1; d<=daysInMonth; d++) {
                 const curr = row[d] || 'OFF';
-                if (curr !== 'OFF') totalShifts++;
-
-                // 檢查 N 接 D (大夜接白班 - 嚴重疲勞)
-                // 這裡做簡易字串檢查，實務可搭配 ShiftSettings 的時間
-                if (prev.includes('N') && curr.includes('D')) {
-                    violations++;
-                }
-                // 檢查 E 接 D (小夜接白班 - 間隔可能不足)
-                if (prev.includes('E') && curr.includes('D')) {
-                    violations++; // 視為半個違規或一個違規
-                }
-                
+                if (prev === 'N' && curr === 'D') nToD++;
                 prev = curr;
             }
+
+            // 檢查偏好
+            Object.entries(wishes).forEach(([d, w]) => {
+                if (w === 'M_OFF') return;
+                totalWish++;
+                const actual = row[d];
+                if (w.startsWith('NO_')) {
+                    if (actual === w.replace('NO_', '')) violateNo++;
+                } else {
+                    if (actual !== w) wishMiss++;
+                }
+            });
         });
 
-        if (totalShifts === 0) return maxScore;
+        const diffTotal = totalCounts.length ? (Math.max(...totalCounts) - Math.min(...totalCounts)) : 0;
+        const diffNight = nightCounts.length ? (Math.max(...nightCounts) - Math.min(...nightCounts)) : 0;
+        const wishMissRate = totalWish === 0 ? 0 : Math.round((wishMiss / totalWish) * 100);
 
-        // 計算違規率，或是直接扣分
-        // 這裡採用直接扣分法：每個違規扣總分的 10%
-        const penalty = violations * (maxScore * 0.1);
-        return Math.max(0, maxScore - penalty);
+        return {
+            lackDays,       // 缺人天數
+            severeLack,     // 嚴重缺口天數
+            wishRate: wishMissRate, // 未達成率 (%)
+            violateNo,      // 違反勿排次數
+            diffTotal,      // 總班數差異
+            diffNight,      // 夜班數差異
+            nToD            // N接D次數
+        };
     }
 }
