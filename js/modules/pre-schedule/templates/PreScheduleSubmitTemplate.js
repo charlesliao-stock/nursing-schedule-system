@@ -121,19 +121,18 @@ export const PreScheduleSubmitTemplate = {
         `;
     },
 
-    // 2. 右鍵選單 (已由 Page 邏輯動態生成，此保留備用或可移除)
     renderContextMenu(shiftTypes) {
         return ``;
     },
 
-    // 3. 偏好設定表單 (修正 4: 根據 allowThreeTypesVoluntary 顯示不同 UI)
+    // 3. 偏好設定表單 (修正：支援動態顯示)
     renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = [], settings = {}) {
         let html = '';
         
-        // 判斷是否允許 3 種
-        // 舊資料可能沒有 allowThreeTypesVoluntary，預設為 true 以保持相容，除非明確 false
+        const limit = settings.shiftTypesLimit || 2; 
         const allow3 = settings.allowThreeTypesVoluntary !== false; 
 
+        // 1. 包班選項
         if (canBatch) {
             html += `
                 <div class="mb-3">
@@ -152,8 +151,10 @@ export const PreScheduleSubmitTemplate = {
             `;
         } 
         
-        // 修正 4: 如果允許自願 3 種，才顯示混合選項
-        if (allow3) {
+        // 2. 班別種類偏好 (僅當 Limit=2 且 Allow3=True 時顯示)
+        const showMixOption = (limit === 2 && allow3);
+        
+        if (showMixOption) {
             const mixPref = savedPrefs.monthlyMix || '2'; 
             html += `
                 <div class="mb-3">
@@ -173,13 +174,14 @@ export const PreScheduleSubmitTemplate = {
             `;
         }
 
+        // 3. 排班順位
         html += `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
         
         const shiftOptions = unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
         const defaultOptions = `<option value="">請選擇</option>` + shiftOptions;
 
-        const renderSelect = (idx, val) => `
-            <div class="input-group input-group-sm mb-2">
+        const renderSelect = (idx, val, containerId=null) => `
+            <div class="input-group input-group-sm mb-2" ${containerId ? `id="${containerId}"` : ''}>
                 <span class="input-group-text">順位 ${idx}</span>
                 <select class="form-select pref-select" id="pref-${idx}">
                     ${defaultOptions.replace(`value="${val}"`, `value="${val}" selected`)}
@@ -189,9 +191,16 @@ export const PreScheduleSubmitTemplate = {
         html += renderSelect(1, savedPrefs.priority1);
         html += renderSelect(2, savedPrefs.priority2);
         
-        // 修正 4: 只有在允許 3 種的情況下，才顯示第 3 順位
-        if (allow3) {
+        // 第3順位顯示邏輯：
+        // A. Limit=3 -> 永遠顯示
+        // B. Limit=2, Allow=False -> 永遠隱藏
+        // C. Limit=2, Allow=True -> 根據 JS 動態顯示 (預設先渲染，JS 會再隱藏)
+        
+        if (limit === 3) {
             html += renderSelect(3, savedPrefs.priority3);
+        } else if (allow3) {
+            // 這種情況下，HTML 存在，但 JS 會根據 monthlyMix 決定是否隱藏
+            html += renderSelect(3, savedPrefs.priority3, 'container-pref-3');
         }
         
         html += `<div class="form-text small mb-2">請依序選擇希望的班別優先順序</div>`;
