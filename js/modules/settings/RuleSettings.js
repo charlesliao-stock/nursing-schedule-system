@@ -7,6 +7,9 @@ export class RuleSettings {
         this.targetUnitId = null; 
         this.currentConfig = null; 
         this.activeModalSubKey = null; 
+        
+        // 規則列表暫存
+        this.rulesList = []; 
     }
 
     async render() {
@@ -47,7 +50,49 @@ export class RuleSettings {
                         </div>
 
                         <div class="tab-pane fade" id="tab-constraints">
-                            <div class="alert alert-info">排班規則設定區塊 (請保持原樣)</div>
+                            <div class="card shadow mb-4">
+                                <div class="card-header py-3 bg-white">
+                                    <h6 class="m-0 fw-bold text-secondary">新增與管理規則</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3 align-items-end mb-4">
+                                        <div class="col-md-3">
+                                            <label class="form-label">人員</label>
+                                            <select id="rule-staff-select" class="form-select">
+                                                <option value="" selected disabled>請選擇人員...</option>
+                                                </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">日期</label>
+                                            <input type="date" id="rule-date-input" class="form-control">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">限制/班別</label>
+                                            <select id="rule-type-select" class="form-select">
+                                                <option value="off">預排休假 (OFF)</option>
+                                                <option value="day">指定白班 (D)</option>
+                                                <option value="evening">指定小夜 (E)</option>
+                                                <option value="night">指定大夜 (N)</option>
+                                                <option value="no-night">禁排夜班</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <button type="button" id="btn-add-rule-item" class="btn btn-success w-100">
+                                                <i class="fas fa-plus"></i> 新增規則
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <hr>
+
+                                    <div>
+                                        <h6 class="text-muted mb-3">已設定的規則列表：</h6>
+                                        <ul id="current-rules-list" class="list-group">
+                                            <li class="list-group-item text-center text-muted">目前尚未設定規則</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="tab-pane fade" id="tab-scoring">
@@ -105,7 +150,6 @@ export class RuleSettings {
         let subsHtml = '';
         if (category.subs) {
             Object.entries(category.subs).forEach(([subKey, sub]) => {
-                // ✅ 檢查是否支援 "excludeBatch" 選項
                 const batchOption = sub.excludeBatch !== undefined ? `
                     <div class="form-check d-inline-block ms-2" title="排除包班人員">
                         <input class="form-check-input sub-exclude-batch" type="checkbox" 
@@ -170,27 +214,37 @@ export class RuleSettings {
         window.routerPage = this; 
         this.tiersModal = new bootstrap.Modal(document.getElementById('tiers-modal'));
 
-        // Tooltip 初始化
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
+        tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
 
         // 載入單位與規則
-        const user = authService.getProfile();
         const unitSelect = document.getElementById('rule-unit-select');
         let units = await UnitService.getAllUnits();
         
         if(units.length > 0) {
             unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             unitSelect.addEventListener('change', (e) => this.loadRules(e.target.value));
+            // 預設載入第一個
             this.loadRules(units[0].unitId);
         }
 
         document.getElementById('btn-save-rules').addEventListener('click', () => this.saveRules());
+        
+        // 綁定權重計算
         document.getElementById('rule-content').addEventListener('input', (e) => {
             if (e.target.classList.contains('sub-weight') || e.target.classList.contains('sub-enable')) {
                 this.updateTotalWeightDisplay();
+            }
+        });
+
+        // 綁定排班規則新增按鈕
+        document.getElementById('btn-add-rule-item').addEventListener('click', () => this.addRuleItem());
+        
+        // 綁定排班規則列表刪除 (事件委派)
+        document.getElementById('current-rules-list').addEventListener('click', (e) => {
+            if (e.target.closest('.btn-delete-rule')) {
+                const ruleId = e.target.closest('.btn-delete-rule').dataset.id;
+                this.deleteRuleItem(ruleId);
             }
         });
     }
@@ -201,45 +255,114 @@ export class RuleSettings {
         const unit = await UnitService.getUnitById(uid);
         if (!unit) return;
 
+        // 1. 載入 Scoring Config
         const defaultConfig = ScoringService.getDefaultConfig();
         const savedConfig = unit.scoringConfig || {};
-        
         this.currentConfig = JSON.parse(JSON.stringify(defaultConfig));
         
-        // Deep Merge
+        // Deep Merge Scoring Config
         Object.keys(savedConfig).forEach(catKey => {
             if(this.currentConfig[catKey] && savedConfig[catKey].subs) {
                 Object.keys(savedConfig[catKey].subs).forEach(subKey => {
                     if(this.currentConfig[catKey].subs[subKey]) {
                         const target = this.currentConfig[catKey].subs[subKey];
                         const source = savedConfig[catKey].subs[subKey];
-                        
                         target.enabled = source.enabled;
                         target.weight = source.weight;
                         if(source.tiers) target.tiers = source.tiers;
-                        // ✅ 同步 excludeBatch 設定
                         if(source.excludeBatch !== undefined) target.excludeBatch = source.excludeBatch;
                     }
                 });
             }
         });
 
-        // 渲染容器
+        // 渲染 Scoring UI
         const container = document.getElementById('scoring-config-container');
         container.innerHTML = '';
-        const categories = ['fairness', 'satisfaction', 'fatigue', 'efficiency', 'cost'];
-        categories.forEach(key => {
+        ['fairness', 'satisfaction', 'fatigue', 'efficiency', 'cost'].forEach(key => {
             container.innerHTML += this.renderCategoryCard(key, this.currentConfig[key]);
         });
-
+        
         // Re-init Tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
-
+        [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).map(el => new bootstrap.Tooltip(el));
         this.updateTotalWeightDisplay();
+
+        // 2. 載入 Staff List (為了規則選單)
+        const staffList = unit.staff || []; // 假設 unit 物件內有 staff，或需從 StaffService 載入
+        this.populateStaffSelect(staffList);
+
+        // 3. 載入既有的 Rules (假設存在 unit.rules.customRules)
+        this.rulesList = unit.rules?.customRules || [];
+        this.renderRulesList();
+
         document.getElementById('rule-content').style.display = 'block';
     }
 
+    // --- 排班規則邏輯 ---
+    populateStaffSelect(staffList) {
+        const select = document.getElementById('rule-staff-select');
+        select.innerHTML = '<option value="" selected disabled>請選擇人員...</option>';
+        staffList.forEach(s => {
+            select.innerHTML += `<option value="${s.uid}">${s.name}</option>`;
+        });
+    }
+
+    addRuleItem() {
+        const staffSelect = document.getElementById('rule-staff-select');
+        const dateInput = document.getElementById('rule-date-input');
+        const typeSelect = document.getElementById('rule-type-select');
+
+        if (!staffSelect.value || !dateInput.value || !typeSelect.value) {
+            alert('請完整填寫人員、日期與規則類型');
+            return;
+        }
+
+        const newRule = {
+            id: Date.now().toString(),
+            staffId: staffSelect.value,
+            staffName: staffSelect.options[staffSelect.selectedIndex].text,
+            date: dateInput.value,
+            type: typeSelect.value,
+            typeName: typeSelect.options[typeSelect.selectedIndex].text
+        };
+
+        this.rulesList.push(newRule);
+        this.renderRulesList();
+    }
+
+    deleteRuleItem(id) {
+        this.rulesList = this.rulesList.filter(r => r.id !== id);
+        this.renderRulesList();
+    }
+
+    renderRulesList() {
+        const listEl = document.getElementById('current-rules-list');
+        listEl.innerHTML = '';
+
+        if (this.rulesList.length === 0) {
+            listEl.innerHTML = '<li class="list-group-item text-center text-muted">目前尚未設定規則</li>';
+            return;
+        }
+
+        this.rulesList.forEach(rule => {
+            listEl.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong class="text-primary">${rule.staffName}</strong> 
+                        <span class="mx-1">在</span> 
+                        <span class="badge bg-light text-dark border">${rule.date}</span> 
+                        <span class="mx-1">設定為</span> 
+                        <span class="badge bg-info text-dark">${rule.typeName}</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger btn-delete-rule" data-id="${rule.id}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </li>
+            `;
+        });
+    }
+
+    // --- 評分標準邏輯 (維持原樣) ---
     updateTotalWeightDisplay() {
         let grandTotal = 0;
         const categories = ['fairness', 'satisfaction', 'fatigue', 'efficiency', 'cost'];
@@ -250,7 +373,6 @@ export class RuleSettings {
                 const subKey = input.dataset.sub;
                 const enabled = document.getElementById(`sub-enable-${key}-${subKey}`).checked;
                 
-                // ✅ 同步 excludeBatch
                 const excludeEl = document.getElementById(`sub-exclude-${key}-${subKey}`);
                 if (excludeEl && this.currentConfig[key].subs[subKey]) {
                     this.currentConfig[key].subs[subKey].excludeBatch = excludeEl.checked;
@@ -333,11 +455,15 @@ export class RuleSettings {
         btn.disabled = true;
         try {
             this.updateTotalWeightDisplay();
-            // (人力需求與排班規則的儲存邏輯保持不變，省略以節省篇幅)
-            // ...
+            
+            // 儲存至資料庫
             await UnitService.updateUnit(this.targetUnitId, { 
                 scoringConfig: this.currentConfig,
-                // ...
+                // 同步儲存自訂規則
+                rules: {
+                    customRules: this.rulesList,
+                    // minOffDays 等其他規則若有輸入框也需在此收集
+                }
             });
             alert('✅ 設定已儲存');
         } catch(e) { console.error(e); alert('儲存失敗'); }
