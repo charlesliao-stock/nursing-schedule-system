@@ -3,41 +3,24 @@ export const PreScheduleSubmitTemplate = {
     renderLayout(year, month) {
         return `
             <style>
-                .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 5px; }
-                .calendar-header { text-align: center; font-weight: bold; color: #4e73df; padding: 10px 0; }
-                .calendar-cell { 
-                    background-color: #fff; border: 1px solid #e3e6f0; border-radius: 6px; min-height: 90px; padding: 6px; 
-                    cursor: pointer; position: relative; display: flex; flex-direction: column; transition: all 0.2s; 
-                }
-                .calendar-cell:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-color: #4e73df; z-index: 5; }
-                .calendar-cell.weekend { background-color: #fff0f5; }
-                .calendar-cell.selected { background-color: #fff3cd !important; border: 2px solid #ffc107 !important; }
-                .calendar-cell.disabled { background-color: #f1f3f5; opacity: 0.7; cursor: default; }
-                
-                .day-number { font-weight: 800; font-size: 1.1rem; color: #5a5c69; }
-                .day-number.weekend-text { color: #e74a3b; }
-                
-                .shift-badge { 
-                    font-size: 1.1rem; font-weight: bold; padding: 2px 8px; border-radius: 4px; 
-                    box-shadow: 0 1px 2px rgba(0,0,0,0.1); display:inline-block; margin-top:5px;
-                }
-                .bottom-stats { position: absolute; bottom: 4px; right: 6px; font-size: 0.75rem; color: #858796; }
-                .bottom-stats.full { color: #e74a3b; font-weight: bold; }
-                
-                #user-shift-menu {
-                    background-color: #ffffff !important;
-                    opacity: 1 !important;
-                    border: 1px solid rgba(0,0,0,0.15);
-                    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.175);
-                }
+                .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; background-color: #fff; padding: 10px; }
+                .calendar-header { text-align: center; font-weight: bold; padding: 8px 0; background-color: #f8f9fa; border-radius: 4px; color: #495057; }
+                .calendar-cell { border: 1px solid #dee2e6; border-radius: 4px; min-height: 100px; padding: 5px; position: relative; background-color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
+                .calendar-cell:hover:not(.disabled) { border-color: #0d6efd; background-color: #f8f9fa; transform: translateY(-2px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .calendar-cell.weekend { background-color: #fdf2f2; }
+                .weekend-text { color: #dc3545; font-weight: bold; }
+                .calendar-cell.disabled { background-color: #e9ecef; cursor: not-allowed; opacity: 0.7; }
+                .day-number { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
+                .shift-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.9rem; font-weight: bold; text-align: center; width: 100%; margin-bottom: auto; }
+                .bottom-stats { font-size: 0.75rem; text-align: right; color: #6c757d; margin-top: 5px; }
+                .bottom-stats.full { color: #dc3545; font-weight: bold; }
+                #user-shift-menu { background-color: #ffffff !important; opacity: 1 !important; border: 1px solid rgba(0,0,0,0.15); box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.175); }
             </style>
-
             <div class="container-fluid mt-4">
                 <div class="mb-3">
                     <h3 class="text-gray-800 fw-bold"><i class="fas fa-edit"></i> 提交預班</h3>
                     <p class="text-muted small mb-0">檢視可用的預班表，並在開放時間內提交您的休假需求。</p>
                 </div>
-
                 <div id="admin-impersonate-section" class="card shadow-sm mb-3 border-left-danger bg-light" style="display:none;">
                     <div class="card-body py-2 d-flex align-items-center gap-2">
                         <strong class="text-danger"><i class="fas fa-user-secret"></i> 管理員模式：</strong>
@@ -46,7 +29,6 @@ export const PreScheduleSubmitTemplate = {
                         <button id="btn-impersonate" class="btn btn-sm btn-danger">切換身份</button>
                     </div>
                 </div>
-
                 <div id="filter-section" class="card shadow-sm mb-4 border-left-primary">
                     <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
                         <div class="input-group w-auto">
@@ -61,27 +43,22 @@ export const PreScheduleSubmitTemplate = {
                         <button id="btn-load" class="btn btn-primary"><i class="fas fa-search"></i> 讀取</button>
                     </div>
                 </div>
-
-                <div id="list-view" style="display:none;">
-                    <div class="card shadow">
-                        <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">可預班月份清單</h6></div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0 text-center">
-                                    <thead class="table-light"><tr><th>月份</th><th>單位</th><th>開放日期</th><th>狀態</th><th>操作</th></tr></thead>
-                                    <tbody id="schedule-list-tbody"><tr><td colspan="5" class="py-5 text-muted">請點選讀取</td></tr></tbody>
-                                </table>
-                            </div>
+                <div id="list-view" class="card shadow">
+                    <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">可預班月份清單</h6></div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 text-center">
+                                <thead class="table-light"><tr><th>月份</th><th>單位</th><th>開放日期</th><th>狀態</th><th>操作</th></tr></thead>
+                                <tbody id="schedule-list-tbody"><tr><td colspan="5" class="py-5 text-muted">請點選讀取</td></tr></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
-
                 <div id="detail-view" style="display:none;">
                     <div class="d-flex align-items-center mb-3">
                         <button class="btn btn-outline-secondary btn-sm me-3" id="btn-back"><i class="fas fa-arrow-left"></i> 返回清單</button>
                         <h4 class="m-0 fw-bold text-gray-800" id="calendar-header-title"></h4>
                     </div>
-
                     <div class="row">
                         <div class="col-lg-8">
                             <div class="card shadow mb-4">
@@ -94,7 +71,6 @@ export const PreScheduleSubmitTemplate = {
                                 </div>
                             </div>
                         </div>
-
                         <div class="col-lg-4">
                             <div class="card shadow mb-4 border-left-info sticky-top" style="top: 80px; z-index: 10;">
                                 <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-info">排班偏好設定</h6></div>
@@ -115,7 +91,6 @@ export const PreScheduleSubmitTemplate = {
                         </div>
                     </div>
                 </div>
-                
                 <div id="user-shift-menu" class="list-group shadow" style="position:fixed; z-index:9999; display:none; width:120px;"></div>
             </div>
         `;
@@ -123,14 +98,10 @@ export const PreScheduleSubmitTemplate = {
 
     renderContextMenu(shiftTypes) { return ``; },
 
-    // 3. 偏好設定表單 (修正：完全對應管理者端的顯示邏輯)
     renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = [], settings = {}) {
         let html = '';
-        
         const limit = settings.shiftTypesLimit || 2; 
         const allow3 = settings.allowThreeTypesVoluntary !== false; 
-        
-        // 判斷是否顯示混合選項：(限制為3) OR (限制為2且允許自願3)
         const showMixOption = (limit === 3) || (limit === 2 && allow3);
 
         if (canBatch) {
@@ -140,10 +111,8 @@ export const PreScheduleSubmitTemplate = {
                     <div class="btn-group w-100 btn-group-sm" role="group">
                         <input type="radio" class="btn-check" name="batchPref" id="batch-none" value="" ${!savedPrefs.batch ? 'checked' : ''}>
                         <label class="btn btn-outline-secondary" for="batch-none">無</label>
-                        
                         <input type="radio" class="btn-check" name="batchPref" id="batch-e" value="E" ${savedPrefs.batch==='E' ? 'checked' : ''}>
                         <label class="btn btn-outline-warning text-dark" for="batch-e">包小夜</label>
-                        
                         <input type="radio" class="btn-check" name="batchPref" id="batch-n" value="N" ${savedPrefs.batch==='N' ? 'checked' : ''}>
                         <label class="btn btn-outline-dark" for="batch-n">包大夜</label>
                     </div>
@@ -151,7 +120,6 @@ export const PreScheduleSubmitTemplate = {
             `;
         } 
         
-        // 修正：依條件渲染混合偏好
         if (showMixOption) {
             const mixPref = savedPrefs.monthlyMix || '2'; 
             html += `
@@ -160,7 +128,6 @@ export const PreScheduleSubmitTemplate = {
                     <div class="btn-group w-100 btn-group-sm" role="group">
                         <input type="radio" class="btn-check" name="monthlyMix" id="mix-2" value="2" ${mixPref==='2' ? 'checked' : ''}>
                         <label class="btn btn-outline-secondary" for="mix-2">單純 (2種)</label>
-                        
                         <input type="radio" class="btn-check" name="monthlyMix" id="mix-3" value="3" ${mixPref==='3' ? 'checked' : ''}>
                         <label class="btn btn-outline-secondary" for="mix-3">彈性 (3種)</label>
                     </div>
@@ -171,7 +138,6 @@ export const PreScheduleSubmitTemplate = {
                 </div>
             `;
         } else {
-            // 隱藏時，讓 JS 邏輯可以讀取到預設值
             html += `<input type="hidden" name="monthlyMix" value="2">`;
         }
 
@@ -191,8 +157,6 @@ export const PreScheduleSubmitTemplate = {
         html += renderSelect(1, savedPrefs.priority1);
         html += renderSelect(2, savedPrefs.priority2);
         
-        // P3 容器，顯示控制交由 JS
-        // 如果 showMixOption 為 false，則永遠不顯示 P3
         if (showMixOption) {
             html += renderSelect(3, savedPrefs.priority3, 'container-pref-3');
         }
