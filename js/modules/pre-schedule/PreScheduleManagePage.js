@@ -46,6 +46,7 @@ export class PreScheduleManagePage {
             unitOptions = '<option value="">載入失敗</option>';
         }
 
+        // 注意：這裡包含了完整的 Modal HTML 結構，請確保完整複製
         return `
             <div class="container-fluid mt-4">
                 <div class="mb-3">
@@ -95,98 +96,100 @@ export class PreScheduleManagePage {
                                 <button class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
-                                <div class="d-flex justify-content-end align-items-center mb-3">
-                                    <button type="button" class="btn btn-sm btn-outline-info" id="btn-import-last">
-                                        <i class="fas fa-history"></i> 帶入上月設定
-                                    </button>
-                                </div>
+                                <form id="pre-form">
+                                    <div class="d-flex justify-content-end align-items-center mb-3">
+                                        <button type="button" class="btn btn-sm btn-outline-info" id="btn-import-last">
+                                            <i class="fas fa-history"></i> 帶入上月設定
+                                        </button>
+                                    </div>
 
-                                <div class="row g-2 align-items-center mb-3 bg-light p-2 rounded">
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold">預班月份</label>
-                                        <input type="month" id="edit-month" class="form-control form-control-sm" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold">開放日期 (起)</label>
-                                        <input type="date" id="edit-open" class="form-control form-control-sm" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold">截止日期 (迄)</label>
-                                        <input type="date" id="edit-close" class="form-control form-control-sm" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <div class="form-check form-switch mt-4">
-                                            <input class="form-check-input" type="checkbox" id="edit-showNames">
-                                            <label class="form-check-label small fw-bold" for="edit-showNames">顯示預班者姓名</label>
+                                    <div class="row g-2 align-items-center mb-3 bg-light p-2 rounded">
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">預班月份</label>
+                                            <input type="month" id="edit-month" class="form-control form-control-sm" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">開放日期 (起)</label>
+                                            <input type="date" id="edit-open" class="form-control form-control-sm" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold">截止日期 (迄)</label>
+                                            <input type="date" id="edit-close" class="form-control form-control-sm" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-check form-switch mt-4">
+                                                <input class="form-check-input" type="checkbox" id="edit-showNames">
+                                                <label class="form-check-label small fw-bold" for="edit-showNames">顯示預班者姓名</label>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-sliders-h"></i> 限制參數</h6>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold" title="每人總預班天數">預班上限 (含假)</label>
-                                        <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold text-danger">假日上限</label>
-                                        <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="small fw-bold text-success">每日保留人數</label>
-                                        <input type="number" id="edit-reserved" class="form-control form-control-sm" value="0" min="0">
-                                    </div>
-                                </div>
-
-                                <div class="row g-3 mb-3 bg-light p-2 rounded mx-0">
-                                    <div class="col-md-6">
-                                        <label class="small fw-bold text-primary">夜班種類數限制</label>
-                                        <select id="edit-shiftTypes" class="form-select form-select-sm">
-                                            <option value="2">2 種 (如: 白/小 或 白/大)</option>
-                                            <option value="3">3 種 (如: 白/小/大)</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6 d-flex align-items-center">
-                                        <div class="form-check form-switch mt-4">
-                                            <input class="form-check-input" type="checkbox" id="edit-allow3">
-                                            <label class="form-check-label fw-bold" for="edit-allow3">同意同仁自願選擇 3 種班</label>
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-sliders-h"></i> 限制參數</h6>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold" title="每人總預班天數">預班上限 (含假)</label>
+                                            <input type="number" id="edit-maxOff" class="form-control form-control-sm" value="8">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold text-danger">假日上限</label>
+                                            <input type="number" id="edit-maxHoliday" class="form-control form-control-sm" value="2">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="small fw-bold text-success">每日保留人數</label>
+                                            <input type="number" id="edit-reserved" class="form-control form-control-sm" value="0" min="0">
                                         </div>
                                     </div>
-                                </div>
 
-                                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 每日各班人力限制 (Min/Max)</h6>
-                                <div id="group-limits-container" class="mb-3"></div>
-
-                                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
-                                    <span><i class="fas fa-user-check"></i> 參與人員 (<span id="staff-count">0</span>)</span>
-                                    <div class="input-group input-group-sm w-auto">
-                                        <input type="text" id="staff-search" class="form-control" placeholder="搜尋跨單位支援人員...">
-                                        <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-search"></i></button>
+                                    <div class="row g-3 mb-3 bg-light p-2 rounded mx-0">
+                                        <div class="col-md-6">
+                                            <label class="small fw-bold text-primary">夜班種類數限制</label>
+                                            <select id="edit-shiftTypes" class="form-select form-select-sm">
+                                                <option value="2">2 種 (如: 白/小 或 白/大)</option>
+                                                <option value="3">3 種 (如: 白/小/大)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 d-flex align-items-center">
+                                            <div class="form-check form-switch mt-4">
+                                                <input class="form-check-input" type="checkbox" id="edit-allow3">
+                                                <label class="form-check-label fw-bold" for="edit-allow3">同意同仁自願選擇 3 種班</label>
+                                            </div>
+                                        </div>
                                     </div>
-                                </h6>
-                                
-                                <div id="search-results-dropdown" class="list-group position-absolute w-50 shadow" style="z-index: 1060; display: none; right: 20px;"></div>
 
-                                <div class="table-responsive border rounded" style="max-height: 300px; overflow-y: auto;">
-                                    <table class="table table-sm table-hover align-middle mb-0 text-center small">
-                                        <thead class="table-light sticky-top">
-                                            <tr>
-                                                <th class="text-start ps-3">姓名</th>
-                                                <th>職編</th>
-                                                <th>職級</th>
-                                                <th>屬性</th>
-                                                <th width="150">預班組別</th>
-                                                <th>操作</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="staff-list-tbody"></tbody>
-                                    </table>
-                                </div>
-                            </form>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary w-auto" data-bs-dismiss="modal">取消</button>
-                            <button type="button" id="btn-save" class="btn btn-primary w-auto">儲存設定</button>
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2"><i class="fas fa-users-cog"></i> 每日各班人力限制 (Min/Max)</h6>
+                                    <div id="group-limits-container" class="mb-3"></div>
+
+                                    <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
+                                        <span><i class="fas fa-user-check"></i> 參與人員 (<span id="staff-count">0</span>)</span>
+                                        <div class="input-group input-group-sm w-auto">
+                                            <input type="text" id="staff-search" class="form-control" placeholder="搜尋跨單位支援人員...">
+                                            <button type="button" class="btn btn-outline-secondary" id="btn-search-staff"><i class="fas fa-search"></i></button>
+                                        </div>
+                                    </h6>
+                                    
+                                    <div id="search-results-dropdown" class="list-group position-absolute w-50 shadow" style="z-index: 1060; display: none; right: 20px;"></div>
+
+                                    <div class="table-responsive border rounded" style="max-height: 300px; overflow-y: auto;">
+                                        <table class="table table-sm table-hover align-middle mb-0 text-center small">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th class="text-start ps-3">姓名</th>
+                                                    <th>職編</th>
+                                                    <th>職級</th>
+                                                    <th>屬性</th>
+                                                    <th width="150">預班組別</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="staff-list-tbody"></tbody>
+                                        </table>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary w-auto" data-bs-dismiss="modal">取消</button>
+                                <button type="button" id="btn-save" class="btn btn-primary w-auto">儲存設定</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -210,10 +213,9 @@ export class PreScheduleManagePage {
 
         document.getElementById('btn-import-last').addEventListener('click', () => this.importLastMonthSettings());
         
-        // 移除 chk-use-defaults 相關監聽，因為已移除該 checkbox
-        // 修正 2: 日期自動設定邏輯移至 openModal 或 edit-month change
+        // 任何月份變更都重新計算建議日期
         document.getElementById('edit-month').addEventListener('change', () => {
-            this.setDefaultDates(); // 總是自動計算日期
+            this.setDefaultDates(); 
         });
 
         const user = authService.getProfile();
@@ -242,7 +244,6 @@ export class PreScheduleManagePage {
 
             tbody.innerHTML = this.preSchedules.map((p, index) => {
                 const count = p.staffIds ? p.staffIds.length : 0;
-                
                 let statusBadge = '';
                 if (now < p.settings.openDate) statusBadge = '<span class="badge bg-secondary">未開放</span>';
                 else if (now >= p.settings.openDate && now <= p.settings.closeDate) statusBadge = '<span class="badge bg-success">開放中</span>';
@@ -250,6 +251,7 @@ export class PreScheduleManagePage {
 
                 if (p.status === 'closed') statusBadge = '<span class="badge bg-info text-dark">已封存</span>';
 
+                // 注意：這裡使用 p.id 傳遞給 goToEdit，使用 index 傳遞給 openModal
                 return `
                     <tr>
                         <td class="fw-bold fs-5 text-primary">${p.year}-${String(p.month).padStart(2,'0')}</td>
@@ -282,23 +284,28 @@ export class PreScheduleManagePage {
         if (!monthStr) return;
         const [y, m] = monthStr.split('-').map(Number);
         
-        // 預設規則：開放日=今日 (方便測試) 或 前一個月15號，截止日=前一個月25號
-        // 但依照原本邏輯是 15日，這裡維持不變或微調
-        // 假設是：開放=當下, 截止=當月15號 (這是之前的 logic)
         const today = new Date().toISOString().split('T')[0];
-        const closeDate = new Date(y, m - 1, 15).toISOString().split('T')[0];
+        // 預設當月15號截止
+        const closeDateObj = new Date(y, m - 1 - 1, 15); 
+        const closeDate = closeDateObj.toISOString().split('T')[0];
         
-        // 若編輯模式下已有值，不應隨意覆蓋，除非是新增
-        if (!this.isEditMode) {
-            document.getElementById('edit-open').value = today;
-            document.getElementById('edit-close').value = closeDate;
+        if (closeDate < today) {
+             const thisMonth15 = new Date(y, m - 1, 15).toISOString().split('T')[0];
+             document.getElementById('edit-close').value = thisMonth15;
+        } else {
+             document.getElementById('edit-close').value = closeDate;
         }
+        
+        document.getElementById('edit-open').value = today;
     }
 
     async openModal(index = null) {
         if (!this.targetUnitId) { alert("請先選擇單位"); return; }
         
-        document.getElementById('pre-form').reset();
+        // 防呆：確認表單存在
+        const form = document.getElementById('pre-form');
+        if (form) form.reset();
+        
         document.getElementById('search-results-dropdown').innerHTML = '';
         this.isEditMode = (index !== null);
         
@@ -324,7 +331,7 @@ export class PreScheduleManagePage {
             document.getElementById('edit-reserved').value = s.reservedStaff || 0;
             document.getElementById('edit-showNames').checked = !!s.showOtherNames;
             
-            // 修正 3: 回填新欄位
+            // 回填新欄位
             document.getElementById('edit-shiftTypes').value = s.shiftTypesLimit || '2';
             document.getElementById('edit-allow3').checked = !!s.allowThreeTypesVoluntary;
 
@@ -347,12 +354,12 @@ export class PreScheduleManagePage {
             document.getElementById('modal-title').textContent = "新增預班表";
             document.getElementById('edit-month').disabled = false;
             
-            // 修正 2: 預設月份為下個月
+            // 預設月份為「下個月」
             const today = new Date();
             const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
             document.getElementById('edit-month').value = nextMonth.toISOString().slice(0, 7);
             
-            this.setDefaultDates();
+            this.setDefaultDates(); 
             
             this.renderGroupInputs(groups, {});
             
@@ -548,7 +555,6 @@ export class PreScheduleManagePage {
                 maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
                 reservedStaff: parseInt(document.getElementById('edit-reserved').value) || 0,
                 showOtherNames: document.getElementById('edit-showNames').checked,
-                // 修正 3: 儲存新欄位
                 shiftTypesLimit: parseInt(document.getElementById('edit-shiftTypes').value),
                 allowThreeTypesVoluntary: document.getElementById('edit-allow3').checked,
                 groupLimits: groupLimits
