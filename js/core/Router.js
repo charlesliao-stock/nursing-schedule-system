@@ -1,161 +1,105 @@
-import { loginPage } from "../modules/auth/LoginPage.js";
-import { UnitCreatePage } from "../modules/system/UnitCreatePage.js";
-import { UnitListPage } from "../modules/system/UnitListPage.js";
-import { UnitEditPage } from "../modules/system/UnitEditPage.js";
-import { SystemSettingsPage } from "../modules/system/SystemSettingsPage.js";
-
-import { StaffCreatePage } from "../modules/unit/StaffCreatePage.js";
+import { authService } from "../services/firebase/AuthService.js";
+// Modules - Unit
 import { StaffListPage } from "../modules/unit/StaffListPage.js";
 import { ShiftSettingsPage } from "../modules/unit/ShiftSettingsPage.js";
-import { RuleSettings } from "../modules/settings/RuleSettings.js";
 import { GroupSettingsPage } from "../modules/unit/GroupSettingsPage.js";
-
-import { ScheduleListPage } from "../modules/schedule/ScheduleListPage.js"; 
-import { SchedulePage } from "../modules/schedule/SchedulePage.js";
-import { MySchedulePage } from "../modules/schedule/MySchedulePage.js"; 
-
-// ✅ 修正：路徑改為 pre-schedule (加上連字號)，對應您原本的資料夾名稱
+// Modules - System
+import { SystemUnitsPage } from "../modules/system/SystemUnitsPage.js";
+import { SystemSettingsPage } from "../modules/system/SystemSettingsPage.js";
+// Modules - Pre-Schedule
 import { PreScheduleManagePage } from "../modules/pre-schedule/PreScheduleManagePage.js";
-import { PreScheduleEditPage } from "../modules/pre-schedule/PreScheduleEditPage.js"; 
 import { PreScheduleSubmitPage } from "../modules/pre-schedule/PreScheduleSubmitPage.js";
-
-import { SwapApplyPage } from "../modules/swap/SwapApplyPage.js";
-import { SwapReviewPage } from "../modules/swap/SwapReviewPage.js";
-import { PersonalStatsPage } from "../modules/statistics/PersonalStatsPage.js";
-import { UnitStatsPage } from "../modules/statistics/UnitStatsPage.js";
-
-import { SystemAdminDashboard } from "../modules/dashboard/SystemAdminDashboard.js";
-import { UnitManagerDashboard } from "../modules/dashboard/UnitManagerDashboard.js";
-import { UserDashboard } from "../modules/dashboard/UserDashboard.js";
-
+import { PreScheduleEditPage } from "../modules/pre-schedule/PreScheduleEditPage.js";
+// Modules - Schedule
+import { SchedulePage } from "../modules/schedule/SchedulePage.js";
+// Core
 import { MainLayout } from "../components/MainLayout.js";
-import { authService } from "../services/firebase/AuthService.js";
 
-class Router {
+export class Router {
     constructor() {
         this.routes = {
-            '/': loginPage,
-            '/login': loginPage,
-            '/dashboard': 'DASHBOARD_HANDLER', 
-
-            '/system/units/list': UnitListPage,
-            '/system/units/create': UnitCreatePage,
-            '/system/settings': SystemSettingsPage,
-
-            '/unit/staff/list': StaffListPage,
-            '/unit/staff/create': StaffCreatePage,
-            '/unit/settings/shifts': ShiftSettingsPage,
-            '/unit/settings/rules': RuleSettings,
-            '/unit/settings/groups': GroupSettingsPage,
-
-            '/schedule/list': ScheduleListPage,
-            '/schedule/edit': SchedulePage,
-            '/schedule/my': MySchedulePage,
+            '/': () => '<h2>歡迎使用護理排班系統</h2><p>請從左側選單選擇功能。</p>',
+            '/login': () => '<h2>登入頁面 (Placeholder)</h2>',
+            '/dashboard': () => '<h2>儀表板</h2><p>系統概況與公告。</p>',
             
-            // 預班管理路由
-            '/pre-schedule/manage': PreScheduleManagePage, // 列表頁
-            '/pre-schedule/edit': PreScheduleEditPage,     // 編輯頁
-            '/pre-schedule/submit': PreScheduleSubmitPage, // 個人填寫頁
+            // Unit
+            '/unit/staff/list': () => new StaffListPage(),
+            '/unit/settings/shifts': () => new ShiftSettingsPage(),
+            '/unit/settings/groups': () => new GroupSettingsPage(),
+            
+            // System
+            '/system/units/list': () => new SystemUnitsPage(),
+            '/system/settings': () => new SystemSettingsPage(),
+            
+            // Pre-Schedule
+            '/pre-schedule/manage': () => new PreScheduleManagePage(),
+            '/pre-schedule/submit': () => new PreScheduleSubmitPage(),
+            '/pre-schedule/edit': () => new PreScheduleEditPage(),
 
-            '/swaps/review': SwapReviewPage,
-            '/swaps/apply': SwapApplyPage,
-            '/stats/unit': UnitStatsPage,
-            '/stats/personal': PersonalStatsPage
+            // Schedule
+            '/schedule/list': () => new PreScheduleManagePage(), // 暫時導向相同列表，或建立獨立列表
+            '/schedule/edit': () => new SchedulePage(),
         };
 
-        this.appElement = document.getElementById('app');
-        this.currentLayout = null; 
+        this.appContainer = document.getElementById('app');
+        this.currentLayout = null;
+        this.currentPage = null; // 追蹤當前頁面實體
 
         window.addEventListener('hashchange', () => this.handleRoute());
         window.addEventListener('load', () => this.handleRoute());
     }
 
     async handleRoute() {
-        let path = window.location.hash.slice(1) || '/';
-        const purePath = path.split('?')[0]; 
-        
-        if (purePath === '') path = '/';
-        
-        if (purePath === '/' || purePath === '/login') {
-            this.currentLayout = null;
-            this.appElement.innerHTML = await loginPage.render();
-            if (loginPage.afterRender) loginPage.afterRender();
+        const hash = window.location.hash.slice(1) || '/';
+        const path = hash.split('?')[0];
+
+        // 登入檢查
+        const user = authService.getProfile();
+        if (!user && path !== '/login') {
+            window.location.hash = '/login';
             return;
         }
 
-        const profile = authService.getProfile();
-        const currentUser = profile || authService.getCurrentUser();
-
-        if (!currentUser) {
-            this.navigate('/login');
-            return;
+        // 1. 版面初始化 (如果尚未載入 MainLayout)
+        if (!this.currentLayout && user) {
+            this.currentLayout = new MainLayout(user);
+            this.appContainer.innerHTML = this.currentLayout.render();
+            await this.currentLayout.afterRender();
         }
 
-        if (!this.currentLayout || (profile && this.currentLayout.user !== profile)) {
-            const userToPass = profile || currentUser || { name: '載入中...', role: 'guest' };
-            this.currentLayout = new MainLayout(userToPass);
-            this.appElement.innerHTML = this.currentLayout.render();
-            this.currentLayout.afterRender(); 
-        }
-
-        let PageClassOrInstance = this.routes[purePath];
-        let pageInstance = null;
-
-        if (purePath === '/dashboard' || PageClassOrInstance === 'DASHBOARD_HANDLER') {
-            const role = currentUser.role;
-            if (role === 'system_admin') pageInstance = new SystemAdminDashboard(currentUser);
-            else if (role === 'unit_manager' || role === 'unit_scheduler') pageInstance = new UnitManagerDashboard(currentUser);
-            else pageInstance = new UserDashboard(currentUser);
-        }
-        else if (purePath.startsWith('/system/units/edit/')) {
-            pageInstance = new UnitEditPage();
-        }
-        else if (PageClassOrInstance) {
-            if (typeof PageClassOrInstance === 'function' && /^\s*class\s+/.test(PageClassOrInstance.toString())) {
-                pageInstance = new PageClassOrInstance();
-            } else {
-                pageInstance = PageClassOrInstance;
+        // 2. ✅ 清理舊頁面資源 (防止記憶體洩漏)
+        if (this.currentPage && typeof this.currentPage.cleanup === 'function') {
+            try {
+                this.currentPage.cleanup();
+            } catch (e) {
+                console.warn("Cleanup error:", e);
             }
         }
 
-        const viewContainer = document.getElementById('main-view');
+        // 3. 路由匹配與渲染
+        const handler = this.routes[path];
+        const contentContainer = document.getElementById('main-view');
 
-        if (pageInstance && viewContainer) {
-            let menuPath = purePath;
-            if (purePath === '/schedule/edit') menuPath = '/schedule/list';
-            if (purePath === '/pre-schedule/edit') menuPath = '/pre-schedule/manage';
-
-            if (this.currentLayout) this.currentLayout.updateActiveMenu(menuPath);
-
-            try {
-                if (pageInstance) pageInstance.user = currentUser;
-
-                let content;
-                if (pageInstance.render.constructor.name === 'AsyncFunction') {
-                    content = await pageInstance.render();
-                } else {
-                    content = pageInstance.render();
-                }
-                
-                viewContainer.innerHTML = content;
-                if (pageInstance.afterRender) await pageInstance.afterRender();
-
-            } catch (error) {
-                console.error("Page Render Error:", error);
-                viewContainer.innerHTML = `<div class="alert alert-danger m-4">頁面載入錯誤: ${error.message}</div>`;
+        if (handler) {
+            const pageOrHtml = handler();
+            
+            if (typeof pageOrHtml === 'string') {
+                contentContainer.innerHTML = pageOrHtml;
+                this.currentPage = null;
+            } else if (typeof pageOrHtml === 'object' && pageOrHtml.render) {
+                this.currentPage = pageOrHtml; // 儲存實體
+                contentContainer.innerHTML = await pageOrHtml.render();
+                if (pageOrHtml.afterRender) await pageOrHtml.afterRender();
             }
         } else {
-             if(viewContainer) viewContainer.innerHTML = `
-                <div class="text-center p-5 text-muted">
-                    <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
-                    <h3>404 Page Not Found</h3>
-                    <p>找不到路徑: ${path}</p>
-                </div>`;
+            contentContainer.innerHTML = '<h2>404 - 頁面不存在</h2>';
+            this.currentPage = null;
         }
-    }
 
-    navigate(path) {
-        window.location.hash = path;
+        // 更新選單狀態
+        if (this.currentLayout) {
+            this.currentLayout.updateActiveMenu(path);
+        }
     }
 }
 
