@@ -64,7 +64,7 @@ export class SchedulePage {
 
         try {
             const [unit, staffList, schedule] = await Promise.all([
-                UnitService.getUnitById(this.state.currentUnitId),
+                UnitService.getUnitByIdWithCache(this.state.currentUnitId),
                 userService.getUnitStaff(this.state.currentUnitId),
                 ScheduleService.getSchedule(this.state.currentUnitId, this.state.year, this.state.month)
             ]);
@@ -133,7 +133,8 @@ export class SchedulePage {
     bindMenu() {
         document.querySelectorAll('.shift-cell').forEach(c => c.addEventListener('click', e => { 
             e.stopPropagation(); 
-            this.openShiftMenu(c, this.state.unitSettings?.settings?.shifts||[]); 
+            // ✅ 修正 7: 傳遞單位動態班別
+            this.openShiftMenu(c, this.state.unitSettings?.settings?.shifts || []); 
         }));
     }
 
@@ -142,14 +143,21 @@ export class SchedulePage {
         const menu = document.createElement('div');
         menu.className = 'shift-menu shadow rounded border bg-white';
         menu.style.position = 'absolute'; menu.style.zIndex = '1000'; menu.style.padding = '5px';
-        const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }, ...shifts];
+        
+        // 基本選項
+        const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }];
+        
+        // ✅ 修正 7: 加入動態班別
+        shifts.forEach(s => opts.push({ code: s.code, name: s.name, color: s.color }));
+
         opts.forEach(s => {
             const item = document.createElement('div');
             item.className = 'shift-menu-item p-1'; item.style.cursor = 'pointer';
-            item.innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${s.color};margin-right:5px;"></span> ${s.code}`;
+            item.innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${s.color};margin-right:5px;"></span> ${s.code} ${s.name}`;
             item.onclick = () => this.handleShiftSelect(target, s.code);
             menu.appendChild(item);
         });
+        
         const rect = target.getBoundingClientRect();
         menu.style.top = `${rect.bottom + window.scrollY}px`; menu.style.left = `${rect.left + window.scrollX}px`;
         document.body.appendChild(menu);
@@ -184,19 +192,30 @@ export class SchedulePage {
         this.scoreModal.show();
     }
 
-    // 🔥 修正重點：加入 async/await 確保等待運算完成
     async runMultiVersionAI() {
         if (!confirm("確定執行智慧排班？\n這將計算 3 個版本供您選擇。")) return;
-        const loading = document.getElementById('loading-indicator');
-        loading.style.display = 'block';
+        
+        const progressContainer = document.getElementById('ai-progress-container');
+        const progressBar = document.getElementById('ai-progress-bar');
+        const progressText = document.getElementById('ai-progress-text');
+        const autoBtn = document.getElementById('btn-auto-schedule');
+
+        autoBtn.disabled = true;
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
         
         try {
             const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, this.state.year, this.state.month);
-            const currentData = { ...this.state.scheduleData }; // 複製當前狀態作為起點
+            const currentData = { ...this.state.scheduleData }; 
             this.generatedVersions = [];
 
             for (let i = 1; i <= 3; i++) {
-                // ✅ FIX: 這裡必須加 await，否則 result 是 Promise，會導致後面出錯
+                const percent = Math.round((i / 3) * 100);
+                progressBar.style.width = `${percent}%`;
+                progressText.textContent = `正在生成第 ${i} / 3 個版本...`;
+                
+                await new Promise(r => setTimeout(r, 50));
+
                 const result = await AutoScheduler.run(currentData, this.state.staffList, this.state.unitSettings, preSchedule);
                 
                 if (result && result.assignments) {
@@ -220,7 +239,8 @@ export class SchedulePage {
             console.error("AI Schedule Error:", e);
             alert("演算失敗: " + e.message); 
         } finally { 
-            loading.style.display = 'none'; 
+            progressContainer.style.display = 'none';
+            autoBtn.disabled = false;
         }
     }
 
@@ -248,11 +268,15 @@ export class SchedulePage {
 
     calculateMissingShifts(assignments) {
         const missing = [];
+        // ✅ 修正 7: 檢查所有動態班別
+        const shiftsToCheck = this.state.unitSettings?.settings?.shifts?.map(s=>s.code) || ['D','E','N'];
         const staffReq = this.state.unitSettings.staffRequirements || { D:{}, E:{}, N:{} };
+        
         for(let d=1; d<=this.state.daysInMonth; d++) {
             const date = new Date(this.state.year, this.state.month-1, d);
             const w = date.getDay();
-            ['N', 'E', 'D'].forEach(shift => {
+            
+            shiftsToCheck.forEach(shift => {
                 const needed = staffReq[shift]?.[w] || 0;
                 let count = 0;
                 Object.values(assignments).forEach(row => { if(row[d] === shift) count++; });
@@ -282,10 +306,7 @@ export class SchedulePage {
         if(loading) loading.style.display = 'block';
 
         try {
-            // 1. 更新本地狀態
             this.state.scheduleData.assignments = JSON.parse(JSON.stringify(selected.assignments));
-
-            // 2. 寫入資料庫
             await ScheduleService.updateAllAssignments(
                 this.state.currentUnitId, 
                 this.state.year, 
