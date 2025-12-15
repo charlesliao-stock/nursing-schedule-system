@@ -11,11 +11,15 @@ export class PreScheduleEditPage {
         this.unitData = null;
         this.staffList = [];
         this.isDirty = false;
+        
+        // 用於儲存上個月最後 6 天的資料
         this.historyData = {}; 
         this.prevYear = 0;
         this.prevMonth = 0;
         this.prevMonthDays = 0;
         this.historyRange = []; 
+        
+        // 暫存偏好編輯
         this.editingPrefUid = null;
         this.prefModal = null;
     }
@@ -70,35 +74,7 @@ export class PreScheduleEditPage {
                         </div>
                         <div class="modal-body">
                             <form id="pref-form">
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold">包班意願</label>
-                                    <select id="edit-pref-batch" class="form-select">
-                                        <option value="">無 (不包班)</option>
-                                        <option value="E">包小夜 (E)</option>
-                                        <option value="N">包大夜 (N)</option>
-                                    </select>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold">每月班別種類偏好</label>
-                                    <select id="edit-pref-mix" class="form-select">
-                                        <option value="2">單純 (2種)</option>
-                                        <option value="3">彈性 (3種)</option>
-                                    </select>
-                                </div>
-                                <div class="row g-2">
-                                    <div class="col-4">
-                                        <label class="small">順位 1</label>
-                                        <select id="edit-pref-p1" class="form-select form-select-sm"></select>
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="small">順位 2</label>
-                                        <select id="edit-pref-p2" class="form-select form-select-sm"></select>
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="small">順位 3</label>
-                                        <select id="edit-pref-p3" class="form-select form-select-sm"></select>
-                                    </div>
-                                </div>
+                                <div id="pref-dynamic-content"></div>
                             </form>
                         </div>
                         <div class="modal-footer">
@@ -238,7 +214,7 @@ export class PreScheduleEditPage {
 
             let prefStr = '';
             if (pref.batch) prefStr += `<span class="badge bg-primary me-1">包${pref.batch}</span>`;
-            if (pref.priority1) prefStr += `<small class="text-muted d-block">${pref.priority1} > ${pref.priority2||'-'} > ${pref.priority3||'-'}</small>`;
+            if (pref.priority1) prefStr += `<small class="text-muted d-block">${pref.priority1} > ${pref.priority2||'-'}</small>`;
             if (!prefStr) prefStr = '<span class="text-muted small">- 點擊編輯 -</span>';
 
             html += `
@@ -293,7 +269,6 @@ export class PreScheduleEditPage {
         if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
         else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;';
         else {
-            // 嘗試從單位設定找顏色
             const s = this.unitData.settings?.shifts?.find(x => x.code === code);
             if(s) bgStyle = `background-color:${s.color}; color:white;`;
         }
@@ -330,7 +305,6 @@ export class PreScheduleEditPage {
 
         this.currentEditTarget = { uid, day, type, cell };
 
-        // ✅ 修正 2: 動態讀取單位設定
         const unitShifts = this.unitData.settings?.shifts || [
             {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
         ];
@@ -388,26 +362,100 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').disabled = false;
     }
 
+    // ✅ 修正：動態產生偏好表單，實作連動邏輯
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
         const pref = sub.preferences || {};
+        
+        // 讀取設定
+        const settings = this.scheduleData.settings || {};
+        const limit = settings.shiftTypesLimit || 2;
+        const allow3 = settings.allowThreeTypesVoluntary !== false;
+        
+        // 動態生成 HTML
+        let html = '';
+        
+        // 1. 包班
+        html += `
+            <div class="mb-3">
+                <label class="form-label fw-bold">包班意願</label>
+                <select id="edit-pref-batch" class="form-select">
+                    <option value="">無 (不包班)</option>
+                    <option value="E">包小夜 (E)</option>
+                    <option value="N">包大夜 (N)</option>
+                </select>
+            </div>`;
 
-        document.getElementById('edit-pref-batch').value = pref.batch || '';
-        document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
+        // 2. 混合偏好 (僅當 Limit=2 且 Allow3=True 時顯示)
+        if (limit === 2 && allow3) {
+            html += `
+            <div class="mb-3">
+                <label class="form-label fw-bold">每月班別種類偏好</label>
+                <select id="edit-pref-mix" class="form-select">
+                    <option value="2">單純 (2種)</option>
+                    <option value="3">彈性 (3種)</option>
+                </select>
+            </div>`;
+        } else {
+            // 隱藏欄位，用於取值
+            html += `<input type="hidden" id="edit-pref-mix" value="2">`;
+        }
 
-        // ✅ 修正 6: 動態填入班別選項
+        // 3. 順位選擇
         const unitShifts = this.unitData.settings?.shifts || [];
         const optionsHtml = `<option value="">-</option>` + unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
         
-        ['p1', 'p2', 'p3'].forEach(k => {
-            const el = document.getElementById(`edit-pref-${k}`);
-            if(el) el.innerHTML = optionsHtml;
-        });
+        html += `
+        <div class="row g-2">
+            <div class="col-4">
+                <label class="small">順位 1</label>
+                <select id="edit-pref-p1" class="form-select form-select-sm">${optionsHtml}</select>
+            </div>
+            <div class="col-4">
+                <label class="small">順位 2</label>
+                <select id="edit-pref-p2" class="form-select form-select-sm">${optionsHtml}</select>
+            </div>
+            <div class="col-4" id="container-admin-p3" style="display:none;">
+                <label class="small">順位 3</label>
+                <select id="edit-pref-p3" class="form-select form-select-sm">${optionsHtml}</select>
+            </div>
+        </div>`;
 
+        // 注入 HTML
+        document.getElementById('pref-dynamic-content').innerHTML = html;
+
+        // 回填數值
+        document.getElementById('edit-pref-batch').value = pref.batch || '';
+        if (limit === 2 && allow3) {
+            document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
+        }
         document.getElementById('edit-pref-p1').value = pref.priority1 || '';
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
+
+        // 控制 P3 顯示/隱藏的函式
+        const toggleP3 = (mixValue) => {
+            const p3 = document.getElementById('container-admin-p3');
+            // 顯示條件：Limit=3 (這裡沒做UI, 預設顯示) OR (Limit=2 & Allow3 & Mix=3)
+            if (limit === 3) {
+                p3.style.display = 'block';
+            } else if (limit === 2 && allow3 && mixValue === '3') {
+                p3.style.display = 'block';
+            } else {
+                p3.style.display = 'none';
+                document.getElementById('edit-pref-p3').value = '';
+            }
+        };
+
+        // 初始化 P3 狀態
+        toggleP3(pref.monthlyMix || '2');
+
+        // 綁定事件：當混合偏好改變時，切換 P3
+        const mixSelect = document.getElementById('edit-pref-mix');
+        if (mixSelect && mixSelect.type !== 'hidden') {
+            mixSelect.addEventListener('change', (e) => toggleP3(e.target.value));
+        }
 
         this.prefModal.show();
     }
@@ -420,7 +468,7 @@ export class PreScheduleEditPage {
         
         const newPref = {
             batch: document.getElementById('edit-pref-batch').value,
-            monthlyMix: document.getElementById('edit-pref-mix').value,
+            monthlyMix: document.getElementById('edit-pref-mix')?.value || '2',
             priority1: document.getElementById('edit-pref-p1').value,
             priority2: document.getElementById('edit-pref-p2').value,
             priority3: document.getElementById('edit-pref-p3').value
