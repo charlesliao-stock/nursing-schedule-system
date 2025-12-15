@@ -21,6 +21,15 @@ export class SchedulePage {
         this.handleGlobalClick = this.handleGlobalClick.bind(this);
     }
 
+    // ✅ 新增：清理資源
+    cleanup() {
+        document.removeEventListener('click', this.handleGlobalClick);
+        this.closeMenu();
+        // 移除可能的 Modal 殘留 (backdrop)
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(b => b.remove());
+    }
+
     async render() {
         const params = new URLSearchParams(window.location.hash.split('?')[1]);
         this.state.currentUnitId = params.get('unitId');
@@ -42,6 +51,7 @@ export class SchedulePage {
         document.getElementById('btn-validate').addEventListener('click', () => { this.renderGrid(); alert("驗證完成"); });
         document.getElementById('btn-publish').addEventListener('click', () => this.togglePublish());
 
+        // 確保先移除舊的 (防止重複綁定)，再加入新的
         document.removeEventListener('click', this.handleGlobalClick); 
         document.addEventListener('click', this.handleGlobalClick);
 
@@ -56,6 +66,9 @@ export class SchedulePage {
         if (this.state.activeMenu) { this.state.activeMenu.remove(); this.state.activeMenu = null; }
     }
 
+    // ... (loadData, resetToPreSchedule, renderGrid, bindMenu, openShiftMenu, handleShiftSelect, updateScoreDisplay, showScoreDetails, runMultiVersionAI, renderVersionsModal, calculateMissingShifts, handleDragStart, handleDrop, applyVersion, deleteStaff, togglePublish, updateStatusBadge 保持不變，省略以節省篇幅) ...
+    // (請保留原有的業務邏輯方法)
+    
     async loadData() {
         const container = document.getElementById('schedule-grid-container');
         const loading = document.getElementById('loading-indicator');
@@ -133,7 +146,6 @@ export class SchedulePage {
     bindMenu() {
         document.querySelectorAll('.shift-cell').forEach(c => c.addEventListener('click', e => { 
             e.stopPropagation(); 
-            // ✅ 修正 7: 傳遞單位動態班別
             this.openShiftMenu(c, this.state.unitSettings?.settings?.shifts || []); 
         }));
     }
@@ -144,10 +156,7 @@ export class SchedulePage {
         menu.className = 'shift-menu shadow rounded border bg-white';
         menu.style.position = 'absolute'; menu.style.zIndex = '1000'; menu.style.padding = '5px';
         
-        // 基本選項
         const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }];
-        
-        // ✅ 修正 7: 加入動態班別
         shifts.forEach(s => opts.push({ code: s.code, name: s.name, color: s.color }));
 
         opts.forEach(s => {
@@ -268,7 +277,6 @@ export class SchedulePage {
 
     calculateMissingShifts(assignments) {
         const missing = [];
-        // ✅ 修正 7: 檢查所有動態班別
         const shiftsToCheck = this.state.unitSettings?.settings?.shifts?.map(s=>s.code) || ['D','E','N'];
         const staffReq = this.state.unitSettings.staffRequirements || { D:{}, E:{}, N:{} };
         
