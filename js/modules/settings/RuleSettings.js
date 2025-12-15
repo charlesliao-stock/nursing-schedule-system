@@ -6,7 +6,7 @@ export class RuleSettings {
     constructor() { 
         this.targetUnitId = null; 
         this.currentConfig = null; 
-        this.activeModalSubKey = null; // 用於 Modal 編輯
+        this.activeModalSubKey = null; 
     }
 
     async render() {
@@ -47,7 +47,106 @@ export class RuleSettings {
                         </div>
 
                         <div class="tab-pane fade" id="tab-constraints">
-                            <div class="alert alert-info">排班規則設定區塊 (保留原有功能)</div>
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <div class="card shadow mb-4 h-100 border-left-danger">
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-danger"><i class="fas fa-gavel"></i> 勞基法與硬性規範</h6></div>
+                                        <div class="card-body">
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-min-11h" checked>
+                                                <label class="form-check-label fw-bold">班與班間隔至少 11 小時</label>
+                                                <div class="form-text text-danger small">啟用後，系統將標記「小接白 (E-D)」等間隔不足 11 小時之排法為錯誤。</div>
+                                            </div>
+                                            <hr>
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-danger">一週內班別種類上限</label>
+                                                <input type="text" class="form-control bg-light" value="最多 2 種 (如: D/E 或 D/N)" disabled>
+                                                <div class="form-text small text-danger"><i class="fas fa-exclamation-triangle"></i> 強制檢查每週不可出現 3 種班別。</div>
+                                            </div>
+                                            <div class="alert alert-danger py-2 small">
+                                                <i class="fas fa-female"></i> <strong>母性保護：</strong> 懷孕/哺乳期間，強制不排 22:00 後班別。
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-lg-6">
+                                    <div class="card shadow mb-4 h-100 border-left-info">
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-info"><i class="fas fa-sliders-h"></i> 單位排班原則</h6></div>
+                                        <div class="card-body">
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-first-n-off" checked>
+                                                <label class="form-check-label fw-bold">排大夜 (N) 前一天需 N 或 OFF</label>
+                                                <div class="form-text small">避免由 D 或 E 直接跳接 N。</div>
+                                            </div>
+                                            
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="rule-month-mix" checked>
+                                                <label class="form-check-label fw-bold">尊重每月班別種類偏好</label>
+                                                <div class="form-text small">若開啟，AI 將嘗試滿足人員「僅排2種」或「可排3種」的意願。</div>
+                                            </div>
+
+                                            <hr>
+                                            <div class="row g-3">
+                                                <div class="col-6">
+                                                    <label class="form-label fw-bold">同種班最少連續</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="rule-min-consecutive" class="form-control" value="2" min="1">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label fw-bold">夜班最多連續</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="rule-max-night" class="form-control" value="4" min="1">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label fw-bold text-danger">最大連續上班天數</label>
+                                                    <div class="input-group">
+                                                        <input type="number" id="maxConsecutiveDays" class="form-control" value="6" min="1" max="12">
+                                                        <span class="input-group-text">天</span>
+                                                    </div>
+                                                    <div class="form-text small">若設為 6，則第 7 天必須為 OFF。</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card shadow mb-4 mt-4">
+                                <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-dark"><i class="fas fa-robot text-primary me-2"></i>AI 排班流程控制</h6></div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="proc-batch-prefill" checked>
+                                                <label class="form-check-label">1. 包班優先預填 (Batch Pre-fill)</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="proc-history" checked>
+                                                <label class="form-check-label">2. 歷史資料整合 (History Check)</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="proc-pruning" checked>
+                                                <label class="form-check-label">3. 自動調節過剩人力 (Auto Pruning)</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="proc-force" checked>
+                                                <label class="form-check-label">4. 盡力而為模式 (Force Push)</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="tab-pane fade" id="tab-scoring">
@@ -163,7 +262,8 @@ export class RuleSettings {
         } else {
             unitSelect.innerHTML = units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
             unitSelect.addEventListener('change', (e) => this.loadRules(e.target.value));
-            this.loadRules(units[0].unitId);
+            // 自動載入第一個
+            if(units.length > 0) this.loadRules(units[0].unitId);
         }
 
         document.getElementById('btn-save-rules').addEventListener('click', () => this.saveRules());
@@ -181,18 +281,19 @@ export class RuleSettings {
         if (!unit) return;
 
         const staffReq = unit.staffRequirements || { D:{}, E:{}, N:{} };
-        // 取得預設 Config，並與資料庫儲存的 Config 合併 (保留使用者自訂的 Tiers)
+        const savedRules = unit.rules || {};
+        
+        // 取得預設 Config，並與資料庫儲存的 Config 合併
         const defaultConfig = ScoringService.getDefaultConfig();
         const savedConfig = unit.scoringConfig || {};
         
         this.currentConfig = JSON.parse(JSON.stringify(defaultConfig));
         
-        // Deep Merge: 保留 Saved 的 Tiers 與 Weights
+        // Deep Merge
         Object.keys(savedConfig).forEach(catKey => {
             if(this.currentConfig[catKey] && savedConfig[catKey].subs) {
                 Object.keys(savedConfig[catKey].subs).forEach(subKey => {
                     if(this.currentConfig[catKey].subs[subKey]) {
-                        // 覆蓋 saved 的值
                         this.currentConfig[catKey].subs[subKey] = savedConfig[catKey].subs[subKey];
                     }
                 });
@@ -203,6 +304,22 @@ export class RuleSettings {
         document.querySelectorAll('.req-input').forEach(input => {
             input.value = staffReq[input.dataset.shift]?.[input.dataset.day] || 0;
         });
+
+        // 渲染排班規則
+        const constraints = savedRules.constraints || {};
+        document.getElementById('maxConsecutiveDays').value = savedRules.maxConsecutiveWork || 6;
+        document.getElementById('rule-first-n-off').checked = constraints.firstNRequiresOFF !== false;
+        document.getElementById('rule-min-consecutive').value = constraints.minConsecutiveSame || 2;
+        document.getElementById('rule-max-night').value = constraints.maxConsecutiveNight || 4;
+        document.getElementById('rule-min-11h').checked = constraints.minInterval11h !== false;
+        document.getElementById('rule-month-mix').checked = constraints.allowMonthlyMixPref !== false; 
+
+        // 渲染流程控制
+        const proc = savedRules.processConfig || {};
+        document.getElementById('proc-batch-prefill').checked = proc.enableBatchPrefill !== false; 
+        document.getElementById('proc-history').checked = proc.enableHistory !== false;
+        document.getElementById('proc-pruning').checked = proc.enablePruning !== false;
+        document.getElementById('proc-force').checked = proc.enableForcePush !== false;
 
         // 渲染評分卡片
         const container = document.getElementById('scoring-config-container');
@@ -228,7 +345,6 @@ export class RuleSettings {
                 if (enabled) {
                     const val = parseInt(input.value) || 0;
                     catTotal += val;
-                    // 同步更新記憶體中的 config，以便 Modal 讀取
                     if(this.currentConfig[key].subs[subKey]) {
                         this.currentConfig[key].subs[subKey].weight = val;
                         this.currentConfig[key].subs[subKey].enabled = enabled;
@@ -253,9 +369,7 @@ export class RuleSettings {
         const tbody = document.getElementById('tiers-tbody');
         tbody.innerHTML = '';
 
-        // 預設 Tiers 如果沒有，給一個預設值
         const tiers = subConfig.tiers || [{ limit: 0, score: 100, label: '優秀' }];
-        
         tiers.forEach(t => this.addTierRow(t));
         this.tiersModal.show();
     }
@@ -286,7 +400,7 @@ export class RuleSettings {
             });
         });
 
-        // 排序：由小到大 (因為邏輯是 <= limit)
+        // 排序
         newTiers.sort((a, b) => a.limit - b.limit);
 
         this.currentConfig[cat].subs[sub].tiers = newTiers;
@@ -295,8 +409,6 @@ export class RuleSettings {
     }
 
     async saveRules() {
-        // (保存邏輯：將 this.currentConfig 存入 DB)
-        // ... (同前，但將 scoringConfig 設為 this.currentConfig)
         const btn = document.getElementById('btn-save-rules');
         btn.disabled = true;
         try {
@@ -304,11 +416,35 @@ export class RuleSettings {
             document.querySelectorAll('.req-input').forEach(input => {
                 staffReq[input.dataset.shift][input.dataset.day] = parseInt(input.value) || 0;
             });
+
+            const constraints = {
+                maxShiftTypesWeek: 2, 
+                firstNRequiresOFF: document.getElementById('rule-first-n-off').checked,
+                minConsecutiveSame: parseInt(document.getElementById('rule-min-consecutive').value) || 2,
+                maxConsecutiveNight: parseInt(document.getElementById('rule-max-night').value) || 4,
+                minInterval11h: document.getElementById('rule-min-11h').checked,
+                allowMonthlyMixPref: document.getElementById('rule-month-mix').checked, 
+                shiftSequence: ['OFF', 'N', 'D', 'E']
+            };
+
+            const processConfig = {
+                enableBatchPrefill: document.getElementById('proc-batch-prefill').checked,
+                enableHistory: document.getElementById('proc-history').checked,
+                enablePruning: document.getElementById('proc-pruning').checked,
+                enableForcePush: document.getElementById('proc-force').checked
+            };
             
-            // 更新 config 狀態
+            // 更新 config 狀態 (確保 enabled/weight 最新)
             this.updateTotalWeightDisplay(); 
 
+            const rulesData = { 
+                maxConsecutiveWork: parseInt(document.getElementById('maxConsecutiveDays').value) || 6,
+                constraints: constraints, 
+                processConfig: processConfig
+            };
+
             await UnitService.updateUnit(this.targetUnitId, { 
+                rules: rulesData,
                 scoringConfig: this.currentConfig, // 儲存包含 tiers 的完整 config
                 staffRequirements: staffReq
             });
