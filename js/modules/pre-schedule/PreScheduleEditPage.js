@@ -27,59 +27,23 @@ export class PreScheduleEditPage {
         const params = new URLSearchParams(hash.split('?')[1]);
         this.scheduleId = params.get('id');
 
-        // 修正 2 & 3: 表格極致壓縮 & 按鈕不換行
         const style = `
         <style>
-            .schedule-table-container {
-                overflow-x: auto; 
-                width: 100%;
-            }
-            .schedule-table {
-                width: 100%;
-                table-layout: auto; 
-                font-size: 0.8rem; /* 字體再縮小一點 */
-            }
-            .schedule-table th, .schedule-table td {
-                padding: 2px 1px !important; /* 極致內距 */
-                white-space: nowrap; 
-                vertical-align: middle;
-                text-align: center;
-            }
-            
-            /* 強制欄位寬度 */
+            .schedule-table-container { overflow-x: auto; width: 100%; }
+            .schedule-table { width: 100%; table-layout: auto; font-size: 0.8rem; }
+            .schedule-table th, .schedule-table td { padding: 2px 1px !important; white-space: nowrap; vertical-align: middle; text-align: center; }
             .col-staff-id { width: 50px; max-width: 50px; overflow: hidden; }
             .col-name { width: 70px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-left: 4px !important; }
             .col-note { width: 25px; max-width: 25px; }
             .col-pref { width: 90px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
             .col-date { min-width: 24px; width: 24px; } 
-
-            /* 選單樣式 */
             #context-menu {
-                display: none; 
-                position: fixed; 
-                z-index: 9999; 
-                background-color: white; 
-                opacity: 1;
-                border: 1px solid rgba(0,0,0,.15);
-                box-shadow: 0 .5rem 1rem rgba(0,0,0,.175);
-                border-radius: .25rem;
-                padding: .5rem 0;
-                min-width: 140px;
+                display: none; position: fixed; z-index: 9999; background-color: white; opacity: 1;
+                border: 1px solid rgba(0,0,0,.15); box-shadow: 0 .5rem 1rem rgba(0,0,0,.175); border-radius: .25rem; padding: .5rem 0; min-width: 140px;
             }
-            #context-menu .dropdown-item {
-                padding: 0.25rem 1rem;
-                font-size: 0.9rem;
-                cursor: pointer;
-            }
-            #context-menu .dropdown-item:hover {
-                background-color: #f8f9fa;
-            }
-            
-            /* 按鈕群組強制不換行 */
-            .btn-group-nowrap {
-                white-space: nowrap;
-                flex-wrap: nowrap !important;
-            }
+            #context-menu .dropdown-item { padding: 0.25rem 1rem; font-size: 0.9rem; cursor: pointer; }
+            #context-menu .dropdown-item:hover { background-color: #f8f9fa; }
+            .btn-group-nowrap { white-space: nowrap; flex-wrap: nowrap !important; }
         </style>
         `;
 
@@ -169,28 +133,21 @@ export class PreScheduleEditPage {
         await this.loadData();
     }
 
+    // ... (loadData, ensureHistoryData, renderTable, renderShiftBadge, getWeekName, updateStatusBadge, handleCellClick, applyShift 保持不變，為節省篇幅省略) ...
     async loadData() {
         try {
             this.scheduleData = await PreScheduleService.getPreScheduleById(this.scheduleId);
             if (!this.scheduleData) throw new Error("找不到預班表資料");
-
             this.unitData = await UnitService.getUnitById(this.scheduleData.unitId);
             const staff = await userService.getUnitStaff(this.scheduleData.unitId);
             this.staffList = staff.sort((a, b) => (a.rank || 'Z').localeCompare(b.rank || 'Z'));
-
             document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}/${this.scheduleData.month}`;
             this.updateStatusBadge(this.scheduleData.status);
-
             await this.ensureHistoryData();
             this.renderTable();
-
             document.getElementById('btn-save').disabled = false;
             document.getElementById('btn-auto-schedule').disabled = false;
-
-        } catch (e) {
-            console.error(e);
-            alert("載入失敗: " + e.message);
-        }
+        } catch (e) { console.error(e); alert("載入失敗: " + e.message); }
     }
 
     async ensureHistoryData() {
@@ -198,16 +155,11 @@ export class PreScheduleEditPage {
         const currentMonth = this.scheduleData.month;
         let py = currentYear, pm = currentMonth - 1;
         if (pm === 0) { pm = 12; py--; }
-        
         this.prevYear = py;
         this.prevMonth = pm;
         this.prevMonthDays = new Date(py, pm, 0).getDate();
-        
         this.historyRange = [];
-        for (let i = 5; i >= 0; i--) {
-            this.historyRange.push(this.prevMonthDays - i);
-        }
-
+        for (let i = 5; i >= 0; i--) { this.historyRange.push(this.prevMonthDays - i); }
         if (this.scheduleData.history && Object.keys(this.scheduleData.history).length > 0) {
             this.historyData = this.scheduleData.history;
         } else {
@@ -215,28 +167,21 @@ export class PreScheduleEditPage {
                 const prevSchedule = await ScheduleService.getSchedule(this.scheduleData.unitId, py, pm);
                 this.historyData = {};
                 this.staffList.forEach(s => this.historyData[s.uid] = {});
-
                 if (prevSchedule && prevSchedule.assignments) {
                     this.staffList.forEach(s => {
                         const uid = s.uid;
                         const userAssign = prevSchedule.assignments[uid] || {};
-                        this.historyRange.forEach(day => {
-                            this.historyData[uid][day] = userAssign[day] || '';
-                        });
+                        this.historyRange.forEach(day => { this.historyData[uid][day] = userAssign[day] || ''; });
                     });
                 }
                 this.isDirty = true;
-            } catch (e) {
-                this.historyData = {};
-                this.staffList.forEach(s => this.historyData[s.uid] = {});
-            }
+            } catch (e) { this.historyData = {}; this.staffList.forEach(s => this.historyData[s.uid] = {}); }
         }
     }
 
     renderTable() {
         const daysInMonth = new Date(this.scheduleData.year, this.scheduleData.month, 0).getDate();
         const submissions = this.scheduleData.submissions || {};
-
         let html = `
         <table class="table table-bordered table-sm text-center align-middle schedule-table user-select-none">
             <thead class="table-light sticky-top" style="z-index: 5;">
@@ -260,57 +205,45 @@ export class PreScheduleEditPage {
             </thead>
             <tbody>
         `;
-
         this.staffList.forEach(staff => {
             const uid = staff.uid;
             const sub = submissions[uid] || {};
             const wishes = sub.wishes || {};
             const pref = sub.preferences || {};
             const history = this.historyData[uid] || {};
-
             let prefStr = '';
             if (pref.batch) prefStr += `<span class="badge bg-primary me-1" style="font-size:0.7rem; padding:1px 3px;">包${pref.batch}</span>`;
-            
             const p1 = pref.priority1 || '';
             const p2 = pref.priority2 || '';
             const p3 = pref.priority3 || '';
             let pStr = p1;
             if(p2) pStr += `>${p2}`;
             if(p3) pStr += `>${p3}`;
-            
             if (pStr) prefStr += `<span class="text-muted d-block text-truncate" style="font-size:0.75rem">${pStr}</span>`;
             if (!prefStr) prefStr = '<span class="text-muted small">-</span>';
-
             html += `
                 <tr>
                     <td class="text-muted small col-staff-id">${staff.staffId || ''}</td>
                     <td class="fw-bold text-start ps-1 col-name" title="${staff.name}">${staff.name}</td>
                     <td class="col-note">${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill" style="font-size:0.6rem; padding:1px 3px;">孕</span>' : ''}</td>
-                    
                     <td onclick="window.routerPage.openPrefModal('${uid}')" class="hover-bg-light col-pref" title="點擊編輯">
                         ${prefStr}
                     </td>
-
                     ${this.historyRange.map(d => {
                         const val = history[d] || '';
                         return `<td class="history-cell bg-secondary bg-opacity-10" 
-                                    data-uid="${uid}" 
-                                    data-day="${d}" 
-                                    data-type="history"
+                                    data-uid="${uid}" data-day="${d}" data-type="history"
                                     onclick="window.routerPage.handleCellClick(this, '${val}', event)"
                                     oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer; border-right: ${d===this.historyRange[this.historyRange.length-1] ? '2px solid #dee2e6' : ''}">
                                     ${this.renderShiftBadge(val)}
                                 </td>`;
                     }).join('')}
-
                     ${Array.from({length: daysInMonth}, (_, i) => {
                         const d = i + 1;
                         const val = wishes[d] || '';
                         return `<td class="wish-cell" 
-                                    data-uid="${uid}" 
-                                    data-day="${d}" 
-                                    data-type="current"
+                                    data-uid="${uid}" data-day="${d}" data-type="current"
                                     onclick="window.routerPage.handleCellClick(this, '${val}', event)"
                                     oncontextmenu="window.routerPage.handleCellClick(this, '${val}', event)"
                                     style="cursor:pointer;">
@@ -320,7 +253,6 @@ export class PreScheduleEditPage {
                 </tr>
             `;
         });
-
         html += `</tbody></table>`;
         document.getElementById('schedule-container').innerHTML = html;
     }
@@ -328,7 +260,6 @@ export class PreScheduleEditPage {
     renderShiftBadge(code) {
         if (!code) return '';
         if (code.startsWith('NO_')) return `<span class="badge border border-danger text-danger bg-light" style="padding:1px 2px; font-size:0.7rem;">x${code.replace('NO_', '')}</span>`;
-
         let bgStyle = 'background-color:#6c757d; color:white;';
         if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
         else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;';
@@ -336,13 +267,10 @@ export class PreScheduleEditPage {
             const s = this.unitData.settings?.shifts?.find(x => x.code === code);
             if(s) bgStyle = `background-color:${s.color}; color:white;`;
         }
-
         return `<span class="badge w-100" style="${bgStyle}; padding:3px 0; font-size:0.75rem;">${code === 'M_OFF' ? 'M' : code}</span>`;
     }
 
-    getWeekName(day) {
-        return ['日', '一', '二', '三', '四', '五', '六'][day];
-    }
+    getWeekName(day) { return ['日', '一', '二', '三', '四', '五', '六'][day]; }
 
     updateStatusBadge(status) {
         const el = document.getElementById('status-badge');
@@ -358,64 +286,46 @@ export class PreScheduleEditPage {
     }
 
     handleCellClick(cell, currentVal, e = null) {
-        if (e) {
-            e.preventDefault(); 
-            e.stopPropagation(); 
-        }
-
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         const menu = document.getElementById('context-menu');
         if (!menu) return;
-
         const type = cell.dataset.type; 
         const uid = cell.dataset.uid;
         const day = cell.dataset.day;
         this.currentEditTarget = { uid, day, type, cell };
-
         const unitShifts = this.unitData.settings?.shifts || [
-            {code:'D', name:'白班', color:'#0d6efd'}, 
-            {code:'E', name:'小夜', color:'#ffc107'}, 
-            {code:'N', name:'大夜', color:'#212529'}
+            {code:'D', name:'白班', color:'#0d6efd'}, {code:'E', name:'小夜', color:'#ffc107'}, {code:'N', name:'大夜', color:'#212529'}
         ];
-
-        let menuHtml = `<h6 class="dropdown-header bg-light py-1 small">設定 ${day} 日</h6>`;
-        
-        menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休</div>`;
-        
+        let menuHtml = `<h6 class="dropdown-header bg-light">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
+        menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休</div>`;
         if (type === 'current') {
-            menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強休</div>`;
+            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強休</div>`;
         }
-        menuHtml += `<div class="dropdown-divider my-1"></div>`;
-
+        menuHtml += `<div class="dropdown-divider"></div>`;
         unitShifts.forEach(s => {
-            menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</div>`;
+            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</div>`;
         });
-
         if (type === 'current') {
-            menuHtml += `<div class="dropdown-divider my-1"></div>`;
+            menuHtml += `<div class="dropdown-divider"></div>`;
             unitShifts.forEach(s => {
-                menuHtml += `<div class="dropdown-item py-1 text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</div>`;
+                menuHtml += `<div class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</div>`;
             });
         }
-
-        menuHtml += `<div class="dropdown-divider my-1"></div>`;
-        menuHtml += `<div class="dropdown-item py-1 text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
-
+        menuHtml += `<div class="dropdown-divider"></div>`;
+        menuHtml += `<div class="dropdown-item text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
         menu.innerHTML = menuHtml;
         menu.style.display = 'block';
         
         const menuRect = menu.getBoundingClientRect();
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
-        
         let left = e ? e.clientX : cell.getBoundingClientRect().left;
         let top = e ? e.clientY : cell.getBoundingClientRect().bottom;
-
         if (left + menuRect.width > windowWidth) left = windowWidth - menuRect.width - 10;
         if (top + menuRect.height > windowHeight) {
             if (e) top = e.clientY - menuRect.height;
             else top = cell.getBoundingClientRect().top - menuRect.height;
         }
-
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
     }
@@ -423,24 +333,22 @@ export class PreScheduleEditPage {
     applyShift(val) {
         if (!this.currentEditTarget) return;
         const { uid, day, type } = this.currentEditTarget;
-
         if (type === 'history') {
             if (!this.historyData[uid]) this.historyData[uid] = {};
             this.historyData[uid][day] = val;
         } else {
             if (!this.scheduleData.submissions[uid]) this.scheduleData.submissions[uid] = {};
             if (!this.scheduleData.submissions[uid].wishes) this.scheduleData.submissions[uid].wishes = {};
-            
             if (val) this.scheduleData.submissions[uid].wishes[day] = val;
             else delete this.scheduleData.submissions[uid].wishes[day];
         }
-
         this.isDirty = true;
         this.renderTable();
         document.getElementById('context-menu').style.display = 'none';
         document.getElementById('btn-save').disabled = false;
     }
 
+    // ✅ 修正重點：使用正確的變數名稱 showMixOption，並在不同意自願3種時隱藏選項
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
@@ -450,6 +358,7 @@ export class PreScheduleEditPage {
         const limit = settings.shiftTypesLimit || 2;
         const allow3 = settings.allowThreeTypesVoluntary !== false;
         
+        // 條件：(限制3種) OR (限制2種且允許自願3種)
         const showMixOption = (limit === 3) || (limit === 2 && allow3);
         
         let html = `
@@ -472,6 +381,7 @@ export class PreScheduleEditPage {
                 </select>
             </div>`;
         } else {
+            // 隱藏時預設為 2
             html += `<input type="hidden" id="edit-pref-mix" value="2">`;
         }
 
@@ -496,6 +406,7 @@ export class PreScheduleEditPage {
 
         document.getElementById('pref-dynamic-content').innerHTML = html;
 
+        // 回填值
         document.getElementById('edit-pref-batch').value = pref.batch || '';
         if (showMixOption) {
             document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
@@ -504,7 +415,7 @@ export class PreScheduleEditPage {
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
 
-        // ✅ 修正 1: 修復 ReferenceError
+        // ✅ 修正：使用 showMixOption 變數，修復 ReferenceError
         const toggleP3 = (mixValue) => {
             const p3 = document.getElementById('container-admin-p3');
             if (showMixOption && mixValue === '3') {
