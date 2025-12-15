@@ -24,7 +24,6 @@ export const PreScheduleSubmitTemplate = {
                 .bottom-stats { position: absolute; bottom: 4px; right: 6px; font-size: 0.75rem; color: #858796; }
                 .bottom-stats.full { color: #e74a3b; font-weight: bold; }
                 
-                /* 修正 1: 確保右鍵選單不透明且白色背景 */
                 #user-shift-menu {
                     background-color: #ffffff !important;
                     opacity: 1 !important;
@@ -122,20 +121,13 @@ export const PreScheduleSubmitTemplate = {
         `;
     },
 
-    // 2. 右鍵選單
+    // 2. 右鍵選單 (已由 Page 邏輯動態生成，此保留備用或可移除)
     renderContextMenu(shiftTypes) {
-        return `
-            ${Object.entries(shiftTypes).map(([key, cfg]) => 
-                `<button class="list-group-item list-group-item-action py-1 text-center small fw-bold" 
-                    style="color:${cfg.bg==='#f8f9fa'?cfg.text:'white'}; background:${cfg.bg==='#f8f9fa'?'white':cfg.bg};"
-                    onclick="window.routerPage.applyShiftFromMenu('${key}')">${cfg.label}</button>`
-            ).join('')}
-            <button class="list-group-item list-group-item-action py-1 text-center text-secondary small" onclick="window.routerPage.applyShiftFromMenu(null)">清除</button>
-        `;
+        return ``;
     },
 
-    // 3. 偏好設定表單
-    renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}) {
+    // 3. 偏好設定表單 (✅ 修正 2: 接收 unitShifts 生成動態選項)
+    renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = []) {
         let html = '';
 
         if (canBatch) {
@@ -147,10 +139,10 @@ export const PreScheduleSubmitTemplate = {
                         <label class="btn btn-outline-secondary" for="batch-none">無</label>
                         
                         <input type="radio" class="btn-check" name="batchPref" id="batch-e" value="E" ${savedPrefs.batch==='E' ? 'checked' : ''}>
-                        <label class="btn btn-outline-warning text-dark" for="batch-e">小夜包班</label>
+                        <label class="btn btn-outline-warning text-dark" for="batch-e">包小夜</label>
                         
                         <input type="radio" class="btn-check" name="batchPref" id="batch-n" value="N" ${savedPrefs.batch==='N' ? 'checked' : ''}>
-                        <label class="btn btn-outline-dark" for="batch-n">大夜包班</label>
+                        <label class="btn btn-outline-dark" for="batch-n">包大夜</label>
                     </div>
                 </div>
             `;
@@ -177,14 +169,15 @@ export const PreScheduleSubmitTemplate = {
 
         html += `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
         
+        // 產生動態班別選項
+        const shiftOptions = unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
+        const defaultOptions = `<option value="">請選擇</option>` + shiftOptions;
+
         const renderSelect = (idx, val) => `
             <div class="input-group input-group-sm mb-2">
                 <span class="input-group-text">順位 ${idx}</span>
                 <select class="form-select pref-select" id="pref-${idx}">
-                    <option value="">請選擇</option>
-                    <option value="D" ${val==='D'?'selected':''}>白班 (D)</option>
-                    <option value="E" ${val==='E'?'selected':''}>小夜 (E)</option>
-                    <option value="N" ${val==='N'?'selected':''}>大夜 (N)</option>
+                    ${defaultOptions.replace(`value="${val}"`, `value="${val}" selected`)}
                 </select>
             </div>`;
 
