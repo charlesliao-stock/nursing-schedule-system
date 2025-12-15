@@ -29,6 +29,17 @@ export class PreScheduleSubmitPage {
         this.isReadOnly = false;
         this.isAdminMode = false;
         this.isImpersonating = false; 
+        
+        this.shiftTypes = {
+            'OFF':   { label: 'OFF',  color: '#dc3545', bg: '#dc3545', text: 'white' },
+            'M_OFF': { label: 'M',    color: '#212529', bg: '#212529', text: 'white' },
+            'D':     { label: '白',   color: '#0d6efd', bg: '#0d6efd', text: 'white' },
+            'E':     { label: '小',   color: '#ffc107', bg: '#ffc107', text: 'black' },
+            'N':     { label: '大',   color: '#212529', bg: '#212529', text: 'white' },
+            'NO_D':  { label: '勿白', color: '#adb5bd', bg: '#f8f9fa', text: '#0d6efd', border: '1px solid #0d6efd' },
+            'NO_E':  { label: '勿小', color: '#adb5bd', bg: '#f8f9fa', text: '#ffc107', border: '1px solid #ffc107' },
+            'NO_N':  { label: '勿大', color: '#adb5bd', bg: '#f8f9fa', text: '#212529', border: '1px solid #212529' }
+        };
     }
 
     async render() {
@@ -336,16 +347,17 @@ export class PreScheduleSubmitPage {
 
         // --- 偏好設定區塊 ---
         const canBatch = this.currentUser.constraints?.canBatch;
-        const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
-        const savedPref = mySub.preferences || {};
-        
-        // ✅ 修正 2: 傳遞單位班別設定給 Template
+        // 修正 4: 改用預班表設定的規則，而非單位的全域規則
+        // 若預班表沒有設定，則 fallback 到單位規則 (或預設值)
+        const maxTypes = settings.shiftTypesLimit || 2; 
         const unitShifts = this.currentUnit.settings?.shifts || [
             {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
         ];
+        const savedPref = mySub.preferences || {};
 
+        // 傳遞 settings (包含 allowThreeTypesVoluntary) 給 template
         document.getElementById('preference-container').innerHTML = 
-            PreScheduleSubmitTemplate.renderPreferencesForm(canBatch, maxTypes, savedPref, unitShifts);
+            PreScheduleSubmitTemplate.renderPreferencesForm(canBatch, maxTypes, savedPref, unitShifts, settings);
 
         // 若唯讀，停用輸入
         if(disabled) {
@@ -384,12 +396,10 @@ export class PreScheduleSubmitPage {
         const firstDay = new Date(year, month - 1, 1).getDay(); 
         const totalStaff = this.currentSchedule.staffIds.length; 
         const reserved = this.currentSchedule.settings.reservedStaff || 0; 
-        // 這裡暫時無法完全動態化 reqMatrix 的 key，但顯示上不影響
         const reqMatrix = this.currentUnit.staffRequirements || {D:{}, E:{}, N:{}}; 
         
         for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="calendar-cell disabled" style="background:transparent; border:none; min-height:100px;"></div>`; 
         
-        // 取得動態班別顏色設定
         const unitShifts = this.currentUnit.settings?.shifts || [];
         const shiftColorMap = {
             'OFF': { bg:'#dc3545', color:'white' },
@@ -401,7 +411,6 @@ export class PreScheduleSubmitPage {
             const date = new Date(year, month - 1, d); 
             const w = date.getDay(); 
             const isWeekend = (w === 0 || w === 6); 
-            // 這裡的 reqTotal 估算可能不準確，如果 shift code 變了，但暫時保留邏輯
             const reqTotal = (reqMatrix.D?.[w]||0) + (reqMatrix.E?.[w]||0) + (reqMatrix.N?.[w]||0); 
             let dailyLimit = totalStaff - reqTotal - reserved; 
             if(dailyLimit < 0) dailyLimit = 0; 
@@ -421,7 +430,6 @@ export class PreScheduleSubmitPage {
             let tagHtml = ''; 
             if(myType) { 
                 let style = '';
-                // 檢查是否為勿排
                 if (myType.startsWith('NO_')) {
                     const code = myType.replace('NO_', '');
                     style = `background:#f8f9fa; color:#dc3545; border:1px solid #dc3545;`;
@@ -458,31 +466,25 @@ export class PreScheduleSubmitPage {
         this.updateCounters(); 
     }
 
-    // ✅ 修正 2: 動態生成與管理者一致的選單
     handleRightClick(e, day) { 
         e.preventDefault(); 
         this.tempTarget = day; 
         const menu = document.getElementById('user-shift-menu'); 
         
         if(menu) {
-            // 班別列表：優先使用單位設定，若無則使用預設
             const unitShifts = this.currentUnit.settings?.shifts || [
                 {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
             ];
 
             let menuHtml = `<h6 class="dropdown-header bg-light py-1">設定 ${day} 日</h6>`;
-            
-            // 1. OFF (預休/強休)
             menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
             menuHtml += `<div class="dropdown-divider my-1"></div>`;
             
-            // 2. 指定班別 (D, E, N...)
             unitShifts.forEach(s => {
                 menuHtml += `<button class="dropdown-item py-1" onclick="window.routerPage.applyShiftFromMenu('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</button>`;
             });
             menuHtml += `<div class="dropdown-divider my-1"></div>`;
 
-            // 3. 勿排班別 (NO_D, NO_E, NO_N...)
             unitShifts.forEach(s => {
                 menuHtml += `<button class="dropdown-item py-1 text-danger" onclick="window.routerPage.applyShiftFromMenu('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
             });
@@ -492,12 +494,10 @@ export class PreScheduleSubmitPage {
 
             menu.innerHTML = menuHtml;
 
-            // 定位
             const menuWidth = 180; 
             let left = e.clientX;
             let top = e.clientY;
             
-            // 邊界檢查
             if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 10;
             if (top + menu.offsetHeight > window.innerHeight) top = window.innerHeight - menu.offsetHeight - 10;
 
@@ -512,9 +512,7 @@ export class PreScheduleSubmitPage {
         const day = this.tempTarget; 
         
         if(type) { 
-            // 若為「勿排」或「強休」，不需檢查 OFF 數量限制，但需檢查是否衝突
             if (!this.myWishes[day]) {
-                // 只有 OFF 算在預休數量限制內 (可根據需求調整，這裡假設只有 OFF 算)
                 if (type === 'OFF' && !this.checkLimits(day)) return; 
             }
             this.myWishes[day] = type; 
@@ -534,7 +532,6 @@ export class PreScheduleSubmitPage {
         const maxOff = parseInt(settings.maxOffDays); 
         const maxHoliday = parseInt(settings.maxHoliday || 0); 
         
-        // 這裡僅計算純 'OFF'
         const currentTotal = Object.values(this.myWishes).filter(v => v === 'OFF').length; 
         if (currentTotal >= maxOff) { alert("已達預班總數上限"); return false; } 
         
@@ -553,7 +550,6 @@ export class PreScheduleSubmitPage {
     }
 
     updateCounters() { 
-        // 僅統計 'OFF'
         const total = Object.values(this.myWishes).filter(v => v === 'OFF').length;
         let holiday = 0; 
         Object.entries(this.myWishes).forEach(([d, v]) => { 
@@ -569,21 +565,27 @@ export class PreScheduleSubmitPage {
     
     async handleSubmit() {
         const canBatch = this.currentUser.constraints?.canBatch;
-        const maxTypes = this.currentUnit.rules?.constraints?.maxShiftTypesWeek || 3;
         const preferences = {};
+        
+        // 修正 4: 根據開關決定是否處理 monthlyMix
+        const settings = this.currentSchedule.settings;
+        const allow3 = settings.allowThreeTypesVoluntary !== false; // 預設開啟，若為 false 才關閉
         
         if (canBatch) {
             const batchPref = document.querySelector('input[name="batchPref"]:checked')?.value || "";
             preferences.batch = batchPref;
         }
 
-        // 收集 monthlyMix 偏好
-        const mixPref = document.querySelector('input[name="monthlyMix"]:checked')?.value || "2";
-        preferences.monthlyMix = mixPref;
+        if (allow3) {
+            const mixPref = document.querySelector('input[name="monthlyMix"]:checked')?.value || "2";
+            preferences.monthlyMix = mixPref;
+        } else {
+            preferences.monthlyMix = "2"; // 若不允許，強制為 2
+        }
 
         const p1 = document.getElementById('pref-1')?.value || "";
         const p2 = document.getElementById('pref-2')?.value || "";
-        const p3 = document.getElementById('pref-3')?.value || "";
+        const p3 = document.getElementById('pref-3')?.value || ""; // 可能為 undefined
 
         if (!p1 && (p2 || p3)) { alert("請從第一優先開始填寫"); return; }
         
@@ -593,7 +595,7 @@ export class PreScheduleSubmitPage {
 
         preferences.priority1 = p1;
         preferences.priority2 = p2;
-        preferences.priority3 = p3;
+        if (allow3) preferences.priority3 = p3; // 只有在允許 3 種時才存第 3 順位
 
         const btn = document.getElementById('btn-submit');
         btn.disabled = true;
