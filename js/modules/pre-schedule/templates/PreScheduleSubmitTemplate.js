@@ -126,9 +126,13 @@ export const PreScheduleSubmitTemplate = {
         return ``;
     },
 
-    // 3. 偏好設定表單 (✅ 修正 2: 接收 unitShifts 生成動態選項)
-    renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = []) {
+    // 3. 偏好設定表單 (修正 4: 根據 allowThreeTypesVoluntary 顯示不同 UI)
+    renderPreferencesForm(canBatch, maxTypes, savedPrefs = {}, unitShifts = [], settings = {}) {
         let html = '';
+        
+        // 判斷是否允許 3 種
+        // 舊資料可能沒有 allowThreeTypesVoluntary，預設為 true 以保持相容，除非明確 false
+        const allow3 = settings.allowThreeTypesVoluntary !== false; 
 
         if (canBatch) {
             html += `
@@ -148,28 +152,29 @@ export const PreScheduleSubmitTemplate = {
             `;
         } 
         
-        // 每月班別種類偏好
-        const mixPref = savedPrefs.monthlyMix || '2'; 
-        html += `
-            <div class="mb-3">
-                <label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-random"></i> 本月班別種類偏好</label>
-                <div class="btn-group w-100 btn-group-sm" role="group">
-                    <input type="radio" class="btn-check" name="monthlyMix" id="mix-2" value="2" ${mixPref==='2' ? 'checked' : ''}>
-                    <label class="btn btn-outline-secondary" for="mix-2">單純 (2種)</label>
-                    
-                    <input type="radio" class="btn-check" name="monthlyMix" id="mix-3" value="3" ${mixPref==='3' ? 'checked' : ''}>
-                    <label class="btn btn-outline-secondary" for="mix-3">彈性 (3種)</label>
+        // 修正 4: 如果允許自願 3 種，才顯示混合選項
+        if (allow3) {
+            const mixPref = savedPrefs.monthlyMix || '2'; 
+            html += `
+                <div class="mb-3">
+                    <label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-random"></i> 本月班別種類偏好</label>
+                    <div class="btn-group w-100 btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="monthlyMix" id="mix-2" value="2" ${mixPref==='2' ? 'checked' : ''}>
+                        <label class="btn btn-outline-secondary" for="mix-2">單純 (2種)</label>
+                        
+                        <input type="radio" class="btn-check" name="monthlyMix" id="mix-3" value="3" ${mixPref==='3' ? 'checked' : ''}>
+                        <label class="btn btn-outline-secondary" for="mix-3">彈性 (3種)</label>
+                    </div>
+                    <div class="form-text small" style="font-size:0.75rem;">
+                        2種: D/E 或 D/N (較規律)<br>
+                        3種: D/E/N 皆有 (配合度高)
+                    </div>
                 </div>
-                <div class="form-text small" style="font-size:0.75rem;">
-                    2種: D/E 或 D/N (較規律)<br>
-                    3種: D/E/N 皆有 (配合度高)
-                </div>
-            </div>
-        `;
+            `;
+        }
 
         html += `<label class="fw-bold d-block mb-1 small text-primary"><i class="fas fa-sort-numeric-down"></i> 排班偏好順序</label>`;
         
-        // 產生動態班別選項
         const shiftOptions = unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
         const defaultOptions = `<option value="">請選擇</option>` + shiftOptions;
 
@@ -183,7 +188,11 @@ export const PreScheduleSubmitTemplate = {
 
         html += renderSelect(1, savedPrefs.priority1);
         html += renderSelect(2, savedPrefs.priority2);
-        html += renderSelect(3, savedPrefs.priority3);
+        
+        // 修正 4: 只有在允許 3 種的情況下，才顯示第 3 順位
+        if (allow3) {
+            html += renderSelect(3, savedPrefs.priority3);
+        }
         
         html += `<div class="form-text small mb-2">請依序選擇希望的班別優先順序</div>`;
         return html;
