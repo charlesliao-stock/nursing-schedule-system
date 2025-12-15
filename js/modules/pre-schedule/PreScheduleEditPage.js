@@ -27,54 +27,88 @@ export class PreScheduleEditPage {
         const params = new URLSearchParams(hash.split('?')[1]);
         this.scheduleId = params.get('id');
 
+        // 修正 2 & 3: 表格極致壓縮 & 按鈕不換行
         const style = `
         <style>
-            .schedule-table-container { overflow-x: auto; }
-            .schedule-table { width: 100%; table-layout: auto; font-size: 0.85rem; }
-            .schedule-table th, .schedule-table td { padding: 4px 2px !important; white-space: nowrap; vertical-align: middle; }
-            .col-staff-id { width: 70px; max-width: 70px; }
-            .col-name { width: 90px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
-            .col-note { width: 35px; max-width: 35px; }
-            .col-pref { width: 110px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-            .col-date { min-width: 28px; }
+            .schedule-table-container {
+                overflow-x: auto; 
+                width: 100%;
+            }
+            .schedule-table {
+                width: 100%;
+                table-layout: auto; 
+                font-size: 0.8rem; /* 字體再縮小一點 */
+            }
+            .schedule-table th, .schedule-table td {
+                padding: 2px 1px !important; /* 極致內距 */
+                white-space: nowrap; 
+                vertical-align: middle;
+                text-align: center;
+            }
+            
+            /* 強制欄位寬度 */
+            .col-staff-id { width: 50px; max-width: 50px; overflow: hidden; }
+            .col-name { width: 70px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-left: 4px !important; }
+            .col-note { width: 25px; max-width: 25px; }
+            .col-pref { width: 90px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+            .col-date { min-width: 24px; width: 24px; } 
+
+            /* 選單樣式 */
             #context-menu {
-                display: none; position: fixed; z-index: 9999; 
-                background-color: white; opacity: 1;
+                display: none; 
+                position: fixed; 
+                z-index: 9999; 
+                background-color: white; 
+                opacity: 1;
                 border: 1px solid rgba(0,0,0,.15);
                 box-shadow: 0 .5rem 1rem rgba(0,0,0,.175);
-                border-radius: .25rem; padding: .5rem 0; min-width: 160px;
+                border-radius: .25rem;
+                padding: .5rem 0;
+                min-width: 140px;
             }
-            #context-menu .dropdown-item { padding: 0.25rem 1rem; font-size: 0.9rem; cursor: pointer; }
-            #context-menu .dropdown-item:hover { background-color: #f8f9fa; }
+            #context-menu .dropdown-item {
+                padding: 0.25rem 1rem;
+                font-size: 0.9rem;
+                cursor: pointer;
+            }
+            #context-menu .dropdown-item:hover {
+                background-color: #f8f9fa;
+            }
+            
+            /* 按鈕群組強制不換行 */
+            .btn-group-nowrap {
+                white-space: nowrap;
+                flex-wrap: nowrap !important;
+            }
         </style>
         `;
 
         return style + `
-            <div class="container-fluid mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="d-flex align-items-center gap-3">
-                        <h4 class="mb-0 fw-bold" id="page-title"><i class="fas fa-edit me-2"></i>預班內容編輯</h4>
+            <div class="container-fluid mt-2 px-2">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-nowrap">
+                    <div class="d-flex align-items-center gap-2 text-nowrap overflow-hidden">
+                        <h5 class="mb-0 fw-bold text-truncate" id="page-title"><i class="fas fa-edit me-1"></i>預班內容編輯</h5>
                         <span id="status-badge" class="badge bg-secondary">載入中...</span>
                     </div>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-outline-secondary" onclick="window.history.back()">
+                    <div class="d-flex gap-1 btn-group-nowrap">
+                        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="window.history.back()">
                             <i class="fas fa-arrow-left"></i> 返回
                         </button>
-                        <button id="btn-save" class="btn btn-primary" disabled>
+                        <button id="btn-save" class="btn btn-sm btn-primary text-nowrap" disabled>
                             <i class="fas fa-save"></i> 儲存
                         </button>
-                        <button id="btn-auto-schedule" class="btn btn-success" disabled>
+                        <button id="btn-auto-schedule" class="btn btn-sm btn-success text-nowrap" disabled>
                             <i class="fas fa-robot"></i> 排班
                         </button>
                     </div>
                 </div>
 
-                <div class="alert alert-info py-2 small d-flex align-items-center">
+                <div class="alert alert-info py-1 px-2 small mb-2 d-flex align-items-center">
                     <i class="fas fa-info-circle me-2"></i>
-                    <span>提示：灰色底色區域為「上月月底資料」，點擊可修改。支援左鍵或右鍵開啟選單。</span>
+                    <span>提示：灰色區塊為上月資料 (可點擊修改)。支援左鍵或右鍵開啟選單。</span>
                 </div>
 
-                <div class="card shadow-sm">
+                <div class="card shadow-sm border-0">
                     <div class="card-body p-0">
                         <div class="schedule-table-container" id="schedule-container">
                             <div class="text-center p-5"><span class="spinner-border text-primary"></span> 資料載入中...</div>
@@ -88,8 +122,8 @@ export class PreScheduleEditPage {
             <div class="modal fade" id="pref-modal" tabindex="-1">
                 <div class="modal-dialog">
                     <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">編輯排班偏好</h5>
+                        <div class="modal-header py-2">
+                            <h5 class="modal-title fs-6 fw-bold">編輯排班偏好</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
@@ -97,9 +131,9 @@ export class PreScheduleEditPage {
                                 <div id="pref-dynamic-content"></div>
                             </form>
                         </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                            <button type="button" class="btn btn-primary" onclick="window.routerPage.savePreferences()">確定修改</button>
+                        <div class="modal-footer py-1">
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                            <button type="button" class="btn btn-sm btn-primary" onclick="window.routerPage.savePreferences()">確定</button>
                         </div>
                     </div>
                 </div>
@@ -144,7 +178,7 @@ export class PreScheduleEditPage {
             const staff = await userService.getUnitStaff(this.scheduleData.unitId);
             this.staffList = staff.sort((a, b) => (a.rank || 'Z').localeCompare(b.rank || 'Z'));
 
-            document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}年${this.scheduleData.month}月`;
+            document.getElementById('page-title').innerHTML = `<i class="fas fa-edit me-2"></i>${this.unitData.unitName} - ${this.scheduleData.year}/${this.scheduleData.month}`;
             this.updateStatusBadge(this.scheduleData.status);
 
             await this.ensureHistoryData();
@@ -210,8 +244,8 @@ export class PreScheduleEditPage {
                     <th rowspan="2" class="col-staff-id">職編</th>
                     <th rowspan="2" class="col-name">姓名</th>
                     <th rowspan="2" class="col-note">註</th>
-                    <th rowspan="2" class="col-pref">排班偏好 <i class="fas fa-edit text-muted"></i></th>
-                    <th colspan="6" class="bg-secondary bg-opacity-10 border-end border-2">上月 (${this.prevMonth}月)</th>
+                    <th rowspan="2" class="col-pref">偏好 <i class="fas fa-pen text-muted small"></i></th>
+                    <th colspan="6" class="bg-secondary bg-opacity-10 border-end border-2">上月</th>
                     <th colspan="${daysInMonth}">本月 (${this.scheduleData.month}月)</th>
                 </tr>
                 <tr>
@@ -220,7 +254,7 @@ export class PreScheduleEditPage {
                         const d = i + 1;
                         const weekDay = new Date(this.scheduleData.year, this.scheduleData.month - 1, d).getDay();
                         const isWeekend = weekDay === 0 || weekDay === 6;
-                        return `<th class="col-date ${isWeekend ? 'text-danger' : ''}">${d}<br><span class="small" style="font-size:0.75rem">${this.getWeekName(weekDay)}</span></th>`;
+                        return `<th class="col-date ${isWeekend ? 'text-danger' : ''}">${d}<br><span style="font-size:0.6rem">${this.getWeekName(weekDay)}</span></th>`;
                     }).join('')}
                 </tr>
             </thead>
@@ -235,26 +269,25 @@ export class PreScheduleEditPage {
             const history = this.historyData[uid] || {};
 
             let prefStr = '';
-            if (pref.batch) prefStr += `<span class="badge bg-primary me-1">包${pref.batch}</span>`;
+            if (pref.batch) prefStr += `<span class="badge bg-primary me-1" style="font-size:0.7rem; padding:1px 3px;">包${pref.batch}</span>`;
             
-            // 簡化顯示，只顯示主要順位
             const p1 = pref.priority1 || '';
             const p2 = pref.priority2 || '';
             const p3 = pref.priority3 || '';
             let pStr = p1;
-            if(p2) pStr += ` > ${p2}`;
-            if(p3) pStr += ` > ${p3}`;
+            if(p2) pStr += `>${p2}`;
+            if(p3) pStr += `>${p3}`;
             
-            if (pStr) prefStr += `<small class="text-muted d-block text-truncate">${pStr}</small>`;
+            if (pStr) prefStr += `<span class="text-muted d-block text-truncate" style="font-size:0.75rem">${pStr}</span>`;
             if (!prefStr) prefStr = '<span class="text-muted small">-</span>';
 
             html += `
                 <tr>
                     <td class="text-muted small col-staff-id">${staff.staffId || ''}</td>
                     <td class="fw-bold text-start ps-1 col-name" title="${staff.name}">${staff.name}</td>
-                    <td class="col-note">${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill">孕</span>' : ''}</td>
+                    <td class="col-note">${staff.constraints?.isPregnant ? '<span class="badge bg-danger rounded-pill" style="font-size:0.6rem; padding:1px 3px;">孕</span>' : ''}</td>
                     
-                    <td onclick="window.routerPage.openPrefModal('${uid}')" style="cursor:pointer;" class="hover-bg-light col-pref" title="點擊編輯偏好">
+                    <td onclick="window.routerPage.openPrefModal('${uid}')" class="hover-bg-light col-pref" title="點擊編輯">
                         ${prefStr}
                     </td>
 
@@ -294,7 +327,7 @@ export class PreScheduleEditPage {
 
     renderShiftBadge(code) {
         if (!code) return '';
-        if (code.startsWith('NO_')) return `<span class="badge border border-danger text-danger bg-light" style="padding:2px;">勿${code.replace('NO_', '')}</span>`;
+        if (code.startsWith('NO_')) return `<span class="badge border border-danger text-danger bg-light" style="padding:1px 2px; font-size:0.7rem;">x${code.replace('NO_', '')}</span>`;
 
         let bgStyle = 'background-color:#6c757d; color:white;';
         if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
@@ -304,7 +337,7 @@ export class PreScheduleEditPage {
             if(s) bgStyle = `background-color:${s.color}; color:white;`;
         }
 
-        return `<span class="badge w-100" style="${bgStyle}; padding:3px 0;">${code === 'M_OFF' ? 'M' : code}</span>`;
+        return `<span class="badge w-100" style="${bgStyle}; padding:3px 0; font-size:0.75rem;">${code === 'M_OFF' ? 'M' : code}</span>`;
     }
 
     getWeekName(day) {
@@ -315,8 +348,8 @@ export class PreScheduleEditPage {
         const el = document.getElementById('status-badge');
         const map = {
             'draft': { text: '草稿', cls: 'bg-secondary' },
-            'open': { text: '開放填寫中', cls: 'bg-success' },
-            'closed': { text: '已截止 / 排班中', cls: 'bg-warning text-dark' },
+            'open': { text: '開放中', cls: 'bg-success' },
+            'closed': { text: '已截止', cls: 'bg-warning text-dark' },
             'published': { text: '已發布', cls: 'bg-primary' }
         };
         const s = map[status] || { text: status, cls: 'bg-secondary' };
@@ -344,28 +377,28 @@ export class PreScheduleEditPage {
             {code:'N', name:'大夜', color:'#212529'}
         ];
 
-        let menuHtml = `<h6 class="dropdown-header bg-light">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
+        let menuHtml = `<h6 class="dropdown-header bg-light py-1 small">設定 ${day} 日</h6>`;
         
-        menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休</div>`;
+        menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休</div>`;
         
         if (type === 'current') {
-            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強休</div>`;
+            menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('M_OFF')"><span class="badge w-25 me-2" style="background-color:#6f42c1; color:white;">M</span> 強休</div>`;
         }
-        menuHtml += `<div class="dropdown-divider"></div>`;
+        menuHtml += `<div class="dropdown-divider my-1"></div>`;
 
         unitShifts.forEach(s => {
-            menuHtml += `<div class="dropdown-item" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</div>`;
+            menuHtml += `<div class="dropdown-item py-1" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> 指定${s.name}</div>`;
         });
 
         if (type === 'current') {
-            menuHtml += `<div class="dropdown-divider"></div>`;
+            menuHtml += `<div class="dropdown-divider my-1"></div>`;
             unitShifts.forEach(s => {
-                menuHtml += `<div class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</div>`;
+                menuHtml += `<div class="dropdown-item py-1 text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</div>`;
             });
         }
 
-        menuHtml += `<div class="dropdown-divider"></div>`;
-        menuHtml += `<div class="dropdown-item text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
+        menuHtml += `<div class="dropdown-divider my-1"></div>`;
+        menuHtml += `<div class="dropdown-item py-1 text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
 
         menu.innerHTML = menuHtml;
         menu.style.display = 'block';
@@ -408,25 +441,21 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').disabled = false;
     }
 
-    // ✅ 修正重點：管理者端偏好編輯視窗動態化
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
         const pref = sub.preferences || {};
         
-        // 讀取設定
         const settings = this.scheduleData.settings || {};
         const limit = settings.shiftTypesLimit || 2;
         const allow3 = settings.allowThreeTypesVoluntary !== false;
         
-        // 判斷是否顯示混合選項與 P3
-        // 條件：(限制3種) OR (限制2種且允許自願3種)
         const showMixOption = (limit === 3) || (limit === 2 && allow3);
         
         let html = `
             <div class="mb-3">
-                <label class="form-label fw-bold">包班意願</label>
-                <select id="edit-pref-batch" class="form-select">
+                <label class="form-label fw-bold small">包班意願</label>
+                <select id="edit-pref-batch" class="form-select form-select-sm">
                     <option value="">無 (不包班)</option>
                     <option value="E">包小夜 (E)</option>
                     <option value="N">包大夜 (N)</option>
@@ -436,8 +465,8 @@ export class PreScheduleEditPage {
         if (showMixOption) {
             html += `
             <div class="mb-3">
-                <label class="form-label fw-bold">每月班別種類偏好</label>
-                <select id="edit-pref-mix" class="form-select">
+                <label class="form-label fw-bold small">每月班別種類偏好</label>
+                <select id="edit-pref-mix" class="form-select form-select-sm">
                     <option value="2">單純 (2種)</option>
                     <option value="3">彈性 (3種)</option>
                 </select>
@@ -452,22 +481,21 @@ export class PreScheduleEditPage {
         html += `
         <div class="row g-2">
             <div class="col-4">
-                <label class="small">順位 1</label>
+                <label class="small fw-bold">順位 1</label>
                 <select id="edit-pref-p1" class="form-select form-select-sm">${optionsHtml}</select>
             </div>
             <div class="col-4">
-                <label class="small">順位 2</label>
+                <label class="small fw-bold">順位 2</label>
                 <select id="edit-pref-p2" class="form-select form-select-sm">${optionsHtml}</select>
             </div>
             <div class="col-4" id="container-admin-p3" style="display:none;">
-                <label class="small">順位 3</label>
+                <label class="small fw-bold">順位 3</label>
                 <select id="edit-pref-p3" class="form-select form-select-sm">${optionsHtml}</select>
             </div>
         </div>`;
 
         document.getElementById('pref-dynamic-content').innerHTML = html;
 
-        // 回填數值
         document.getElementById('edit-pref-batch').value = pref.batch || '';
         if (showMixOption) {
             document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
@@ -476,19 +504,16 @@ export class PreScheduleEditPage {
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
 
-        // 控制 P3 顯示/隱藏
+        // ✅ 修正 1: 修復 ReferenceError
         const toggleP3 = (mixValue) => {
             const p3 = document.getElementById('container-admin-p3');
-            // 如果顯示了混合選項，且值為 3 -> 顯示 P3
-            if (showMix && mixValue === '3') {
+            if (showMixOption && mixValue === '3') {
                 p3.style.display = 'block';
             } else if (limit === 3) {
-                // 如果硬性限制為 3，無論如何都顯示 P3 (假設預設偏好為 3)
-                // 這裡簡化邏輯：如果沒有 Mix 選項但 Limit=3，預設 Mix=3
                 p3.style.display = 'block';
             } else {
                 p3.style.display = 'none';
-                document.getElementById('edit-pref-p3').value = ''; // 清空值
+                document.getElementById('edit-pref-p3').value = '';
             }
         };
 
@@ -527,7 +552,7 @@ export class PreScheduleEditPage {
     async saveData() {
         const btn = document.getElementById('btn-save');
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 儲存中...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
         try {
             const updates = {
