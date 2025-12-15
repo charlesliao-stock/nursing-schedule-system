@@ -11,15 +11,11 @@ export class PreScheduleEditPage {
         this.unitData = null;
         this.staffList = [];
         this.isDirty = false;
-        
-        // 用於儲存上個月最後 6 天的資料
         this.historyData = {}; 
         this.prevYear = 0;
         this.prevMonth = 0;
         this.prevMonthDays = 0;
         this.historyRange = []; 
-        
-        // 暫存偏好編輯
         this.editingPrefUid = null;
         this.prefModal = null;
     }
@@ -92,21 +88,15 @@ export class PreScheduleEditPage {
                                 <div class="row g-2">
                                     <div class="col-4">
                                         <label class="small">順位 1</label>
-                                        <select id="edit-pref-p1" class="form-select form-select-sm">
-                                            <option value="">-</option><option value="D">D</option><option value="E">E</option><option value="N">N</option>
-                                        </select>
+                                        <select id="edit-pref-p1" class="form-select form-select-sm"></select>
                                     </div>
                                     <div class="col-4">
                                         <label class="small">順位 2</label>
-                                        <select id="edit-pref-p2" class="form-select form-select-sm">
-                                            <option value="">-</option><option value="D">D</option><option value="E">E</option><option value="N">N</option>
-                                        </select>
+                                        <select id="edit-pref-p2" class="form-select form-select-sm"></select>
                                     </div>
                                     <div class="col-4">
                                         <label class="small">順位 3</label>
-                                        <select id="edit-pref-p3" class="form-select form-select-sm">
-                                            <option value="">-</option><option value="D">D</option><option value="E">E</option><option value="N">N</option>
-                                        </select>
+                                        <select id="edit-pref-p3" class="form-select form-select-sm"></select>
                                     </div>
                                 </div>
                             </form>
@@ -263,7 +253,6 @@ export class PreScheduleEditPage {
 
                     ${this.historyRange.map(d => {
                         const val = history[d] || '';
-                        // ✅ 新增：oncontextmenu 支援右鍵
                         return `<td class="history-cell bg-secondary bg-opacity-10" 
                                     data-uid="${uid}" 
                                     data-day="${d}" 
@@ -278,7 +267,6 @@ export class PreScheduleEditPage {
                     ${Array.from({length: daysInMonth}, (_, i) => {
                         const d = i + 1;
                         const val = wishes[d] || '';
-                        // ✅ 新增：oncontextmenu 支援右鍵
                         return `<td class="wish-cell" 
                                     data-uid="${uid}" 
                                     data-day="${d}" 
@@ -299,27 +287,18 @@ export class PreScheduleEditPage {
 
     renderShiftBadge(code) {
         if (!code) return '';
-        
-        if (code.startsWith('NO_')) {
-            return `<i class="fas fa-ban text-danger"></i> <span class="small">${code.replace('NO_', '')}</span>`;
+        if (code.startsWith('NO_')) return `<i class="fas fa-ban text-danger"></i> <span class="small">${code.replace('NO_', '')}</span>`;
+
+        let bgStyle = 'background-color:#6c757d; color:white;';
+        if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
+        else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;';
+        else {
+            // 嘗試從單位設定找顏色
+            const s = this.unitData.settings?.shifts?.find(x => x.code === code);
+            if(s) bgStyle = `background-color:${s.color}; color:white;`;
         }
 
-        let bgStyle = '';
-        let text = code;
-
-        switch(code) {
-            case 'D': bgStyle = 'background-color:#0d6efd; color:white;'; break;
-            case 'E': bgStyle = 'background-color:#ffc107; color:black;'; break;
-            case 'N': bgStyle = 'background-color:#212529; color:white;'; break;
-            case 'OFF': bgStyle = 'background-color:#ffc107; color:black;'; break; 
-            case 'M_OFF': 
-                bgStyle = 'background-color:#6f42c1; color:white;'; 
-                text = 'M';
-                break;
-            default: bgStyle = 'background-color:#6c757d; color:white;'; break;
-        }
-
-        return `<span class="badge w-100" style="${bgStyle}">${text}</span>`;
+        return `<span class="badge w-100" style="${bgStyle}">${code === 'M_OFF' ? 'M' : code}</span>`;
     }
 
     getWeekName(day) {
@@ -339,9 +318,8 @@ export class PreScheduleEditPage {
         el.textContent = s.text;
     }
 
-    // ✅ 修改：接收 event 參數，若有則阻止預設選單
     handleCellClick(cell, currentVal, e = null) {
-        if (e) e.preventDefault(); // 阻止瀏覽器右鍵選單
+        if (e) e.preventDefault(); 
 
         const existing = document.getElementById('context-menu');
         existing.style.display = 'none'; 
@@ -352,10 +330,12 @@ export class PreScheduleEditPage {
 
         this.currentEditTarget = { uid, day, type, cell };
 
-        let menuHtml = '';
-        const shifts = ['D', 'E', 'N'];
-        
-        menuHtml += `<h6 class="dropdown-header">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
+        // ✅ 修正 2: 動態讀取單位設定
+        const unitShifts = this.unitData.settings?.shifts || [
+            {code:'D', name:'白班'}, {code:'E', name:'小夜'}, {code:'N', name:'大夜'}
+        ];
+
+        let menuHtml = `<h6 class="dropdown-header">設定 ${type==='history' ? '上月' : ''} ${day} 日</h6>`;
         
         menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('OFF')"><span class="badge bg-warning text-dark w-25 me-2">OFF</span> 預休/休假</button>`;
         
@@ -364,14 +344,14 @@ export class PreScheduleEditPage {
         }
         menuHtml += `<div class="dropdown-divider"></div>`;
 
-        shifts.forEach(s => {
-            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('${s}')"><span class="badge bg-secondary w-25 me-2">${s}</span> ${s}</button>`;
+        unitShifts.forEach(s => {
+            menuHtml += `<button class="dropdown-item" onclick="window.routerPage.applyShift('${s.code}')"><span class="badge text-white w-25 me-2" style="background-color:${s.color}">${s.code}</span> ${s.name}</button>`;
         });
 
         if (type === 'current') {
             menuHtml += `<div class="dropdown-divider"></div>`;
-            shifts.forEach(s => {
-                menuHtml += `<button class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s}</button>`;
+            unitShifts.forEach(s => {
+                menuHtml += `<button class="dropdown-item text-danger small" onclick="window.routerPage.applyShift('NO_${s.code}')"><i class="fas fa-ban w-25 me-2"></i> 勿排${s.name}</button>`;
             });
         }
 
@@ -415,6 +395,16 @@ export class PreScheduleEditPage {
 
         document.getElementById('edit-pref-batch').value = pref.batch || '';
         document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
+
+        // ✅ 修正 6: 動態填入班別選項
+        const unitShifts = this.unitData.settings?.shifts || [];
+        const optionsHtml = `<option value="">-</option>` + unitShifts.map(s => `<option value="${s.code}">${s.name} (${s.code})</option>`).join('');
+        
+        ['p1', 'p2', 'p3'].forEach(k => {
+            const el = document.getElementById(`edit-pref-${k}`);
+            if(el) el.innerHTML = optionsHtml;
+        });
+
         document.getElementById('edit-pref-p1').value = pref.priority1 || '';
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
