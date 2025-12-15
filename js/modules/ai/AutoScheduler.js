@@ -1,19 +1,23 @@
 import { RuleEngine } from "./RuleEngine.js";
 
+// AI 權重設定
 const WEIGHTS = {
     BASE: 100,
-    NEED_HIGH: 50,      
-    NEED_LOW: 10,       
-    PREFERENCE: 20,     
-    CONTINUITY: 10,     
-    PENALTY_FATIGUE: -80, 
-    RECOVERY: 20        
+    NEED_HIGH: 50,      // 人力極缺
+    NEED_LOW: 10,       // 人力微缺
+    PREFERENCE: 20,     // 員工願望/偏好
+    CONTINUITY: 10,     // 連續上班
+    PENALTY_FATIGUE: -80, // 疲勞罰分 (如 N->D)
+    RECOVERY: 20        // OFF 的恢復分
 };
 
 export class AutoScheduler {
 
+    /**
+     * 啟動排班引擎 (v4.3 Rules Updated & Dynamic Shifts)
+     */
     static async run(currentSchedule, staffList, unitSettings, preScheduleData) {
-        console.log("🚀 AI 排班引擎啟動 (v4.3 Rules Updated)");
+        console.log("🚀 AI 排班引擎啟動 (Dynamic)");
 
         try {
             const context = this.prepareContext(currentSchedule, staffList, unitSettings, preScheduleData);
@@ -107,7 +111,8 @@ export class AutoScheduler {
         });
 
         const staffReq = unitSettings.staffRequirements || {};
-        const shiftDefs = settings.shifts || [];
+        // ✅ 修正 3: 確保班別定義存在
+        const shiftDefs = settings.shifts || [{code:'D'}, {code:'E'}, {code:'N'}];
 
         return {
             year: currentSchedule.year,
@@ -197,13 +202,8 @@ export class AutoScheduler {
         const staff = staffList[index];
         const prevShift = context.assignments[staff.uid][day - 1] || 'OFF';
 
-        let possibleShifts = [];
-        if (context.shiftDefs && context.shiftDefs.length > 0) {
-            possibleShifts = context.shiftDefs.map(s => s.code);
-        } else {
-            possibleShifts = ['D', 'E', 'N']; 
-        }
-        
+        // ✅ 修正 3: 從設定讀取候選班別
+        let possibleShifts = context.shiftDefs.map(s => s.code);
         if (!possibleShifts.includes('OFF')) possibleShifts.push('OFF');
         
         const currentCounts = {};
@@ -261,12 +261,16 @@ export class AutoScheduler {
 
     static checkHardConstraints(staff, shift, prevShift, context) {
         if (context.rules.constraints?.minInterval11h) {
-            if (prevShift === 'E' && shift === 'D') return { valid: false, reason: "Interval < 11h" };
+            // ✅ 修正 3: 這裡的班別代碼判斷可能需要更通用的邏輯 (目前維持 E接D 為例)
+            // 若要支援自訂班別，需在班別設定中加入「類型」欄位 (早/晚/夜)
+            // 暫時假設代碼為 D, E, N 的變體
+            if ((prevShift === 'E' || prevShift.includes('E')) && (shift === 'D' || shift.includes('D'))) 
+                return { valid: false, reason: "Interval < 11h" };
         }
         
-        // ✅ 修正：母性保護包含產後哺乳 (isPostpartum)
         const isProtected = staff.constraints.isPregnant || staff.constraints.isPostpartum;
-        if (isProtected && (shift === 'N' || shift === 'E')) {
+        // 假設 N 是夜班，E 是小夜
+        if (isProtected && (shift.includes('N') || shift.includes('E'))) {
             return { valid: false, reason: "Maternal protection" };
         }
         return { valid: true, reason: "" };
@@ -293,24 +297,20 @@ export class AutoScheduler {
         const prefs = context.preferences[staff.uid];
         if (prefs.p1 === shift) { score += WEIGHTS.PREFERENCE; details.push("P1"); }
         if (prevShift === shift && shift !== 'OFF') { score += WEIGHTS.CONTINUITY; details.push("Cont."); }
-        if (prevShift === 'N' && shift === 'D') { score += WEIGHTS.PENALTY_FATIGUE; details.push("Fatigue"); }
+        
+        // 疲勞扣分 (逆向排班)
+        if (prevShift.includes('N') && shift.includes('D')) { score += WEIGHTS.PENALTY_FATIGUE; details.push("Fatigue"); }
 
-        // ✅ 新增：每月班別種類偏好檢查 (Soft Constraint)
-        // 若單位允許設定，且該班別不是 OFF
         if (context.rules.constraints?.allowMonthlyMixPref && shift !== 'OFF') {
-            const desiredMix = prefs.monthlyMix || '2'; // 預設為 2
-            
+            const desiredMix = prefs.monthlyMix || '2'; 
             if (desiredMix === '2') {
                 const usedTypes = new Set();
-                // 檢查本月目前已排的班別種類 (1 ~ day-1)
                 for(let d=1; d<day; d++) {
                     const s = context.assignments[staff.uid][d];
                     if(s && s !== 'OFF' && s !== 'M_OFF') usedTypes.add(s);
                 }
-                
-                // 如果目前已經用了 >= 2 種，且現在嘗試的新班別 (shift) 是第 3 種
                 if (usedTypes.size >= 2 && !usedTypes.has(shift)) {
-                    score -= 40; // 扣分懲罰
+                    score -= 40; 
                     details.push("Mix3(Avoid)");
                 }
             }
@@ -381,10 +381,8 @@ export class AutoScheduler {
         const w = date.getDay();
         const counts = {};
         
-        const shiftsToCheck = (context.shiftDefs && context.shiftDefs.length > 0) 
-            ? context.shiftDefs.map(s => s.code) 
-            : ['D', 'E', 'N'];
-            
+        // ✅ 修正 3: 動態檢查所有班別
+        const shiftsToCheck = context.shiftDefs.map(s => s.code);
         shiftsToCheck.forEach(s => counts[s] = 0);
 
         Object.values(context.assignments).forEach(sch => {
