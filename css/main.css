@@ -7,22 +7,22 @@
     --text-color: #1f2937;
     --bg-color: #f3f4f6;
     --error-color: #ef4444;
-    --sidebar-width: 250px; /* 定義側邊欄寬度 */
-    --header-height: 60px;  /* 定義頂部高度 */
+    --sidebar-width: 250px; 
+    --header-height: 60px;
+    --transition-speed: 0.3s;
 }
 
 body {
     margin: 0;
-    font-family: 'Microsoft JhengHei', sans-serif;
+    font-family: 'Microsoft JhengHei', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
-    overflow-x: hidden; /* 防止版面橫向溢出 */
+    overflow-x: hidden;
 }
 
 /* =========================================
-   2. 全域 Loading 遮罩 (對應 index.html)
+   2. 全域 Loading 遮罩
    ========================================= */
-/* 這是修復「系統啟動中」畫面跑版的關鍵 */
 #loading-screen {
     position: fixed;
     top: 0;
@@ -30,14 +30,13 @@ body {
     width: 100%;
     height: 100%;
     background: #ffffff;
-    z-index: 9999; /* 確保在最上層 */
+    z-index: 9999;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-direction: column;
 }
 
-/* 保留你原本的 loading spinner 樣式 */
 .spinner {
     border: 4px solid #f3f3f3;
     border-top: 4px solid var(--primary-color);
@@ -61,11 +60,12 @@ body {
     align-items: center;
     min-height: 100vh;
     background: linear-gradient(135deg, #e0f2fe 0%, #f3f4f6 100%);
+    padding: 1rem;
 }
 
 .login-card {
     background: white;
-    padding: 2.5rem;
+    padding: 2rem;
     border-radius: 1rem;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
     width: 100%;
@@ -83,8 +83,6 @@ body {
 /* =========================================
    4. 主版面佈局 (Dashboard Layout)
    ========================================= */
-/* 這是修復「版面跑掉」的核心 */
-
 .app-layout {
     display: flex;
     min-height: 100vh;
@@ -94,19 +92,19 @@ body {
 /* 左側側邊欄 */
 .layout-sidebar {
     width: var(--sidebar-width);
-    background-color: #1e293b; /* 深藍灰 */
+    background-color: #1e293b;
     color: white;
     position: fixed;
     left: 0;
     top: 0;
     height: 100vh;
     z-index: 1000;
-    transition: transform 0.3s ease-in-out;
+    transition: transform var(--transition-speed) ease-in-out;
     display: flex;
     flex-direction: column;
 }
 
-/* 側邊欄收折狀態：向左移出畫面 */
+/* 側邊欄收折狀態 (桌面版) */
 .layout-sidebar.collapsed {
     transform: translateX(-100%);
 }
@@ -118,9 +116,8 @@ body {
     padding: 0 20px;
     font-weight: bold;
     font-size: 1.1rem;
-    background-color: #0f172a; /* 更深的 header 底色 */
+    background-color: #0f172a;
     border-bottom: 1px solid rgba(255,255,255,0.1);
-    cursor: pointer;
 }
 
 .sidebar-menu {
@@ -152,38 +149,33 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 0 20px;
-    
-    /* 固定定位與寬度計算 */
     position: fixed;
     top: 0;
     right: 0;
-    left: var(--sidebar-width); /* 預設留出側邊欄空間 */
+    left: var(--sidebar-width);
     z-index: 900;
-    transition: left 0.3s ease-in-out;
+    transition: left var(--transition-speed) ease-in-out;
 }
 
-/* 當側邊欄收折時，Header 佔滿全寬 */
 .layout-header.expanded {
     left: 0;
 }
 
 .brand-logo { font-size: 1.2rem; font-weight: bold; color: var(--primary-color); }
 .user-info { display: flex; align-items: center; }
-.btn-logout { background: transparent; border: 1px solid #dee2e6; padding: 4px 12px; border-radius: 4px; color: #666; margin-left: 10px; transition: 0.2s; }
-.btn-logout:hover { border-color: #dc3545; color: #dc3545; }
+.btn-logout { background: transparent; border: 1px solid #dee2e6; padding: 4px 12px; border-radius: 4px; color: #666; margin-left: 10px; cursor: pointer; }
 
 /* 主內容區域 */
 .layout-content {
     margin-top: var(--header-height);
-    margin-left: var(--sidebar-width); /* 預設留出側邊欄空間 */
+    margin-left: var(--sidebar-width);
     padding: 20px;
     width: 100%;
     min-height: calc(100vh - var(--header-height));
     background-color: #f3f4f6;
-    transition: margin-left 0.3s ease-in-out;
+    transition: margin-left var(--transition-speed) ease-in-out;
 }
 
-/* 當側邊欄收折時，內容區靠左 */
 .layout-content.expanded {
     margin-left: 0;
 }
@@ -192,7 +184,7 @@ body {
 .sidebar-toggle-tab {
     position: absolute;
     top: 70px;
-    right: -24px; /* 突出側邊欄 */
+    right: -24px;
     width: 24px;
     height: 48px;
     background-color: #1e293b;
@@ -203,35 +195,69 @@ body {
     justify-content: center;
     cursor: pointer;
     box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-    z-index: 1001; /* 比 sidebar 高一點 */
+    z-index: 1001;
 }
-.sidebar-toggle-tab:hover { background-color: var(--primary-color); }
 
 /* =========================================
-   5. 排班表與其他元件樣式 (保留你原本的設定)
+   5. 排班表與其他元件樣式
    ========================================= */
 .schedule-container { padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); height: calc(100vh - 120px); display: flex; flex-direction: column; }
-.schedule-toolbar { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #eee; }
-.schedule-grid-wrapper { flex: 1; overflow: auto; position: relative; border: 1px solid #e5e7eb; }
+.schedule-toolbar { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
+.schedule-grid-wrapper { flex: 1; overflow: auto; position: relative; border: 1px solid #e5e7eb; border-radius: 4px; }
 
-/* 表格樣式 */
+/* 表格優化 */
 .schedule-table { border-collapse: separate; border-spacing: 0; width: max-content; font-size: 0.9rem; }
-.schedule-table th, .schedule-table td { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: center; min-width: 40px; height: 40px; }
+.schedule-table th, .schedule-table td { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: center; min-width: 40px; height: 36px; white-space: nowrap; }
 .schedule-table thead th { position: sticky; top: 0; background-color: #f8fafc; z-index: 10; font-weight: bold; }
-.schedule-table .sticky-col { position: sticky; left: 0; background-color: #fff; z-index: 11; min-width: 100px; border-right: 2px solid #e5e7eb; }
+.schedule-table .sticky-col { position: sticky; left: 0; background-color: #fff; z-index: 11; min-width: 80px; border-right: 2px solid #e5e7eb; }
 .schedule-table thead th.sticky-col { z-index: 12; background-color: #f8fafc; }
 
-/* 班別互動 */
 .shift-cell { cursor: pointer; transition: background-color 0.2s; }
-.shift-cell:hover { background-color: #eff6ff; outline: 2px solid var(--primary-color); }
+.shift-cell:hover { background-color: #eff6ff; outline: 1px solid var(--primary-color); }
 .weekend { background-color: #fdf2f2; color: #c53030; }
 
-/* 響應式調整 */
+/* =========================================
+   6. 響應式設計 (RWD)
+   ========================================= */
+
+/* 平板與手機 (<= 768px) */
 @media (max-width: 768px) {
-    .layout-sidebar { transform: translateX(-100%); } /* 手機版預設隱藏 */
-    .layout-header { left: 0; }
-    .layout-content { margin-left: 0; }
+    /* 側邊欄預設隱藏 */
+    .layout-sidebar { 
+        transform: translateX(-100%); 
+    }
     
-    /* 手機版開啟狀態 */
-    .layout-sidebar.mobile-open { transform: translateX(0); }
+    /* 手機版開啟狀態 (需透過 JS 切換 class) */
+    .layout-sidebar.mobile-open { 
+        transform: translateX(0); 
+        box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+    }
+
+    /* 內容區塊佔滿 */
+    .layout-header { left: 0; width: 100%; }
+    .layout-content { margin-left: 0; padding: 10px; }
+
+    /* 表格字體縮小 */
+    .schedule-table { font-size: 0.75rem; }
+    .schedule-table th, .schedule-table td { padding: 4px; height: 32px; min-width: 32px; }
+    
+    /* 隱藏非必要元素 */
+    .user-info span { display: none; } /* 隱藏使用者名稱，只留圖示 */
+    
+    /* 工具列調整 */
+    .schedule-toolbar { gap: 10px; }
+    .btn { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+}
+
+/* 手機橫屏 (<= 768px landscape) */
+@media (max-width: 768px) and (orientation: landscape) {
+    .layout-header { height: 45px; }
+    .layout-content { margin-top: 45px; min-height: calc(100vh - 45px); }
+    .sidebar-header { height: 45px; }
+    .sidebar-toggle-tab { top: 50px; }
+}
+
+/* 較大手機/平板 (<= 1024px) */
+@media (max-width: 1024px) {
+    .schedule-container { height: calc(100vh - 100px); }
 }
