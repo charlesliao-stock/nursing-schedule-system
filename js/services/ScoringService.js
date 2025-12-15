@@ -2,23 +2,30 @@ export class ScoringService {
     
     /**
      * 1. 定義預設評分設定 (14 項指標)
+     * 更新重點：
+     * 1. 評語統一為：優、佳、良、可、平
+     * 2. 在 nightDiff 與 weeklyNight 加入 excludeBatch 選項
      */
     static getDefaultConfig() {
+        // 通用評語標準
+        const standardLabels = ['優', '佳', '良', '可', '平'];
+
         return {
             fairness: {
                 label: "1. 公平性指標",
                 subs: {
                     hoursDiff: { 
                         label: "(1) 工時差異 (標準差)", desc: "所有員工工時與平均工時的標準差差異程度", weight: 10, enabled: true, 
-                        tiers: [{limit: 2, score: 100}, {limit: 4, score: 80}, {limit: 6, score: 60}, {limit: 8, score: 40}, {limit: 999, score: 20}]
+                        tiers: [{limit: 2, score: 100, label: standardLabels[0]}, {limit: 4, score: 80, label: standardLabels[1]}, {limit: 6, score: 60, label: standardLabels[2]}, {limit: 8, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     },
                     nightDiff: { 
                         label: "(2) 夜班差異 (次)", desc: "員工之間夜班天數差異程度 (Max - Min)", weight: 10, enabled: true,
-                        tiers: [{limit: 1, score: 100}, {limit: 2, score: 80}, {limit: 3, score: 60}, {limit: 4, score: 40}, {limit: 999, score: 20}]
+                        excludeBatch: true, // ✅ 新增：預設開啟排除包班
+                        tiers: [{limit: 1, score: 100, label: standardLabels[0]}, {limit: 2, score: 80, label: standardLabels[1]}, {limit: 3, score: 60, label: standardLabels[2]}, {limit: 4, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     },
                     holidayDiff: {
                         label: "(3) 假日差異 (天)", desc: "員工之間假日放假天數差異程度 (Max - Min)", weight: 10, enabled: true,
-                        tiers: [{limit: 1, score: 100}, {limit: 2, score: 80}, {limit: 3, score: 60}, {limit: 4, score: 40}, {limit: 999, score: 20}]
+                        tiers: [{limit: 1, score: 100, label: standardLabels[0]}, {limit: 2, score: 80, label: standardLabels[1]}, {limit: 3, score: 60, label: standardLabels[2]}, {limit: 4, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     }
                 }
             },
@@ -27,14 +34,13 @@ export class ScoringService {
                 subs: {
                     prefRate: { 
                         label: "(1) 排班偏好滿足度 (%)", desc: "排班的結果符合員工偏好的程度", weight: 15, enabled: true,
-                        // 這裡邏輯是：數值 >= X 得分。為了統一 getTieredScore (<=)，我們計算「未滿足率」
-                        // 未滿足率 <= 10 (即滿足 >= 90) -> 100分
-                        tiers: [{limit: 10, score: 100}, {limit: 20, score: 80}, {limit: 30, score: 60}, {limit: 40, score: 40}, {limit: 100, score: 20}]
+                        // 未滿足率 (越低越好)
+                        tiers: [{limit: 10, score: 100, label: standardLabels[0]}, {limit: 20, score: 80, label: standardLabels[1]}, {limit: 30, score: 60, label: standardLabels[2]}, {limit: 40, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     wishRate: { 
                         label: "(2) 預班達成率 (%)", desc: "排假的結果符合員工預班OFF的程度", weight: 10, enabled: true,
-                        // 同上，計算「未達成率」
-                        tiers: [{limit: 5, score: 100}, {limit: 10, score: 80}, {limit: 15, score: 60}, {limit: 20, score: 40}, {limit: 100, score: 20}]
+                        // 未達成率
+                        tiers: [{limit: 5, score: 100, label: standardLabels[0]}, {limit: 10, score: 80, label: standardLabels[1]}, {limit: 15, score: 60, label: standardLabels[2]}, {limit: 20, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     }
                 }
             },
@@ -43,20 +49,21 @@ export class ScoringService {
                 subs: {
                     consWork: { 
                         label: "(1) 連續工作>6天 (人次)", desc: "最長連續工作天數達6天(以上)的人次次數", weight: 8, enabled: true,
-                        tiers: [{limit: 0, score: 100}, {limit: 2, score: 80}, {limit: 4, score: 60}, {limit: 6, score: 40}, {limit: 999, score: 20}]
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 2, score: 80, label: standardLabels[1]}, {limit: 4, score: 60, label: standardLabels[2]}, {limit: 6, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     },
                     nToD: { 
                         label: "(2) 大夜接白 (次)", desc: "前一天大夜，隔天早班的次數", weight: 7, enabled: true,
-                        tiers: [{limit: 0, score: 100}, {limit: 3, score: 80}, {limit: 6, score: 60}, {limit: 10, score: 40}, {limit: 999, score: 20}]
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 3, score: 80, label: standardLabels[1]}, {limit: 6, score: 60, label: standardLabels[2]}, {limit: 10, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     },
                     offTargetRate: {
                         label: "(3) 休假達標率 (%)", desc: "符合應放天數規定的員工比例", weight: 5, enabled: true,
-                        // 計算「未達標率」
-                        tiers: [{limit: 0, score: 100}, {limit: 5, score: 80}, {limit: 10, score: 60}, {limit: 15, score: 40}, {limit: 100, score: 20}]
+                        // 未達標率
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 5, score: 80, label: standardLabels[1]}, {limit: 10, score: 60, label: standardLabels[2]}, {limit: 15, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     weeklyNight: {
                         label: "(4) 週夜班頻率 (SD)", desc: "每位員工週平均夜班次數的標準差", weight: 5, enabled: true,
-                        tiers: [{limit: 0.3, score: 100}, {limit: 0.5, score: 80}, {limit: 0.7, score: 60}, {limit: 1.0, score: 40}, {limit: 999, score: 20}]
+                        excludeBatch: true, // ✅ 新增：預設開啟排除包班
+                        tiers: [{limit: 0.3, score: 100, label: standardLabels[0]}, {limit: 0.5, score: 80, label: standardLabels[1]}, {limit: 0.7, score: 60, label: standardLabels[2]}, {limit: 1.0, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     }
                 }
             },
@@ -65,17 +72,17 @@ export class ScoringService {
                 subs: {
                     shortageRate: {
                         label: "(1) 缺班率 (%)", desc: "未成功分配人員的班次比例", weight: 8, enabled: true,
-                        tiers: [{limit: 0, score: 100}, {limit: 2, score: 80}, {limit: 5, score: 60}, {limit: 10, score: 40}, {limit: 100, score: 20}]
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 2, score: 80, label: standardLabels[1]}, {limit: 5, score: 60, label: standardLabels[2]}, {limit: 10, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     seniorDist: {
                         label: "(2) 資深分佈合理性 (%)", desc: "各班至少1位年資2年以上員工", weight: 4, enabled: true,
-                        // 計算「不合理率」
-                        tiers: [{limit: 0, score: 100}, {limit: 5, score: 80}, {limit: 10, score: 60}, {limit: 15, score: 40}, {limit: 100, score: 20}]
+                        // 不合理率
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 5, score: 80, label: standardLabels[1]}, {limit: 10, score: 60, label: standardLabels[2]}, {limit: 15, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     juniorDist: {
                         label: "(3) 資淺分佈合理性 (%)", desc: "各班最多1位年資2年以下員工", weight: 3, enabled: true,
-                        // 計算「不合理率」
-                        tiers: [{limit: 0, score: 100}, {limit: 10, score: 80}, {limit: 20, score: 60}, {limit: 30, score: 40}, {limit: 100, score: 20}]
+                        // 不合理率
+                        tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 10, score: 80, label: standardLabels[1]}, {limit: 20, score: 60, label: standardLabels[2]}, {limit: 30, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     }
                 }
             },
@@ -84,7 +91,7 @@ export class ScoringService {
                 subs: {
                     overtimeRate: {
                         label: "(1) 加班費比率 (%)", desc: "加班班數佔總班數的比例", weight: 5, enabled: true,
-                        tiers: [{limit: 3, score: 100}, {limit: 5, score: 80}, {limit: 8, score: 60}, {limit: 12, score: 40}, {limit: 100, score: 20}]
+                        tiers: [{limit: 3, score: 100, label: standardLabels[0]}, {limit: 5, score: 80, label: standardLabels[1]}, {limit: 8, score: 60, label: standardLabels[2]}, {limit: 12, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     }
                 }
             }
@@ -101,13 +108,14 @@ export class ScoringService {
         const daysInMonth = new Date(schedule.year, schedule.month, 0).getDate();
         const config = unitSettings.scoringConfig || this.getDefaultConfig();
         
-        // 計算所有原始指標
-        const metrics = this.calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule);
+        // 1. 計算所有原始指標 (metrics)
+        const metrics = this.calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule, config);
 
         let totalScore = 0;
         let totalMax = 0;
         const details = {};
 
+        // 2. 轉換分數
         Object.keys(config).forEach(catKey => {
             const catConfig = config[catKey];
             const subItems = [];
@@ -131,7 +139,8 @@ export class ScoringService {
                             name: sub.label,
                             value: this.formatValue(subKey, rawValue),
                             score: tier.score,
-                            desc: sub.desc // 傳遞描述供顯示
+                            grade: tier.label || tier.score + '分', // 使用中文評語
+                            desc: sub.desc
                         });
                     }
                 });
@@ -162,31 +171,28 @@ export class ScoringService {
     // ==========================================
     //  3. 計算所有原始指標 (Metrics Calculation)
     // ==========================================
-    static calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule) {
+    static calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule, config) {
         const metrics = {};
         const req = unitSettings?.staffRequirements || {};
         const shiftCodes = unitSettings?.settings?.shifts ? unitSettings.settings.shifts.map(s=>s.code) : ['D','E','N'];
         const submissions = preSchedule?.submissions || {};
         const requiredOffDays = unitSettings?.rules?.minOffDays || 8;
 
-        // 統計變數
+        // --- 變數初始化 ---
         let totalShiftsFilled = 0;
         let totalShiftsNeeded = 0;
         let seniorViolations = 0;
         let juniorViolations = 0;
-        let totalDailyShifts = 0; // 總班次數 (分母)
+        let totalDailyShifts = 0;
 
-        // 1. 每日掃描
+        // --- A. 每日掃描 (效率) ---
         for (let d = 1; d <= daysInMonth; d++) {
-            const date = new Date(new Date().getFullYear(), new Date().getMonth(), d);
-            const dayOfWeek = (d % 7); // 簡化
+            const dayOfWeek = (d % 7); 
             
-            // 需求
             shiftCodes.forEach(s => {
                 totalShiftsNeeded += (req[s]?.[dayOfWeek] || 0);
             });
 
-            // 實際
             const dailyAssign = { D: [], E: [], N: [] };
             Object.keys(assignments).forEach(uid => {
                 const shift = assignments[uid][d];
@@ -198,21 +204,18 @@ export class ScoringService {
                 }
             });
 
-            // 資深/資淺檢查
             ['D', 'E', 'N'].forEach(s => {
                 const staffInShift = dailyAssign[s] || [];
                 if (staffInShift.length > 0) {
-                    // 假設 yearOfExp 為年資，若無則預設 3
                     const seniors = staffInShift.filter(st => (st.years || 3) > 2).length;
                     const juniors = staffInShift.filter(st => (st.years || 3) <= 2).length;
-                    
                     if (seniors < 1) seniorViolations++;
                     if (juniors > 1) juniorViolations++;
                 }
             });
         }
 
-        // 2. 個人掃描
+        // --- B. 個人掃描 (公平、滿意、疲勞) ---
         const staffStats = [];
         let totalWish = 0, metWish = 0;
         let totalPref = 0, metPref = 0;
@@ -226,6 +229,9 @@ export class ScoringService {
             const row = assignments[uid] || {};
             const wishes = submissions[uid]?.wishes || {};
             const prefs = submissions[uid]?.preferences || {};
+            
+            // ✅ 判斷是否為包班人員 (簡單以有設定 batch 為準)
+            const isBatch = !!prefs.batch;
 
             let hours = 0, nights = 0, holidays = 0, off = 0;
             let cons = 0;
@@ -245,17 +251,17 @@ export class ScoringService {
                     if(d % 7 === 0 || d % 7 === 6) holidays++;
                 }
 
-                if (cons === 6) consWorkViolations++; // 達 6 天算一次 (連續更多天不再重複計，或可改邏輯)
+                if (cons === 6) consWorkViolations++; 
                 if (prev === 'N' && shift === 'D') nToDCount++;
                 prev = shift;
             }
 
-            staffStats.push({ hours, nights, holidays });
+            // 儲存個人數據，加入 isBatch 標記
+            staffStats.push({ hours, nights, holidays, isBatch });
 
             if (off >= requiredOffDays) holidayTargetMetCount++;
             if (off < requiredOffDays) overtimeManDays += (requiredOffDays - off);
 
-            // 預班 (OFF)
             Object.entries(wishes).forEach(([d, w]) => {
                 if (w === 'OFF' || w === 'M_OFF') {
                     totalWish++;
@@ -263,48 +269,60 @@ export class ScoringService {
                 }
             });
 
-            // 偏好 (P1)
             if (prefs.priority1) {
                 totalPref++;
                 if (Object.values(row).includes(prefs.priority1)) metPref++;
             }
         });
 
-        // 3. 計算結果
+        // --- C. 計算最終指標 (含包班排除邏輯) ---
+        
+        // 1. 公平性 - 夜班差異
+        // 檢查設定：是否要排除包班人員
+        const excludeBatchNight = config.fairness?.subs?.nightDiff?.excludeBatch === true;
+        const nightStats = excludeBatchNight 
+            ? staffStats.filter(s => !s.isBatch) 
+            : staffStats;
+        
+        const nightsArr = nightStats.map(s => s.nights);
         const hoursArr = staffStats.map(s => s.hours);
-        const nightsArr = staffStats.map(s => s.nights);
         const holidaysArr = staffStats.map(s => s.holidays);
 
-        // 公平性
         metrics.hoursDiff = this.calcStdDev(hoursArr);
-        metrics.nightDiff = Math.max(...nightsArr) - Math.min(...nightsArr);
-        metrics.holidayDiff = Math.max(...holidaysArr) - Math.min(...holidaysArr);
+        // 如果沒有人剩下，設為 0
+        metrics.nightDiff = nightsArr.length > 0 ? (Math.max(...nightsArr) - Math.min(...nightsArr)) : 0;
+        metrics.holidayDiff = this.calcStdDev(holidaysArr);
 
-        // 滿意度 (轉為未達成率/未滿足率)
+        // 2. 滿意度
         metrics.wishRate = totalWish === 0 ? 0 : Math.round((1 - metWish/totalWish) * 100);
         metrics.prefRate = totalPref === 0 ? 0 : Math.round((1 - metPref/totalPref) * 100);
 
-        // 疲勞度
+        // 3. 疲勞度
         metrics.consWork = consWorkViolations;
         metrics.nToD = nToDCount;
         metrics.offTargetRate = staffList.length === 0 ? 0 : Math.round((1 - holidayTargetMetCount/staffList.length) * 100);
         
-        // 週夜班頻率標準差 (總夜班/4週/人數 的標準差? 題目定義為標準差)
-        const weeklyNights = nightsArr.map(n => n / 4);
+        // 週夜班頻率 (SD) - 檢查是否排除包班
+        const excludeBatchWeekly = config.fatigue?.subs?.weeklyNight?.excludeBatch === true;
+        const weeklyStats = excludeBatchWeekly 
+            ? staffStats.filter(s => !s.isBatch) 
+            : staffStats;
+            
+        const weeklyNights = weeklyStats.map(s => s.nights / 4);
         metrics.weeklyNight = this.calcStdDev(weeklyNights);
 
-        // 效率
+        // 4. 效率
         metrics.shortageRate = totalShiftsNeeded === 0 ? 0 : Math.round(((totalShiftsNeeded - totalShiftsFilled) / totalShiftsNeeded) * 100);
-        metrics.seniorDist = totalDailyShifts === 0 ? 0 : Math.round((seniorViolations / totalDailyShifts) * 100); // 不合理率
-        metrics.juniorDist = totalDailyShifts === 0 ? 0 : Math.round((juniorViolations / totalDailyShifts) * 100); // 不合理率
+        metrics.seniorDist = totalDailyShifts === 0 ? 0 : Math.round((seniorViolations / totalDailyShifts) * 100);
+        metrics.juniorDist = totalDailyShifts === 0 ? 0 : Math.round((juniorViolations / totalDailyShifts) * 100);
 
-        // 成本 (加班費比率)
+        // 5. 成本
         metrics.overtimeRate = totalShiftsFilled === 0 ? 0 : Math.round((overtimeManDays / totalShiftsFilled) * 100);
 
         return metrics;
     }
 
-    // --- 輔助 ---
+    // --- 輔助函式 ---
     static calcStdDev(arr) {
         if (arr.length === 0) return 0;
         const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -315,17 +333,17 @@ export class ScoringService {
     static getTieredScore(value, tiers) {
         if (!tiers || tiers.length === 0) return { score: 0, label: '未設定' };
         for (const t of tiers) {
-            if (value <= t.limit) return { score: t.score, label: t.label || t.score + '分' };
+            if (value <= t.limit) return { score: t.score, label: t.label };
         }
         const last = tiers[tiers.length - 1];
-        return { score: last.score, label: last.label || last.score + '分' };
+        return { score: last.score, label: last.label };
     }
 
     static formatValue(key, val) {
         if (['prefRate', 'wishRate', 'offTargetRate', 'shortageRate', 'seniorDist', 'juniorDist', 'overtimeRate'].includes(key)) {
-            return val + '%'; // 這些是比率
+            return val + '%';
         }
-        if (key.includes('Diff') && !key.includes('hours')) return '差 ' + val; // 次數/天數差
+        if (key === 'nightDiff') return '差 ' + val;
         return val;
     }
 }
