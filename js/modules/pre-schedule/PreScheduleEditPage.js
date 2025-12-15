@@ -27,52 +27,25 @@ export class PreScheduleEditPage {
         const params = new URLSearchParams(hash.split('?')[1]);
         this.scheduleId = params.get('id');
 
-        // 加入樣式控制
         const style = `
         <style>
-            /* 修正 1: 表格佈局優化 */
-            .schedule-table-container {
-                overflow-x: auto; /* 若螢幕真的太小仍保留捲軸，但盡量不顯示 */
-            }
-            .schedule-table {
-                width: 100%;
-                table-layout: auto; /* 讓瀏覽器自動分配，但依賴下方 min-width */
-                font-size: 0.85rem;
-            }
-            .schedule-table th, .schedule-table td {
-                padding: 4px 2px !important; /* 縮小內距 */
-                white-space: nowrap; /* 不換行 */
-                vertical-align: middle;
-            }
-            
-            /* 指定欄位寬度 */
+            .schedule-table-container { overflow-x: auto; }
+            .schedule-table { width: 100%; table-layout: auto; font-size: 0.85rem; }
+            .schedule-table th, .schedule-table td { padding: 4px 2px !important; white-space: nowrap; vertical-align: middle; }
             .col-staff-id { width: 70px; max-width: 70px; }
             .col-name { width: 90px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
             .col-note { width: 35px; max-width: 35px; }
             .col-pref { width: 110px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-            .col-date { min-width: 28px; } /* 日期欄位最小寬度 */
-
-            /* 選單樣式 */
+            .col-date { min-width: 28px; }
             #context-menu {
-                display: none; 
-                position: fixed; 
-                z-index: 9999; 
-                background-color: white; 
-                opacity: 1;
+                display: none; position: fixed; z-index: 9999; 
+                background-color: white; opacity: 1;
                 border: 1px solid rgba(0,0,0,.15);
                 box-shadow: 0 .5rem 1rem rgba(0,0,0,.175);
-                border-radius: .25rem;
-                padding: .5rem 0;
-                min-width: 160px;
+                border-radius: .25rem; padding: .5rem 0; min-width: 160px;
             }
-            #context-menu .dropdown-item {
-                padding: 0.25rem 1rem;
-                font-size: 0.9rem;
-                cursor: pointer;
-            }
-            #context-menu .dropdown-item:hover {
-                background-color: #f8f9fa;
-            }
+            #context-menu .dropdown-item { padding: 0.25rem 1rem; font-size: 0.9rem; cursor: pointer; }
+            #context-menu .dropdown-item:hover { background-color: #f8f9fa; }
         </style>
         `;
 
@@ -145,7 +118,6 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').addEventListener('click', () => this.saveData());
         document.getElementById('btn-auto-schedule').addEventListener('click', () => this.goToAutoSchedule());
         
-        // 點擊空白處關閉選單
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('context-menu');
             if (menu && menu.style.display === 'block' && !e.target.closest('#context-menu')) {
@@ -264,7 +236,16 @@ export class PreScheduleEditPage {
 
             let prefStr = '';
             if (pref.batch) prefStr += `<span class="badge bg-primary me-1">包${pref.batch}</span>`;
-            if (pref.priority1) prefStr += `<small class="text-muted d-block">${pref.priority1} > ${pref.priority2||'-'} > ${pref.priority3||'-'}</small>`;
+            
+            // 簡化顯示，只顯示主要順位
+            const p1 = pref.priority1 || '';
+            const p2 = pref.priority2 || '';
+            const p3 = pref.priority3 || '';
+            let pStr = p1;
+            if(p2) pStr += ` > ${p2}`;
+            if(p3) pStr += ` > ${p3}`;
+            
+            if (pStr) prefStr += `<small class="text-muted d-block text-truncate">${pStr}</small>`;
             if (!prefStr) prefStr = '<span class="text-muted small">-</span>';
 
             html += `
@@ -313,15 +294,11 @@ export class PreScheduleEditPage {
 
     renderShiftBadge(code) {
         if (!code) return '';
-        
-        if (code.startsWith('NO_')) {
-            // 勿排使用紅色空心
-            return `<span class="badge border border-danger text-danger bg-light" style="padding:2px;">勿${code.replace('NO_', '')}</span>`;
-        }
+        if (code.startsWith('NO_')) return `<span class="badge border border-danger text-danger bg-light" style="padding:2px;">勿${code.replace('NO_', '')}</span>`;
 
         let bgStyle = 'background-color:#6c757d; color:white;';
-        if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;'; // Bootstrap warning color
-        else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;'; // 紫色
+        if (code === 'OFF') bgStyle = 'background-color:#ffc107; color:black;';
+        else if (code === 'M_OFF') bgStyle = 'background-color:#6f42c1; color:white;';
         else {
             const s = this.unitData.settings?.shifts?.find(x => x.code === code);
             if(s) bgStyle = `background-color:${s.color}; color:white;`;
@@ -347,17 +324,15 @@ export class PreScheduleEditPage {
         el.textContent = s.text;
     }
 
-    // 修正 1: 右鍵選單位置防切邊邏輯
     handleCellClick(cell, currentVal, e = null) {
         if (e) {
             e.preventDefault(); 
-            e.stopPropagation(); // 防止冒泡
+            e.stopPropagation(); 
         }
 
         const menu = document.getElementById('context-menu');
         if (!menu) return;
 
-        // 設定內容
         const type = cell.dataset.type; 
         const uid = cell.dataset.uid;
         const day = cell.dataset.day;
@@ -393,27 +368,17 @@ export class PreScheduleEditPage {
         menuHtml += `<div class="dropdown-item text-secondary" onclick="window.routerPage.applyShift('')"><i class="fas fa-eraser w-25 me-2"></i> 清除</div>`;
 
         menu.innerHTML = menuHtml;
-
-        // 計算位置
         menu.style.display = 'block';
         
-        // 取得視窗與選單尺寸
         const menuRect = menu.getBoundingClientRect();
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
         
-        // 預設位置 (滑鼠點擊處 或 元素邊緣)
         let left = e ? e.clientX : cell.getBoundingClientRect().left;
         let top = e ? e.clientY : cell.getBoundingClientRect().bottom;
 
-        // 1. 水平邊界檢查 (若超出右側，改為往左長)
-        if (left + menuRect.width > windowWidth) {
-            left = windowWidth - menuRect.width - 10;
-        }
-
-        // 2. 垂直邊界檢查 (若超出下方，改為往上長)
+        if (left + menuRect.width > windowWidth) left = windowWidth - menuRect.width - 10;
         if (top + menuRect.height > windowHeight) {
-            // 如果是滑鼠觸發，改為滑鼠上方；如果是元素觸發，改為元素上方
             if (e) top = e.clientY - menuRect.height;
             else top = cell.getBoundingClientRect().top - menuRect.height;
         }
@@ -443,14 +408,20 @@ export class PreScheduleEditPage {
         document.getElementById('btn-save').disabled = false;
     }
 
+    // ✅ 修正重點：管理者端偏好編輯視窗動態化
     openPrefModal(uid) {
         this.editingPrefUid = uid;
         const sub = this.scheduleData.submissions[uid] || {};
         const pref = sub.preferences || {};
         
+        // 讀取設定
         const settings = this.scheduleData.settings || {};
         const limit = settings.shiftTypesLimit || 2;
         const allow3 = settings.allowThreeTypesVoluntary !== false;
+        
+        // 判斷是否顯示混合選項與 P3
+        // 條件：(限制3種) OR (限制2種且允許自願3種)
+        const showMixOption = (limit === 3) || (limit === 2 && allow3);
         
         let html = `
             <div class="mb-3">
@@ -462,7 +433,7 @@ export class PreScheduleEditPage {
                 </select>
             </div>`;
 
-        if (limit === 2 && allow3) {
+        if (showMixOption) {
             html += `
             <div class="mb-3">
                 <label class="form-label fw-bold">每月班別種類偏好</label>
@@ -496,28 +467,33 @@ export class PreScheduleEditPage {
 
         document.getElementById('pref-dynamic-content').innerHTML = html;
 
-        // 回填值
+        // 回填數值
         document.getElementById('edit-pref-batch').value = pref.batch || '';
-        if (limit === 2 && allow3) {
+        if (showMixOption) {
             document.getElementById('edit-pref-mix').value = pref.monthlyMix || '2';
         }
         document.getElementById('edit-pref-p1').value = pref.priority1 || '';
         document.getElementById('edit-pref-p2').value = pref.priority2 || '';
         document.getElementById('edit-pref-p3').value = pref.priority3 || '';
 
+        // 控制 P3 顯示/隱藏
         const toggleP3 = (mixValue) => {
             const p3 = document.getElementById('container-admin-p3');
-            if (limit === 3) {
+            // 如果顯示了混合選項，且值為 3 -> 顯示 P3
+            if (showMix && mixValue === '3') {
                 p3.style.display = 'block';
-            } else if (limit === 2 && allow3 && mixValue === '3') {
+            } else if (limit === 3) {
+                // 如果硬性限制為 3，無論如何都顯示 P3 (假設預設偏好為 3)
+                // 這裡簡化邏輯：如果沒有 Mix 選項但 Limit=3，預設 Mix=3
                 p3.style.display = 'block';
             } else {
                 p3.style.display = 'none';
-                document.getElementById('edit-pref-p3').value = '';
+                document.getElementById('edit-pref-p3').value = ''; // 清空值
             }
         };
 
-        toggleP3(pref.monthlyMix || '2');
+        const currentMix = document.getElementById('edit-pref-mix').value;
+        toggleP3(currentMix);
 
         const mixSelect = document.getElementById('edit-pref-mix');
         if (mixSelect && mixSelect.type !== 'hidden') {
