@@ -46,7 +46,6 @@ export class PreScheduleManagePage {
             unitOptions = '<option value="">載入失敗</option>';
         }
 
-        // 注意：這裡包含了完整的 Modal HTML 結構，請確保完整複製
         return `
             <div class="container-fluid mt-4">
                 <div class="mb-3">
@@ -143,12 +142,13 @@ export class PreScheduleManagePage {
                                     <div class="row g-3 mb-3 bg-light p-2 rounded mx-0">
                                         <div class="col-md-6">
                                             <label class="small fw-bold text-primary">夜班種類數限制</label>
-                                            <select id="edit-shiftTypes" class="form-select form-select-sm">
+                                            <select id="edit-shiftTypes" class="form-select form-select-sm" 
+                                                    onchange="window.routerPage.handleTypeLimitChange(this.value)">
                                                 <option value="2">2 種 (如: 白/小 或 白/大)</option>
                                                 <option value="3">3 種 (如: 白/小/大)</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-6 d-flex align-items-center">
+                                        <div class="col-md-6 d-flex align-items-center" id="container-allow3">
                                             <div class="form-check form-switch mt-4">
                                                 <input class="form-check-input" type="checkbox" id="edit-allow3">
                                                 <label class="form-check-label fw-bold" for="edit-allow3">同意同仁自願選擇 3 種班</label>
@@ -213,7 +213,6 @@ export class PreScheduleManagePage {
 
         document.getElementById('btn-import-last').addEventListener('click', () => this.importLastMonthSettings());
         
-        // 任何月份變更都重新計算建議日期
         document.getElementById('edit-month').addEventListener('change', () => {
             this.setDefaultDates(); 
         });
@@ -223,6 +222,20 @@ export class PreScheduleManagePage {
         
         if (!isAdmin && unitSelect.value) {
             this.loadList(unitSelect.value);
+        }
+    }
+
+    // ✅ 新增: 處理下拉選單變更，控制開關顯示
+    handleTypeLimitChange(val) {
+        const container = document.getElementById('container-allow3');
+        if (!container) return;
+        
+        if (val === '3') {
+            // 若限制為 3 種，則不需顯示「同意自願 3 種」，因為預設就是 3
+            container.style.display = 'none';
+        } else {
+            // 若限制為 2 種，顯示開關讓管理者決定是否例外開放
+            container.style.display = 'flex';
         }
     }
 
@@ -251,7 +264,6 @@ export class PreScheduleManagePage {
 
                 if (p.status === 'closed') statusBadge = '<span class="badge bg-info text-dark">已封存</span>';
 
-                // 注意：這裡使用 p.id 傳遞給 goToEdit，使用 index 傳遞給 openModal
                 return `
                     <tr>
                         <td class="fw-bold fs-5 text-primary">${p.year}-${String(p.month).padStart(2,'0')}</td>
@@ -285,7 +297,6 @@ export class PreScheduleManagePage {
         const [y, m] = monthStr.split('-').map(Number);
         
         const today = new Date().toISOString().split('T')[0];
-        // 預設當月15號截止
         const closeDateObj = new Date(y, m - 1 - 1, 15); 
         const closeDate = closeDateObj.toISOString().split('T')[0];
         
@@ -295,14 +306,12 @@ export class PreScheduleManagePage {
         } else {
              document.getElementById('edit-close').value = closeDate;
         }
-        
         document.getElementById('edit-open').value = today;
     }
 
     async openModal(index = null) {
         if (!this.targetUnitId) { alert("請先選擇單位"); return; }
         
-        // 防呆：確認表單存在
         const form = document.getElementById('pre-form');
         if (form) form.reset();
         
@@ -332,8 +341,12 @@ export class PreScheduleManagePage {
             document.getElementById('edit-showNames').checked = !!s.showOtherNames;
             
             // 回填新欄位
-            document.getElementById('edit-shiftTypes').value = s.shiftTypesLimit || '2';
+            const limit = s.shiftTypesLimit || '2';
+            document.getElementById('edit-shiftTypes').value = limit;
             document.getElementById('edit-allow3').checked = !!s.allowThreeTypesVoluntary;
+            
+            // ✅ 初始化開關顯示狀態
+            this.handleTypeLimitChange(limit.toString());
 
             const savedStaffIds = data.staffIds || [];
             const savedSettings = data.staffSettings || {};
@@ -354,14 +367,15 @@ export class PreScheduleManagePage {
             document.getElementById('modal-title').textContent = "新增預班表";
             document.getElementById('edit-month').disabled = false;
             
-            // 預設月份為「下個月」
             const today = new Date();
             const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
             document.getElementById('edit-month').value = nextMonth.toISOString().slice(0, 7);
             
             this.setDefaultDates(); 
-            
             this.renderGroupInputs(groups, {});
+            
+            // ✅ 新增時，預設為 2 種，顯示開關
+            this.handleTypeLimitChange('2');
             
             const staff = await userService.getUsersByUnit(this.targetUnitId);
             this.selectedStaff = staff.map(s => ({ 
@@ -500,7 +514,11 @@ export class PreScheduleManagePage {
         if(s.showOtherNames !== undefined) document.getElementById('edit-showNames').checked = s.showOtherNames;
         
         // 帶入新欄位
-        if(s.shiftTypesLimit) document.getElementById('edit-shiftTypes').value = s.shiftTypesLimit;
+        if(s.shiftTypesLimit) {
+            document.getElementById('edit-shiftTypes').value = s.shiftTypesLimit;
+            // 更新開關顯示
+            this.handleTypeLimitChange(s.shiftTypesLimit.toString());
+        }
         if(s.allowThreeTypesVoluntary !== undefined) document.getElementById('edit-allow3').checked = s.allowThreeTypesVoluntary;
 
         const gl = s.groupLimits || {};
@@ -555,6 +573,7 @@ export class PreScheduleManagePage {
                 maxHoliday: parseInt(document.getElementById('edit-maxHoliday').value),
                 reservedStaff: parseInt(document.getElementById('edit-reserved').value) || 0,
                 showOtherNames: document.getElementById('edit-showNames').checked,
+                // 儲存新設定
                 shiftTypesLimit: parseInt(document.getElementById('edit-shiftTypes').value),
                 allowThreeTypesVoluntary: document.getElementById('edit-allow3').checked,
                 groupLimits: groupLimits
