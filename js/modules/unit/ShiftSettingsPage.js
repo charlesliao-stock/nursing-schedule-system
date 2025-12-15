@@ -48,7 +48,7 @@ export class ShiftSettingsPage {
         const tbody = document.getElementById('table-body');
         try {
             const unit = await UnitService.getUnitById(uid);
-            if (!unit) { tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-danger">讀取錯誤</td></tr>'; return; }
+            if (!unit) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-5 text-danger">讀取錯誤</td></tr>'; return; }
             this.shifts = unit.settings?.shifts || [];
             // 使用 Template 渲染表格
             tbody.innerHTML = ShiftSettingsTemplate.renderRows(this.shifts);
@@ -66,13 +66,25 @@ export class ShiftSettingsPage {
             document.getElementById('shift-color').value = s.color;
             document.getElementById('start-time').value = s.startTime;
             document.getElementById('end-time').value = s.endTime;
+            // 修正 4: 讀取時數
+            document.getElementById('shift-hours').value = s.hours || 8;
+        } else {
+            document.getElementById('shift-hours').value = 8;
         }
         this.modal.show();
     }
 
     async saveShift() {
         const idx = parseInt(document.getElementById('edit-idx').value);
-        const data = { code: document.getElementById('shift-code').value, name: document.getElementById('shift-name').value, color: document.getElementById('shift-color').value, startTime: document.getElementById('start-time').value, endTime: document.getElementById('end-time').value };
+        const data = { 
+            code: document.getElementById('shift-code').value, 
+            name: document.getElementById('shift-name').value, 
+            color: document.getElementById('shift-color').value, 
+            startTime: document.getElementById('start-time').value, 
+            endTime: document.getElementById('end-time').value,
+            // 修正 4: 儲存時數
+            hours: parseFloat(document.getElementById('shift-hours').value) || 8
+        };
         if(idx === -1) this.shifts.push(data); else this.shifts[idx] = data;
         
         await UnitService.updateUnit(this.targetUnitId, { "settings.shifts": this.shifts });
