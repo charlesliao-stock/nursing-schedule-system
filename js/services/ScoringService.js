@@ -2,12 +2,8 @@ export class ScoringService {
     
     /**
      * 1. 定義預設評分設定 (14 項指標)
-     * 更新重點：
-     * 1. 評語統一為：優、佳、良、可、平
-     * 2. 在 nightDiff 與 weeklyNight 加入 excludeBatch 選項
      */
     static getDefaultConfig() {
-        // 通用評語標準
         const standardLabels = ['優', '佳', '良', '可', '平'];
 
         return {
@@ -20,7 +16,7 @@ export class ScoringService {
                     },
                     nightDiff: { 
                         label: "(2) 夜班差異 (次)", desc: "員工之間夜班天數差異程度 (Max - Min)", weight: 10, enabled: true,
-                        excludeBatch: true, // ✅ 新增：預設開啟排除包班
+                        excludeBatch: true, // 預設開啟排除包班
                         tiers: [{limit: 1, score: 100, label: standardLabels[0]}, {limit: 2, score: 80, label: standardLabels[1]}, {limit: 3, score: 60, label: standardLabels[2]}, {limit: 4, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     },
                     holidayDiff: {
@@ -34,12 +30,10 @@ export class ScoringService {
                 subs: {
                     prefRate: { 
                         label: "(1) 排班偏好滿足度 (%)", desc: "排班的結果符合員工偏好的程度", weight: 15, enabled: true,
-                        // 未滿足率 (越低越好)
                         tiers: [{limit: 10, score: 100, label: standardLabels[0]}, {limit: 20, score: 80, label: standardLabels[1]}, {limit: 30, score: 60, label: standardLabels[2]}, {limit: 40, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     wishRate: { 
                         label: "(2) 預班達成率 (%)", desc: "排假的結果符合員工預班OFF的程度", weight: 10, enabled: true,
-                        // 未達成率
                         tiers: [{limit: 5, score: 100, label: standardLabels[0]}, {limit: 10, score: 80, label: standardLabels[1]}, {limit: 15, score: 60, label: standardLabels[2]}, {limit: 20, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     }
                 }
@@ -57,12 +51,11 @@ export class ScoringService {
                     },
                     offTargetRate: {
                         label: "(3) 休假達標率 (%)", desc: "符合應放天數規定的員工比例", weight: 5, enabled: true,
-                        // 未達標率
                         tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 5, score: 80, label: standardLabels[1]}, {limit: 10, score: 60, label: standardLabels[2]}, {limit: 15, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     weeklyNight: {
                         label: "(4) 週夜班頻率 (SD)", desc: "每位員工週平均夜班次數的標準差", weight: 5, enabled: true,
-                        excludeBatch: true, // ✅ 新增：預設開啟排除包班
+                        excludeBatch: true,
                         tiers: [{limit: 0.3, score: 100, label: standardLabels[0]}, {limit: 0.5, score: 80, label: standardLabels[1]}, {limit: 0.7, score: 60, label: standardLabels[2]}, {limit: 1.0, score: 40, label: standardLabels[3]}, {limit: 999, score: 20, label: standardLabels[4]}]
                     }
                 }
@@ -76,12 +69,10 @@ export class ScoringService {
                     },
                     seniorDist: {
                         label: "(2) 資深分佈合理性 (%)", desc: "各班至少1位年資2年以上員工", weight: 4, enabled: true,
-                        // 不合理率
                         tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 5, score: 80, label: standardLabels[1]}, {limit: 10, score: 60, label: standardLabels[2]}, {limit: 15, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     },
                     juniorDist: {
                         label: "(3) 資淺分佈合理性 (%)", desc: "各班最多1位年資2年以下員工", weight: 3, enabled: true,
-                        // 不合理率
                         tiers: [{limit: 0, score: 100, label: standardLabels[0]}, {limit: 10, score: 80, label: standardLabels[1]}, {limit: 20, score: 60, label: standardLabels[2]}, {limit: 30, score: 40, label: standardLabels[3]}, {limit: 100, score: 20, label: standardLabels[4]}]
                     }
                 }
@@ -139,7 +130,7 @@ export class ScoringService {
                             name: sub.label,
                             value: this.formatValue(subKey, rawValue),
                             score: tier.score,
-                            grade: tier.label || tier.score + '分', // 使用中文評語
+                            grade: tier.label || tier.score + '分', 
                             desc: sub.desc
                         });
                     }
@@ -174,7 +165,17 @@ export class ScoringService {
     static calculateMetrics(assignments, staffList, daysInMonth, unitSettings, preSchedule, config) {
         const metrics = {};
         const req = unitSettings?.staffRequirements || {};
-        const shiftCodes = unitSettings?.settings?.shifts ? unitSettings.settings.shifts.map(s=>s.code) : ['D','E','N'];
+        
+        // 取得班別定義 (Code) 與 時數對照表 (Hours Map)
+        const unitShifts = unitSettings?.settings?.shifts || [];
+        const shiftCodes = unitShifts.length > 0 ? unitShifts.map(s => s.code) : ['D','E','N'];
+        
+        // 建立工時查找表 { 'D': 8, 'E': 8, 'N': 8, 'NP': 12 ... }
+        const hoursMap = {};
+        unitShifts.forEach(s => {
+            hoursMap[s.code] = parseFloat(s.hours) || 0;
+        });
+
         const submissions = preSchedule?.submissions || {};
         const requiredOffDays = unitSettings?.rules?.minOffDays || 8;
 
@@ -193,17 +194,23 @@ export class ScoringService {
                 totalShiftsNeeded += (req[s]?.[dayOfWeek] || 0);
             });
 
-            const dailyAssign = { D: [], E: [], N: [] };
+            const dailyAssign = { D: [], E: [], N: [] }; // 簡易分類，若有自訂班別需擴充邏輯
+            
             Object.keys(assignments).forEach(uid => {
                 const shift = assignments[uid][d];
-                if (shift && dailyAssign[shift]) {
-                    const staff = staffList.find(s => s.uid === uid);
-                    if (staff) dailyAssign[shift].push(staff);
+                // 只要 shift 存在且不是 OFF/M_OFF，就算有人力
+                if (shift && shift !== 'OFF' && shift !== 'M_OFF') {
+                    // 這裡為了檢查資深資淺，暫時只抓 D/E/N，若要支援所有班別需調整邏輯
+                    if (dailyAssign[shift]) {
+                        const staff = staffList.find(s => s.uid === uid);
+                        if (staff) dailyAssign[shift].push(staff);
+                    }
                     totalShiftsFilled++;
                     totalDailyShifts++;
                 }
             });
 
+            // 檢查資深資淺 (僅針對 D, E, N，或可依據屬性判斷)
             ['D', 'E', 'N'].forEach(s => {
                 const staffInShift = dailyAssign[s] || [];
                 if (staffInShift.length > 0) {
@@ -230,7 +237,7 @@ export class ScoringService {
             const wishes = submissions[uid]?.wishes || {};
             const prefs = submissions[uid]?.preferences || {};
             
-            // ✅ 判斷是否為包班人員 (簡單以有設定 batch 為準)
+            // 判斷是否為包班人員
             const isBatch = !!prefs.batch;
 
             let hours = 0, nights = 0, holidays = 0, off = 0;
@@ -242,8 +249,12 @@ export class ScoringService {
                 const isWork = shift !== 'OFF' && shift !== 'M_OFF';
 
                 if (isWork) {
-                    hours += 8;
+                    // ✅ 修正：從單位設定取得工時，若無設定則預設為 0 (避免誤算)
+                    const h = hoursMap[shift] !== undefined ? hoursMap[shift] : 0;
+                    hours += h;
+                    
                     cons++;
+                    // 假設夜班代碼包含 N 或 E，或可從 unitSettings 判斷屬性
                     if(['N','E'].includes(shift)) nights++;
                 } else {
                     cons = 0;
@@ -256,7 +267,6 @@ export class ScoringService {
                 prev = shift;
             }
 
-            // 儲存個人數據，加入 isBatch 標記
             staffStats.push({ hours, nights, holidays, isBatch });
 
             if (off >= requiredOffDays) holidayTargetMetCount++;
@@ -277,8 +287,7 @@ export class ScoringService {
 
         // --- C. 計算最終指標 (含包班排除邏輯) ---
         
-        // 1. 公平性 - 夜班差異
-        // 檢查設定：是否要排除包班人員
+        // 1. 公平性
         const excludeBatchNight = config.fairness?.subs?.nightDiff?.excludeBatch === true;
         const nightStats = excludeBatchNight 
             ? staffStats.filter(s => !s.isBatch) 
@@ -289,7 +298,6 @@ export class ScoringService {
         const holidaysArr = staffStats.map(s => s.holidays);
 
         metrics.hoursDiff = this.calcStdDev(hoursArr);
-        // 如果沒有人剩下，設為 0
         metrics.nightDiff = nightsArr.length > 0 ? (Math.max(...nightsArr) - Math.min(...nightsArr)) : 0;
         metrics.holidayDiff = this.calcStdDev(holidaysArr);
 
@@ -302,7 +310,6 @@ export class ScoringService {
         metrics.nToD = nToDCount;
         metrics.offTargetRate = staffList.length === 0 ? 0 : Math.round((1 - holidayTargetMetCount/staffList.length) * 100);
         
-        // 週夜班頻率 (SD) - 檢查是否排除包班
         const excludeBatchWeekly = config.fatigue?.subs?.weeklyNight?.excludeBatch === true;
         const weeklyStats = excludeBatchWeekly 
             ? staffStats.filter(s => !s.isBatch) 
