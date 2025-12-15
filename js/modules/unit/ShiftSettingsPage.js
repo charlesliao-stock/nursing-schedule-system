@@ -1,6 +1,6 @@
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
-import { ShiftSettingsTemplate } from "./templates/ShiftSettingsTemplate.js"; // 引入 Template
+import { ShiftSettingsTemplate } from "./templates/ShiftSettingsTemplate.js"; 
 
 export class ShiftSettingsPage {
     constructor() { this.shifts = []; this.targetUnitId = null; this.modal = null; }
@@ -50,7 +50,6 @@ export class ShiftSettingsPage {
             const unit = await UnitService.getUnitById(uid);
             if (!unit) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-5 text-danger">讀取錯誤</td></tr>'; return; }
             this.shifts = unit.settings?.shifts || [];
-            // 使用 Template 渲染表格
             tbody.innerHTML = ShiftSettingsTemplate.renderRows(this.shifts);
         } catch (e) { console.error(e); }
     }
@@ -66,8 +65,9 @@ export class ShiftSettingsPage {
             document.getElementById('shift-color').value = s.color;
             document.getElementById('start-time').value = s.startTime;
             document.getElementById('end-time').value = s.endTime;
-            // 修正 4: 讀取時數
-            document.getElementById('shift-hours').value = s.hours || 8;
+            // 修正：允許 0
+            const h = (s.hours !== undefined && s.hours !== null) ? s.hours : 8;
+            document.getElementById('shift-hours').value = h;
         } else {
             document.getElementById('shift-hours').value = 8;
         }
@@ -76,21 +76,22 @@ export class ShiftSettingsPage {
 
     async saveShift() {
         const idx = parseInt(document.getElementById('edit-idx').value);
+        // 修正：解析時數，允許 0
+        const hoursInput = document.getElementById('shift-hours').value;
+        const hours = (hoursInput === '0' || hoursInput === 0) ? 0 : (parseFloat(hoursInput) || 0);
+
         const data = { 
             code: document.getElementById('shift-code').value, 
             name: document.getElementById('shift-name').value, 
             color: document.getElementById('shift-color').value, 
             startTime: document.getElementById('start-time').value, 
             endTime: document.getElementById('end-time').value,
-            // 修正 4: 儲存時數
-            hours: parseFloat(document.getElementById('shift-hours').value) || 8
+            hours: hours
         };
         if(idx === -1) this.shifts.push(data); else this.shifts[idx] = data;
         
         await UnitService.updateUnit(this.targetUnitId, { "settings.shifts": this.shifts });
         this.modal.hide(); 
-        
-        // 重新渲染表格
         document.getElementById('table-body').innerHTML = ShiftSettingsTemplate.renderRows(this.shifts);
     }
     
