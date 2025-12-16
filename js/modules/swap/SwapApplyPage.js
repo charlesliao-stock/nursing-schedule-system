@@ -8,12 +8,12 @@ import { SwapApplyTemplate } from "./templates/SwapApplyTemplate.js";
 export class SwapApplyPage {
     constructor() {
         this.realUser = null;      // 真正登入的管理者
-        this.currentUser = null;   // 目前模擬的身分 (預設等於 realUser)
+        this.currentUser = null;   // 目前模擬的身分
         this.targetUnitId = null;  // 目前操作的單位 ID
         
-        this.pendingSwaps = [];    // 換班購物車
-        this.tempSource = null;    // 暫存點擊來源
-        this.isImpersonating = false; // 是否正在模擬中
+        this.pendingSwaps = [];    
+        this.tempSource = null;    
+        this.isImpersonating = false;
     }
 
     async render() {
@@ -21,7 +21,6 @@ export class SwapApplyPage {
     }
 
     async afterRender() {
-        // 1. 身分驗證與初始化
         let retries = 0;
         while (!authService.getProfile() && retries < 10) { await new Promise(r => setTimeout(r, 200)); retries++; }
         this.realUser = authService.getProfile();
@@ -36,7 +35,7 @@ export class SwapApplyPage {
         this.targetUnitId = this.realUser.unitId;
         window.routerPage = this;
 
-        // 2. 判斷是否為管理者，若是則載入模擬器
+        // 判斷權限：system_admin, unit_manager, unit_scheduler
         const role = this.realUser.role;
         const isAdmin = ['system_admin', 'unit_manager', 'unit_scheduler'].includes(role);
         
@@ -44,10 +43,9 @@ export class SwapApplyPage {
             await this.initAdminSimulator();
         }
 
-        // 3. 載入頁面資料 (依據當前的 currentUser)
+        // 載入頁面資料
         this.initPageData();
 
-        // 4. 事件綁定
         document.getElementById('btn-load-grid').addEventListener('click', () => this.loadGrid());
         document.getElementById('btn-submit-swap').addEventListener('click', () => this.submitSwap());
         
@@ -65,17 +63,16 @@ export class SwapApplyPage {
         const userSelect = document.getElementById('admin-user-select');
         const btnImpersonate = document.getElementById('btn-impersonate');
         
-        // 顯示管理區塊
         if(adminSection) adminSection.style.display = 'block';
 
-        // A. 載入所有單位
+        // A. 載入單位
         try {
             const units = await UnitService.getAllUnits();
             unitSelect.innerHTML = `<option value="">請選擇單位</option>` + 
                 units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
         } catch(e) { console.error("載入單位失敗", e); }
 
-        // B. 單位切換時 -> 載入該單位人員
+        // B. 載入單位人員
         unitSelect.addEventListener('change', async () => {
             const uid = unitSelect.value;
             userSelect.innerHTML = '<option>載入中...</option>';
@@ -99,35 +96,29 @@ export class SwapApplyPage {
             btnImpersonate.disabled = !userSelect.value;
         });
 
-        // C. 執行切換身分
-        btnImpersonate.addEventListener('click', async () => {
+        // C. 切換身分
+        btnImpersonate.addEventListener('click', () => {
             const targetUid = userSelect.value;
             const targetUnitId = unitSelect.value;
             const targetName = userSelect.options[userSelect.selectedIndex].text;
 
             if(!targetUid) return;
 
-            // 切換身分狀態
             this.isImpersonating = true;
             this.targetUnitId = targetUnitId;
             
-            // 模擬一個 User 物件 (只需包含必要欄位)
             this.currentUser = {
                 uid: targetUid,
-                name: targetName.split(' ')[0], // 去掉職編只留名字
+                name: targetName.split(' ')[0],
                 unitId: targetUnitId,
-                role: 'nurse' // 模擬為一般人員
+                role: 'nurse'
             };
 
-            // UI 更新
             this.updateImpersonationUI();
-            
-            // 重載資料
-            alert(`已切換身分，正在模擬：${this.currentUser.name}`);
-            this.initPageData();
+            this.initPageData(); // 重新載入所有資料
         });
 
-        // D. 綁定退出按鈕 (動態生成的)
+        // D. 恢復身分
         document.addEventListener('click', (e) => {
             if(e.target && e.target.id === 'btn-exit-impersonate') {
                 this.exitImpersonation();
@@ -141,24 +132,18 @@ export class SwapApplyPage {
         this.targetUnitId = this.realUser.unitId;
         
         this.updateImpersonationUI();
-        alert("已退出模擬，恢復管理者身分");
         this.initPageData();
     }
 
     updateImpersonationUI() {
-        const statusDiv = document.getElementById('impersonation-status');
+        const statusSpan = document.getElementById('impersonation-status');
         const nameSpan = document.getElementById('current-impersonating-name');
-        const container = document.getElementById('admin-impersonate-section');
-
+        
         if (this.isImpersonating) {
-            statusDiv.style.display = 'block';
+            statusSpan.style.display = 'inline-flex'; // 使用 inline-flex 讓按鈕排版較好
             nameSpan.textContent = this.currentUser.name;
-            container.classList.add('border-warning');
-            container.style.backgroundColor = '#fff3cd'; // 黃色背景提示
         } else {
-            statusDiv.style.display = 'none';
-            container.classList.remove('border-warning');
-            container.style.backgroundColor = '';
+            statusSpan.style.display = 'none';
             // 重置選單
             document.getElementById('admin-unit-select').value = '';
             document.getElementById('admin-user-select').innerHTML = '<option value="">請先選擇單位</option>';
@@ -167,16 +152,17 @@ export class SwapApplyPage {
         }
     }
 
-    // --- 資料載入與重置 ---
+    // --- 資料重置與載入 ---
     initPageData() {
-        // 重置 UI
         document.getElementById('swap-workspace').style.display = 'none';
         this.pendingSwaps = [];
         this.tempSource = null;
         this.updateSwapListUI();
 
-        // 載入該身分的資料
+        // 根據目前的 targetUnitId 載入班表選單
         this.loadScheduleList();
+        
+        // 根據目前的 currentUser 載入歷史紀錄
         this.loadMyHistory();
     }
 
@@ -185,7 +171,6 @@ export class SwapApplyPage {
         const tbody = document.getElementById('history-tbody');
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 載入紀錄中...</td></tr>';
         
-        // 這裡會使用 this.currentUser (可能是模擬的人)
         const list = await SwapService.getMyAppliedRequests(this.currentUser.uid);
         tbody.innerHTML = SwapApplyTemplate.renderHistoryRows(list);
     }
@@ -199,7 +184,6 @@ export class SwapApplyPage {
             const month = new Date().getMonth() + 1;
             const schedules = [];
             
-            // 讀取 this.targetUnitId (模擬時會變更)
             const s1 = await ScheduleService.getSchedule(this.targetUnitId, year, month);
             if(s1 && s1.status === 'published') schedules.push(s1);
             
@@ -240,7 +224,6 @@ export class SwapApplyPage {
                 userService.getUnitStaff(this.targetUnitId)
             ]);
             
-            // 傳入 currentUser 以便標示 "我"
             const html = SwapApplyTemplate.renderMatrix(schedule, staff, this.currentUser, this.currentYear, this.currentMonth);
             container.innerHTML = html;
 
@@ -249,7 +232,7 @@ export class SwapApplyPage {
         }
     }
 
-    // --- 點擊與互動邏輯 (完全依賴 this.currentUser) ---
+    // --- 點擊互動邏輯 ---
     handleCellClick(cell, clickable) {
         if (!clickable) return;
         const uid = cell.dataset.uid;
@@ -315,19 +298,15 @@ export class SwapApplyPage {
                     unitId: this.targetUnitId,
                     year: this.currentYear,
                     month: this.currentMonth,
-                    // 申請人是 "目前的模擬身分"
                     requesterId: this.currentUser.uid,
                     requesterName: this.currentUser.name,
                     requesterDate: item.dateStr,
                     requesterShift: item.shift,
-                    
-                    targetUserId: item.target.uid,
+                    targetUserId: item.target.uid, 
                     targetUserName: item.target.name,
                     targetDate: item.target.dateStr,
                     targetShift: item.target.shift,
-                    
                     reason: finalReason,
-                    // 標註是由管理者代操作 (Optional)
                     createdByAdmin: this.isImpersonating ? this.realUser.uid : null
                 });
             });
@@ -338,7 +317,7 @@ export class SwapApplyPage {
             this.pendingSwaps = [];
             this.updateSwapListUI();
             this.loadMyHistory(); 
-            this.loadGrid(); // 刷新表格
+            this.loadGrid(); 
             
         } catch (e) { alert("失敗: " + e.message); }
         finally {
