@@ -11,30 +11,31 @@ export const SwapApplyTemplate = {
                     <h3><i class="fas fa-exchange-alt text-primary me-2"></i>申請換班 (多筆)</h3>
                 </div>
 
-                <div id="admin-impersonate-section" class="card mb-3 bg-light" style="display:none; border: 1px solid #dee2e6;">
+                <div id="admin-impersonate-section" class="card mb-3 bg-light" style="display:none; border-left: 5px solid #dc3545;">
                     <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
                         
-                        <div class="d-flex align-items-center text-danger fw-bold me-2">
+                        <div class="fw-bold text-danger d-flex align-items-center me-2">
                             <i class="fas fa-user-secret fa-lg me-2"></i>
                             管理員模式：
                         </div>
 
-                        <select id="admin-unit-select" class="form-select form-select-sm w-auto" style="min-width: 150px;">
+                        <select id="admin-unit-select" class="form-select form-select-sm w-auto" style="min-width: 120px;">
                             <option value="">載入中...</option>
                         </select>
 
-                        <select id="admin-user-select" class="form-select form-select-sm w-auto" style="min-width: 150px;" disabled>
-                            <option value="">-- 請先選擇單位 --</option>
+                        <select id="admin-user-select" class="form-select form-select-sm w-auto" style="min-width: 120px;" disabled>
+                            <option value="">請先選單位</option>
                         </select>
 
                         <button id="btn-impersonate" class="btn btn-danger btn-sm fw-bold px-3" disabled>
                             切換身分
                         </button>
 
-                        <span id="impersonation-status" class="ms-3 text-primary fw-bold align-items-center" style="display:none;">
-                            <i class="fas fa-eye me-1"></i> 正在模擬：<span id="current-impersonating-name"></span>
-                            <button id="btn-exit-impersonate" class="btn btn-sm btn-outline-secondary ms-2 py-0" style="font-size: 0.8rem;">
-                                恢復
+                        <span id="impersonation-status" class="ms-3 fw-bold text-primary d-flex align-items-center" style="display:none;">
+                            <i class="fas fa-eye me-1"></i> 
+                            正在模擬：<span id="current-impersonating-name" class="me-2"></span>
+                            <button id="btn-exit-impersonate" class="btn btn-sm btn-outline-secondary py-0" style="font-size: 0.8rem;">
+                                <i class="fas fa-times me-1"></i>恢復
                             </button>
                         </span>
                     </div>
@@ -118,7 +119,7 @@ export const SwapApplyTemplate = {
         `;
     },
 
-    // ... (renderMatrix, renderSwapListItems, renderHistoryRows 保持原樣，與上一版相同) ...
+    // 2. 班表矩陣渲染 (維持原樣)
     renderMatrix(schedule, staffList, currentUser, year, month) {
         const daysInMonth = new Date(year, month, 0).getDate();
         const assignments = schedule.assignments || {};
@@ -170,6 +171,7 @@ export const SwapApplyTemplate = {
         return html;
     },
 
+    // 3. 渲染換班清單 (維持原樣)
     renderSwapListItems(items) {
         if (items.length === 0) {
             return `<li class="list-group-item text-center text-muted py-4 bg-transparent border-0">
@@ -201,6 +203,7 @@ export const SwapApplyTemplate = {
         `).join('');
     },
 
+    // 4. 渲染歷史紀錄 (維持原樣)
     renderHistoryRows(requests) {
         if (!requests || requests.length === 0) return '<tr><td colspan="5" class="text-center text-muted p-4">無申請紀錄</td></tr>';
         
