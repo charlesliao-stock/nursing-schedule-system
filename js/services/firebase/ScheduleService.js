@@ -11,6 +11,7 @@ export class ScheduleService {
     
     /**
      * 獲取班表 (含自動串接上個月資料邏輯)
+     * 若當月班表存在但無上個月資料(prevAssignments)，會嘗試補抓並存入
      */
     static async getSchedule(unitId, year, month) {
         try {
@@ -48,7 +49,7 @@ export class ScheduleService {
             
             // 初始化 assignments
             const assignments = {};
-            staffList.forEach(staff => { assignments[staff.uid] = {}; });
+            staffList.forEach(staffId => { assignments[staffId] = {}; });
             
             // 抓取上個月資料做為底稿
             const prevAssignments = await this.fetchPrevMonthAssignments(unitId, year, month);
@@ -62,6 +63,7 @@ export class ScheduleService {
                 updatedAt: serverTimestamp()
             };
             
+            // 使用 setDoc merge 確保建立
             await setDoc(docRef, initData, { merge: true });
             return initData;
         } catch (error) { throw error; }
@@ -115,6 +117,7 @@ export class ScheduleService {
                 updatedAt: serverTimestamp() 
             };
 
+            // 如果有傳入上個月資料，則一併更新確保不遺失
             if (prevAssignments) {
                 payload.prevAssignments = prevAssignments;
             }
