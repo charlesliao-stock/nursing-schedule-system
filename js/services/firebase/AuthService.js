@@ -3,8 +3,9 @@ import { firebaseService } from "./FirebaseService.js";
 
 class AuthService {
     constructor() { 
-        this.currentUser = null;       // Firebase Auth 的基本 User 物件
-        this.currentUserProfile = null; // ✨ 新增：Firestore 的完整 User Profile (含 role)
+        this.currentUser = null;        // Firebase Auth User
+        this.currentUserProfile = null; // 真實身分的 Firestore Profile
+        this.impersonatedProfile = null; // 模擬的身分 Profile
     }
 
     async login(email, password) {
@@ -23,7 +24,8 @@ class AuthService {
             const auth = firebaseService.getAuth();
             await signOut(auth);
             this.currentUser = null;
-            this.currentUserProfile = null; // ✨ 登出時記得清空 Profile
+            this.currentUserProfile = null;
+            this.impersonatedProfile = null; // 清除模擬狀態
             return true;
         } catch (error) {
             console.error("登出失敗:", error);
@@ -36,7 +38,8 @@ class AuthService {
         onAuthStateChanged(auth, (user) => {
             this.currentUser = user;
             if (!user) {
-                this.currentUserProfile = null; // 確保未登入時清空
+                this.currentUserProfile = null;
+                this.impersonatedProfile = null;
             }
             callback(user);
         });
@@ -45,19 +48,43 @@ class AuthService {
     getCurrentUser() { return this.currentUser; }
 
     /**
-     * ✨ 新增：設定完整的使用者 Profile (由 App.js 呼叫)
-     * 用來快取 Firestore 的資料，避免重複查詢
+     * 設定真實使用者的 Profile
      */
     setProfile(profile) {
         this.currentUserProfile = profile;
     }
 
     /**
-     * ✨ 新增：取得完整的使用者 Profile (由 UI 元件呼叫)
-     * 直接回傳記憶體中的資料，不經過資料庫
+     * [關鍵] 取得當前身分 (支援模擬)
+     * 若有模擬身分，回傳模擬物件，並標記 isImpersonating
      */
     getProfile() {
+        if (this.impersonatedProfile) {
+            return {
+                ...this.impersonatedProfile,
+                isImpersonating: true,
+                originalRole: this.currentUserProfile?.role // 保留原始權限
+            };
+        }
         return this.currentUserProfile;
+    }
+
+    /**
+     * [新功能] 開始模擬
+     * @param {Object} targetProfile 目標使用者的 Profile
+     */
+    impersonate(targetProfile) {
+        this.impersonatedProfile = targetProfile;
+        // 強制重新整理頁面以套用新身分
+        window.location.reload();
+    }
+
+    /**
+     * [新功能] 停止模擬
+     */
+    stopImpersonation() {
+        this.impersonatedProfile = null;
+        window.location.reload();
     }
 
     _formatError(code) {
