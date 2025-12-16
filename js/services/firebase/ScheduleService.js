@@ -9,33 +9,85 @@ export class ScheduleService {
         return `${unitId}_${year}_${String(month).padStart(2, '0')}`;
     }
     
+    /**
+     * 獲取班表 (含自動串接上個月資料邏輯)
+     */
     static async getSchedule(unitId, year, month) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? docSnap.data() : null;
+
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                
+                // 檢查是否已存有上個月資料，若無則補抓 (為了灰色區塊顯示)
+                if (!data.prevAssignments) {
+                    console.log("偵測到無上月資料，嘗試補抓...");
+                    const prevAssignments = await this.fetchPrevMonthAssignments(unitId, year, month);
+                    data.prevAssignments = prevAssignments;
+                    
+                    // 補寫回資料庫，下次就不用再抓
+                    await updateDoc(docRef, { prevAssignments: prevAssignments });
+                }
+                return data;
+            }
+            return null;
         } catch (error) { throw error; }
     }
 
+    /**
+     * 建立空白班表 (同時抓取上個月資料)
+     */
     static async createEmptySchedule(unitId, year, month, staffList = []) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
-            const assignments = {};
-            staffList.forEach(staffId => { assignments[staffId] = {}; });
             
+            // 初始化 assignments
+            const assignments = {};
+            staffList.forEach(staff => { assignments[staff.uid] = {}; });
+            
+            // 抓取上個月資料做為底稿
+            const prevAssignments = await this.fetchPrevMonthAssignments(unitId, year, month);
+
             const initData = {
-                unitId, year, month, status: "draft", assignments: assignments,
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                unitId, year, month, 
+                status: "draft", 
+                assignments: assignments,
+                prevAssignments: prevAssignments, // 固化上個月資料
+                createdAt: serverTimestamp(), 
+                updatedAt: serverTimestamp()
             };
             
-            // 使用 setDoc 確保建立
             await setDoc(docRef, initData, { merge: true });
             return initData;
         } catch (error) { throw error; }
+    }
+
+    /**
+     * 輔助：抓取上個月的排班資料
+     */
+    static async fetchPrevMonthAssignments(unitId, year, month) {
+        try {
+            const db = firebaseService.getDb();
+            let prevYear = year;
+            let prevMonth = month - 1;
+            if (prevMonth === 0) { prevMonth = 12; prevYear -= 1; }
+
+            const prevId = this.getScheduleId(unitId, prevYear, prevMonth);
+            const prevSnap = await getDoc(doc(db, "schedules", prevId));
+
+            if (prevSnap.exists()) {
+                return prevSnap.data().assignments || {};
+            }
+            return {}; // 上個月沒資料
+        } catch (e) {
+            console.warn("Fetch prev month failed:", e);
+            return {};
+        }
     }
 
     static async updateShift(unitId, year, month, staffId, day, shiftCode) {
@@ -45,26 +97,29 @@ export class ScheduleService {
             const docRef = doc(db, "schedules", scheduleId);
             const fieldPath = `assignments.${staffId}.${day}`;
             
-            // 單一更新仍可用 updateDoc，但若擔心文件遺失，可改用 setDoc merge
-            // 這裡為了效能維持 updateDoc，但前端需確保 Schedule 已初始化
             await updateDoc(docRef, { [fieldPath]: shiftCode, updatedAt: serverTimestamp() });
             return true;
         } catch (error) { throw error; }
     }
 
-    // ✅ 修正：使用 setDoc + merge 解決 "No document to update"
-    static async updateAllAssignments(unitId, year, month, assignments) {
+    // 更新時，若有傳入 prevAssignments 也要一併更新 (確保資料一致)
+    static async updateAllAssignments(unitId, year, month, assignments, prevAssignments = null) {
         try {
             const db = firebaseService.getDb();
             const scheduleId = this.getScheduleId(unitId, year, month);
             const docRef = doc(db, "schedules", scheduleId);
             
-            await setDoc(docRef, { 
-                unitId, year, month, // 確保基本欄位存在
+            const payload = { 
+                unitId, year, month,
                 assignments: assignments, 
                 updatedAt: serverTimestamp() 
-            }, { merge: true });
+            };
+
+            if (prevAssignments) {
+                payload.prevAssignments = prevAssignments;
+            }
             
+            await setDoc(docRef, payload, { merge: true });
             return true;
         } catch (error) { 
             console.error("Update Assignments Error:", error);
@@ -72,7 +127,6 @@ export class ScheduleService {
         }
     }
 
-    // ✅ 修正：同樣使用 setDoc + merge
     static async updateStatus(unitId, year, month, status) {
         try {
             const db = firebaseService.getDb();
