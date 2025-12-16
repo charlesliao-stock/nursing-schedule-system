@@ -1,6 +1,7 @@
 export const SwapApplyTemplate = {
     // 1. 主畫面佈局
     renderLayout() {
+        // 理由選項
         const reasons = ['單位人力調整', '公假', '病假', '喪假', '支援', '個人因素', '其他'];
         const reasonOptions = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
 
@@ -10,28 +11,32 @@ export const SwapApplyTemplate = {
                     <h3><i class="fas fa-exchange-alt text-primary me-2"></i>申請換班 (多筆)</h3>
                 </div>
 
-                <div id="admin-impersonate-section" class="card shadow-sm mb-4 border-left-danger" style="display:none; background-color: #fff5f5;">
-                    <div class="card-body py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fas fa-user-secret text-danger fa-lg"></i>
-                            <strong class="text-danger">管理者模式：</strong>
-                            <select id="admin-unit-select" class="form-select form-select-sm w-auto" style="min-width: 150px;">
-                                <option value="">載入中...</option>
-                            </select>
-                            <select id="admin-user-select" class="form-select form-select-sm w-auto" style="min-width: 150px;" disabled>
-                                <option value="">-- 請先選擇單位 --</option>
-                            </select>
-                            <button id="btn-impersonate" class="btn btn-danger btn-sm text-white fw-bold" disabled>
-                                <i class="fas fa-mask me-1"></i> 切換身分
-                            </button>
-                        </div>
+                <div id="admin-impersonate-section" class="card mb-3 bg-light" style="display:none; border: 1px solid #dee2e6;">
+                    <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
                         
-                        <div id="impersonation-status" class="alert alert-danger mb-0 py-1 px-3 small border-danger text-dark fw-bold" style="display:none;">
-                            正在模擬：<span id="current-impersonating-name" class="text-danger fs-6 mx-1"></span>
-                            <button id="btn-exit-impersonate" class="btn btn-sm btn-outline-dark bg-white ms-3 py-0" style="font-size: 0.8rem;">
-                                退出模擬
-                            </button>
+                        <div class="d-flex align-items-center text-danger fw-bold me-2">
+                            <i class="fas fa-user-secret fa-lg me-2"></i>
+                            管理員模式：
                         </div>
+
+                        <select id="admin-unit-select" class="form-select form-select-sm w-auto" style="min-width: 150px;">
+                            <option value="">載入中...</option>
+                        </select>
+
+                        <select id="admin-user-select" class="form-select form-select-sm w-auto" style="min-width: 150px;" disabled>
+                            <option value="">-- 請先選擇單位 --</option>
+                        </select>
+
+                        <button id="btn-impersonate" class="btn btn-danger btn-sm fw-bold px-3" disabled>
+                            切換身分
+                        </button>
+
+                        <span id="impersonation-status" class="ms-3 text-primary fw-bold align-items-center" style="display:none;">
+                            <i class="fas fa-eye me-1"></i> 正在模擬：<span id="current-impersonating-name"></span>
+                            <button id="btn-exit-impersonate" class="btn btn-sm btn-outline-secondary ms-2 py-0" style="font-size: 0.8rem;">
+                                恢復
+                            </button>
+                        </span>
                     </div>
                 </div>
 
@@ -41,7 +46,7 @@ export const SwapApplyTemplate = {
                         <select id="schedule-select" class="form-select w-auto">
                             <option value="">載入中...</option>
                         </select>
-                        <button id="btn-load-grid" class="btn btn-primary">
+                        <button id="btn-load-grid" class="btn btn-primary text-nowrap">
                             <i class="fas fa-table me-1"></i> 載入班表
                         </button>
                     </div>
@@ -113,7 +118,7 @@ export const SwapApplyTemplate = {
         `;
     },
 
-    // 2. 班表矩陣渲染
+    // ... (renderMatrix, renderSwapListItems, renderHistoryRows 保持原樣，與上一版相同) ...
     renderMatrix(schedule, staffList, currentUser, year, month) {
         const daysInMonth = new Date(year, month, 0).getDate();
         const assignments = schedule.assignments || {};
@@ -133,7 +138,6 @@ export const SwapApplyTemplate = {
         staffList.forEach(s => {
             const isMe = s.uid === currentUser.uid;
             const rowClass = isMe ? 'table-info' : '';
-            // 如果是自己，首欄固定並高亮
             const stickyStyle = isMe ? 'background-color:#cff4fc;' : 'background-color:#fff;';
             
             html += `<tr class="${rowClass}">`;
@@ -146,7 +150,6 @@ export const SwapApplyTemplate = {
                 const shift = userShifts[d] || '';
                 const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 
-                // 檢查是否為過去日期
                 const isPast = dateStr < todayStr;
                 const isEmpty = !shift; 
                 const clickable = !isPast && !isEmpty;
@@ -167,7 +170,6 @@ export const SwapApplyTemplate = {
         return html;
     },
 
-    // 3. 渲染換班清單 (購物車)
     renderSwapListItems(items) {
         if (items.length === 0) {
             return `<li class="list-group-item text-center text-muted py-4 bg-transparent border-0">
@@ -199,7 +201,6 @@ export const SwapApplyTemplate = {
         `).join('');
     },
 
-    // 4. 渲染歷史紀錄
     renderHistoryRows(requests) {
         if (!requests || requests.length === 0) return '<tr><td colspan="5" class="text-center text-muted p-4">無申請紀錄</td></tr>';
         
