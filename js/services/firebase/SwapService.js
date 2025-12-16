@@ -1,6 +1,6 @@
 import { firebaseService } from "./FirebaseService.js";
 import { 
-    collection, query, where, getDocs, doc, setDoc, updateDoc, serverTimestamp 
+    collection, query, where, getDocs, doc, setDoc, updateDoc, serverTimestamp, orderBy 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ScheduleService } from "./ScheduleService.js";
 
@@ -15,7 +15,6 @@ export class SwapService {
             const payload = {
                 ...data,
                 id: newDocRef.id,
-                // 確保寫入 targetUserId (新標準)
                 targetUserId: data.targetUserId || data.targetId,
                 status: 'pending_target', 
                 createdAt: serverTimestamp(),
@@ -24,50 +23,69 @@ export class SwapService {
             
             await setDoc(newDocRef, payload);
             return newDocRef.id;
-        } catch (error) { throw error; }
+        } catch (error) {
+            console.error("Error creating swap request:", error);
+            throw error;
+        }
     }
 
-    // 2. 取得「與我相關」的換班 (包含：我是申請人 OR 我是目標對象)
-    static async getUserRequests(uid) {
+    // 2. [关键修正] 取得「我發起的」申請 (用於 SwapApplyPage 的歷史紀錄)
+    static async getMyAppliedRequests(uid) {
         try {
             const db = firebaseService.getDb();
             const colRef = collection(db, "swap_requests");
+            
+            // 查詢條件：requesterId 是我
+            const q = query(colRef, where("requesterId", "==", uid));
+            
+            const snapshot = await getDocs(q);
+            const list = snapshot.docs.map(d => d.data());
 
-            console.log("【SwapService】查詢 UID:", uid);
-
-            // 修正：分別查詢 targetUserId (新) 與 targetId (舊)，確保不漏資料
-            // Firestore 不支援 OR 查詢，故分開查
-            const q1 = query(colRef, where("targetUserId", "==", uid));
-            const q2 = query(colRef, where("targetId", "==", uid));
-            const q3 = query(colRef, where("requesterId", "==", uid)); // 順便查我申請的
-
-            const [snap1, snap2, snap3] = await Promise.all([
-                getDocs(q1), getDocs(q2), getDocs(q3)
-            ]);
-
-            // 合併並去重
-            const map = new Map();
-            [...snap1.docs, ...snap2.docs, ...snap3.docs].forEach(d => {
-                map.set(d.id, d.data());
-            });
-
-            const list = Array.from(map.values());
-            console.log("【SwapService】共找到相關資料:", list.length);
-
-            // 前端排序 (日期新 -> 舊)
+            // 前端排序 (新 -> 舊)
             return list.sort((a, b) => {
                 const tA = a.createdAt?.seconds || 0;
                 const tB = b.createdAt?.seconds || 0;
                 return tB - tA; 
             });
-
         } catch (error) {
-            console.error("getUserRequests Error:", error);
+            console.error("getMyAppliedRequests Error:", error);
             return [];
         }
     }
 
-    // 3. 取得「單位管理者」需審核的清單
+    // 3. 取得「待我審核」的申請 (用於 SwapReviewPage - 我是被換班者)
+    // 註：這與 getMyAppliedRequests 不同，這是別人發給我的
+    static async getIncomingRequests(uid) {
+        try {
+            const db = firebaseService.getDb();
+            const colRef = collection(db, "swap_requests");
+
+            // 查詢條件：targetUserId 是我
+            const q1 = query(colRef, where("targetUserId", "==", uid));
+            // 相容舊資料
+            const q2 = query(colRef, where("targetId", "==", uid));
+
+            const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+            
+            // 合併去重
+            const map = new Map();
+            [...snap1.docs, ...snap2.docs].forEach(d => map.set(d.id, d.data()));
+            
+            const list = Array.from(map.values());
+
+            return list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        } catch (error) {
+            console.error("getIncomingRequests Error:", error);
+            return [];
+        }
+    }
+
+    // 為了相容舊程式碼，保留 getUserRequests (指向 getIncomingRequests)
+    static async getUserRequests(uid) {
+        return this.getIncomingRequests(uid);
+    }
+
+    // 4. 取得「單位管理者」需審核的清單
     static async getManagerPendingRequests(unitId) {
         try {
             const db = firebaseService.getDb();
@@ -76,17 +94,19 @@ export class SwapService {
                 where("unitId", "==", unitId),
                 where("status", "==", "pending_manager")
             );
-            const snap = await getDocs(q);
-            return snap.docs.map(d => d.data());
-        } catch (error) { return []; }
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(d => d.data());
+        } catch (error) {
+            console.error("getManagerPendingRequests Error:", error);
+            return [];
+        }
     }
 
-    // 4. 個人(被換班者) 審核
+    // 5. 個人審核動作
     static async reviewByTarget(requestId, action) {
         try {
             const db = firebaseService.getDb();
             const ref = doc(db, "swap_requests", requestId);
-            
             const newStatus = action === 'agree' ? 'pending_manager' : 'rejected';
             
             await updateDoc(ref, {
@@ -98,7 +118,7 @@ export class SwapService {
         } catch (error) { throw error; }
     }
 
-    // 5. 管理者 審核 (核准後修正班表)
+    // 6. 管理者審核動作
     static async reviewByManager(requestId, action, managerId, requestData) {
         try {
             const db = firebaseService.getDb();
@@ -119,12 +139,10 @@ export class SwapService {
         } catch (error) { throw error; }
     }
 
-    // 6. 寫入 Schedule
+    // 7. 寫入 Schedule
     static async applySwapToSchedule(req) {
-        // 相容新舊欄位
         const { unitId, year, month, requesterId, requesterShift, targetUserId, targetId, targetShift, requesterDate } = req;
         const targetUser = targetUserId || targetId;
-
         const day = parseInt(requesterDate.split('-')[2]);
 
         const schedule = await ScheduleService.getSchedule(unitId, year, month);
