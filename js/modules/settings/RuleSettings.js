@@ -7,6 +7,7 @@ export class RuleSettings {
         this.targetUnitId = null; 
         this.currentConfig = null; 
         this.activeModalSubKey = null; 
+        this.tiersModal = null; // 儲存 Modal 實例
     }
 
     async render() {
@@ -35,7 +36,6 @@ export class RuleSettings {
                     </ul>
 
                     <div class="tab-content">
-                        
                         <div class="tab-pane fade show active" id="tab-min">
                             <div class="card shadow mb-4">
                                 <div class="card-body">
@@ -51,76 +51,39 @@ export class RuleSettings {
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="card shadow mb-4 border-left-danger h-100">
-                                        <div class="card-header py-3 bg-white">
-                                            <h6 class="m-0 fw-bold text-danger"><i class="fas fa-gavel"></i> 勞基法與硬性規範 (不可違反)</h6>
-                                        </div>
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-danger"><i class="fas fa-gavel"></i> 勞基法與硬性規範</h6></div>
                                         <div class="card-body">
                                             <div class="mb-4">
                                                 <div class="form-check form-switch mb-2">
                                                     <input class="form-check-input" type="checkbox" id="rule-min-interval-11">
                                                     <label class="form-check-label fw-bold" for="rule-min-interval-11">班與班間隔至少 11 小時</label>
                                                 </div>
-                                                <small class="text-muted d-block ms-4 mb-2">
-                                                    系統將強制禁止「小接白 (E-D)」等間隔不足 11 小時之排法。<br>
-                                                    註：大夜(N) 接白(D) 或小(E) 因間隔足夠，視為允許。
-                                                </small>
                                             </div>
-                                            <hr>
                                             <div class="mb-3">
                                                 <label class="form-label fw-bold">一週內班別種類上限</label>
                                                 <select class="form-select" id="rule-max-shift-types">
                                                     <option value="99">不限制</option>
-                                                    <option value="2">最多 2 種 (如: D/E 或 D/N)</option>
-                                                    <option value="1">僅限 1 種 (單一班別)</option>
+                                                    <option value="2">最多 2 種</option>
+                                                    <option value="1">僅限 1 種</option>
                                                 </select>
-                                                <small class="text-muted mt-1 d-block">一週內 (週一至週日) 混合班別的種類限制。</small>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-
                                 <div class="col-md-6">
                                     <div class="card shadow mb-4 border-left-info h-100">
-                                        <div class="card-header py-3 bg-white">
-                                            <h6 class="m-0 fw-bold text-info"><i class="fas fa-sliders-h"></i> 單位排班原則 (軟性設定)</h6>
-                                        </div>
+                                        <div class="card-header py-3 bg-white"><h6 class="m-0 fw-bold text-info"><i class="fas fa-sliders-h"></i> 單位排班原則</h6></div>
                                         <div class="card-body">
                                             <div class="mb-4">
                                                 <div class="form-check form-switch mb-2">
                                                     <input class="form-check-input" type="checkbox" id="rule-pre-night-off">
-                                                    <label class="form-check-label fw-bold" for="rule-pre-night-off">排大夜 (N) 的前一天必須是 N 或 OFF</label>
+                                                    <label class="form-check-label fw-bold" for="rule-pre-night-off">排大夜前一天須為 N 或 OFF</label>
                                                 </div>
-                                                <small class="text-muted d-block ms-4">避免由 D 或 E 直接跳接 N (逆向且間隔短)。</small>
                                             </div>
-                                            
-                                            <hr>
-
                                             <div class="row g-3">
-                                                <div class="col-md-6">
-                                                    <label class="form-label fw-bold">同種班最少連續</label>
-                                                    <div class="input-group">
-                                                        <input type="number" class="form-control" id="rule-min-consecutive" value="2" min="1">
-                                                        <span class="input-group-text">天</span>
-                                                    </div>
-                                                    <small class="text-muted">避免花花班 (如: D-OFF-D)</small>
-                                                </div>
-
-                                                <div class="col-md-6">
-                                                    <label class="form-label fw-bold">夜班最多連續</label>
-                                                    <div class="input-group">
-                                                        <input type="number" class="form-control" id="rule-max-night-consecutive" value="4" min="1">
-                                                        <span class="input-group-text">天</span>
-                                                    </div>
-                                                    <small class="text-muted">單位原則 (E/N)</small>
-                                                </div>
-
-                                                <div class="col-12">
-                                                    <label class="form-label fw-bold">最大連續上班天數</label>
-                                                    <div class="input-group">
-                                                        <input type="number" class="form-control" id="rule-max-work-days" value="6" min="1">
-                                                        <span class="input-group-text">天</span>
-                                                    </div>
-                                                </div>
+                                                <div class="col-md-6"><label class="fw-bold">同種班最少連續</label><input type="number" class="form-control" id="rule-min-consecutive" value="2"></div>
+                                                <div class="col-md-6"><label class="fw-bold">夜班最多連續</label><input type="number" class="form-control" id="rule-max-night-consecutive" value="4"></div>
+                                                <div class="col-12"><label class="fw-bold">最大連續上班天數</label><input type="number" class="form-control" id="rule-max-work-days" value="6"></div>
                                             </div>
                                         </div>
                                     </div>
@@ -135,7 +98,7 @@ export class RuleSettings {
                                     <div>總權重: <span id="total-weight-display" class="badge bg-secondary fs-6">100%</span></div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="alert alert-info small mb-3"><i class="fas fa-info-circle"></i> 設定後請記得儲存。勾選「包夜班不計」可排除包班人員。</div>
+                                    <div class="alert alert-info small mb-3"><i class="fas fa-info-circle"></i> 設定後請記得點擊右上角「儲存設定」。</div>
                                     <div class="row g-3" id="scoring-config-container"></div>
                                 </div>
                             </div>
@@ -155,9 +118,18 @@ export class RuleSettings {
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <span id="modal-sub-label" class="fw-bold text-primary"></span>
                                 <button class="btn btn-sm btn-outline-warning" onclick="window.routerPage.resetTiersToDefault()">
-                                    <i class="fas fa-undo"></i> 恢復預設值
+                                    <i class="fas fa-undo"></i> 恢復預設
                                 </button>
                             </div>
+                            
+                            <div id="modal-exclude-batch-wrapper" class="mb-3 p-2 bg-light rounded border d-none">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="modal-exclude-batch-input">
+                                    <label class="form-check-label fw-bold" for="modal-exclude-batch-input">包班者不計 (Exclude Batch)</label>
+                                </div>
+                                <small class="text-muted">開啟後，計算此指標時將排除包班人員。</small>
+                            </div>
+
                             <table class="table table-sm table-bordered text-center align-middle">
                                 <thead class="table-light"><tr><th>數值 (≤)</th><th>得分</th><th>評語</th><th>操作</th></tr></thead>
                                 <tbody id="tiers-tbody"></tbody>
@@ -165,6 +137,7 @@ export class RuleSettings {
                             <button class="btn btn-sm btn-outline-success w-100" onclick="window.routerPage.addTierRow()">+ 新增階梯</button>
                         </div>
                         <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                             <button type="button" class="btn btn-primary" onclick="window.routerPage.saveTiers()">確認暫存</button>
                         </div>
                     </div>
@@ -179,22 +152,11 @@ export class RuleSettings {
         return html + '</tr>';
     }
 
-    // --- Scoring Render Logic (省略部分以節省篇幅，內容同前一版) ---
+    // 渲染主列表：這裡已經移除包班不計的 Checkbox
     renderCategoryCard(key, category) {
-        // ... (保持原樣)
-        // 為了讓代碼完整，這裡簡略重複關鍵邏輯，您使用上一版的 renderCategoryCard 即可
         let subsHtml = '';
         if (category.subs) {
             Object.entries(category.subs).forEach(([subKey, sub]) => {
-                const batchOption = sub.excludeBatch !== undefined ? `
-                    <div class="form-check d-inline-block ms-2" title="排除包班人員">
-                        <input class="form-check-input sub-exclude-batch" type="checkbox" 
-                               id="sub-exclude-${key}-${subKey}" data-cat="${key}" data-sub="${subKey}" 
-                               ${sub.excludeBatch ? 'checked' : ''}>
-                        <label class="form-check-label small" style="font-size:0.7rem" for="sub-exclude-${key}-${subKey}">包夜班不計</label>
-                    </div>
-                ` : '';
-
                 subsHtml += `
                     <div class="d-flex justify-content-between align-items-center mb-2 ps-3 border-start border-3 border-light py-1">
                         <div class="d-flex flex-column" style="width: 55%;">
@@ -207,7 +169,6 @@ export class RuleSettings {
                                 <i class="fas fa-question-circle text-muted ms-2 cursor-pointer" 
                                    data-bs-toggle="tooltip" data-bs-placement="top" title="${sub.desc || '無說明'}"></i>
                             </div>
-                            ${batchOption}
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:0.75rem" 
@@ -225,6 +186,7 @@ export class RuleSettings {
                 `;
             });
         }
+
         return `
             <div class="col-md-6 col-lg-6">
                 <div class="card h-100 border-left-${this.getColor(key)}">
@@ -249,8 +211,7 @@ export class RuleSettings {
         window.routerPage = this; 
         this.tiersModal = new bootstrap.Modal(document.getElementById('tiers-modal'));
 
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
+        [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).map(el => new bootstrap.Tooltip(el));
 
         const unitSelect = document.getElementById('rule-unit-select');
         let units = await UnitService.getAllUnits();
@@ -261,8 +222,10 @@ export class RuleSettings {
             this.loadRules(units[0].unitId);
         }
 
+        // 綁定右上角的主儲存按鈕
         document.getElementById('btn-save-rules').addEventListener('click', () => this.saveRules());
         
+        // 綁定權重輸入變更事件
         document.getElementById('rule-content').addEventListener('input', (e) => {
             if (e.target.classList.contains('sub-weight') || e.target.classList.contains('sub-enable')) {
                 this.updateTotalWeightDisplay();
@@ -276,10 +239,11 @@ export class RuleSettings {
         const unit = await UnitService.getUnitById(uid);
         if (!unit) return;
 
-        // 1. Scoring Config
+        // 1. Scoring Config (載入與合併)
         const defaultConfig = ScoringService.getDefaultConfig();
         const savedConfig = unit.scoringConfig || {};
         this.currentConfig = JSON.parse(JSON.stringify(defaultConfig));
+        
         Object.keys(savedConfig).forEach(catKey => {
             if(this.currentConfig[catKey] && savedConfig[catKey].subs) {
                 Object.keys(savedConfig[catKey].subs).forEach(subKey => {
@@ -289,6 +253,7 @@ export class RuleSettings {
                         target.enabled = source.enabled;
                         target.weight = source.weight;
                         if(source.tiers) target.tiers = source.tiers;
+                        // 確保 excludeBatch 被正確載入到記憶體中
                         if(source.excludeBatch !== undefined) target.excludeBatch = source.excludeBatch;
                     }
                 });
@@ -305,14 +270,11 @@ export class RuleSettings {
         [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).map(el => new bootstrap.Tooltip(el));
         this.updateTotalWeightDisplay();
 
-        // 2. 載入 Constraints (對應新的全域設定 UI)
+        // 2. 載入 Constraints
         const rules = unit.rules || {};
-        // 勞基法
-        document.getElementById('rule-min-interval-11').checked = rules.minInterval11 !== false; // 預設 true
+        document.getElementById('rule-min-interval-11').checked = rules.minInterval11 !== false;
         document.getElementById('rule-max-shift-types').value = rules.maxShiftTypes || 99;
-        
-        // 單位原則
-        document.getElementById('rule-pre-night-off').checked = rules.preNightOff !== false; // 預設 true
+        document.getElementById('rule-pre-night-off').checked = rules.preNightOff !== false;
         document.getElementById('rule-min-consecutive').value = rules.minConsecutive || 2;
         document.getElementById('rule-max-night-consecutive').value = rules.maxNightConsecutive || 4;
         document.getElementById('rule-max-work-days').value = rules.maxWorkDays || 6;
@@ -328,7 +290,7 @@ export class RuleSettings {
         document.getElementById('rule-content').style.display = 'block';
     }
 
-    // --- Scoring Helper Functions (維持原樣) ---
+    // 更新主畫面的權重顯示 (同時更新記憶體中的 enabled 和 weight 狀態)
     updateTotalWeightDisplay() {
         let grandTotal = 0;
         const categories = ['fairness', 'satisfaction', 'fatigue', 'efficiency', 'cost'];
@@ -337,16 +299,17 @@ export class RuleSettings {
             document.querySelectorAll(`.sub-weight[data-cat="${key}"]`).forEach(input => {
                 const subKey = input.dataset.sub;
                 const enabled = document.getElementById(`sub-enable-${key}-${subKey}`).checked;
-                const excludeEl = document.getElementById(`sub-exclude-${key}-${subKey}`);
-                if (excludeEl && this.currentConfig[key].subs[subKey]) {
-                    this.currentConfig[key].subs[subKey].excludeBatch = excludeEl.checked;
-                }
+                
                 if (enabled) {
                     const val = parseInt(input.value) || 0;
                     catTotal += val;
                     if(this.currentConfig[key].subs[subKey]) {
                         this.currentConfig[key].subs[subKey].weight = val;
                         this.currentConfig[key].subs[subKey].enabled = enabled;
+                    }
+                } else {
+                     if(this.currentConfig[key].subs[subKey]) {
+                        this.currentConfig[key].subs[subKey].enabled = false;
                     }
                 }
             });
@@ -358,10 +321,25 @@ export class RuleSettings {
         totalEl.className = `badge fs-6 ${grandTotal === 100 ? 'bg-success' : 'bg-warning text-dark'}`;
     }
     
+    // 開啟 Modal 時
     openTiersModal(catKey, subKey) {
         this.activeModalSubKey = { cat: catKey, sub: subKey };
         const subConfig = this.currentConfig[catKey].subs[subKey];
         document.getElementById('modal-sub-label').textContent = subConfig.label;
+
+        // --- 處理包班不計開關的顯示與狀態 ---
+        const excludeWrapper = document.getElementById('modal-exclude-batch-wrapper');
+        const excludeInput = document.getElementById('modal-exclude-batch-input');
+        
+        // 只有當此項目支援 excludeBatch (在預設config中有定義) 時才顯示
+        if (subConfig.excludeBatch !== undefined) {
+            excludeWrapper.classList.remove('d-none');
+            excludeInput.checked = subConfig.excludeBatch;
+        } else {
+            excludeWrapper.classList.add('d-none');
+        }
+        // -------------------------------------
+
         const tbody = document.getElementById('tiers-tbody');
         tbody.innerHTML = '';
         const tiers = subConfig.tiers || [];
@@ -386,14 +364,25 @@ export class RuleSettings {
         const { cat, sub } = this.activeModalSubKey;
         const defaultConfig = ScoringService.getDefaultConfig();
         const defaultTiers = defaultConfig[cat].subs[sub].tiers;
+        
+        // 恢復 Tiers
         const tbody = document.getElementById('tiers-tbody');
         tbody.innerHTML = '';
         defaultTiers.forEach(t => this.addTierRow(t));
+
+        // 恢復 Exclude Batch 設定
+        const excludeInput = document.getElementById('modal-exclude-batch-input');
+        if (defaultConfig[cat].subs[sub].excludeBatch !== undefined) {
+            excludeInput.checked = defaultConfig[cat].subs[sub].excludeBatch;
+        }
     }
 
+    // Modal 內的確認按鈕 (暫存到記憶體)
     saveTiers() {
         if (!this.activeModalSubKey) return;
         const { cat, sub } = this.activeModalSubKey;
+        
+        // 1. 儲存 Tiers
         const rows = document.querySelectorAll('#tiers-tbody tr');
         const newTiers = [];
         rows.forEach(tr => {
@@ -405,16 +394,26 @@ export class RuleSettings {
         });
         newTiers.sort((a, b) => a.limit - b.limit);
         this.currentConfig[cat].subs[sub].tiers = newTiers;
+
+        // 2. 儲存 Exclude Batch 設定 (關鍵修復)
+        const excludeWrapper = document.getElementById('modal-exclude-batch-wrapper');
+        if (!excludeWrapper.classList.contains('d-none')) {
+            const isChecked = document.getElementById('modal-exclude-batch-input').checked;
+            this.currentConfig[cat].subs[sub].excludeBatch = isChecked;
+        }
+
         this.tiersModal.hide();
     }
 
+    // 全域儲存按鈕 (寫入資料庫)
     async saveRules() {
         const btn = document.getElementById('btn-save-rules');
         btn.disabled = true;
         try {
+            // 確保權重有更新 (但不要去抓 DOM 裡的 excludeBatch，因為已經移走了)
             this.updateTotalWeightDisplay();
             
-            // 1. 收集 Constraints (全域參數)
+            // 1. 收集 Rules
             const rules = {
                 minInterval11: document.getElementById('rule-min-interval-11').checked,
                 maxShiftTypes: document.getElementById('rule-max-shift-types').value,
@@ -432,9 +431,9 @@ export class RuleSettings {
                 reqs[shift][day] = parseInt(input.value) || 0;
             });
 
-            // 3. 儲存
+            // 3. 儲存 (使用已經在記憶體中更新好的 currentConfig)
             await UnitService.updateUnit(this.targetUnitId, { 
-                scoringConfig: this.currentConfig,
+                scoringConfig: this.currentConfig, // 這裡包含了 Modal 中修改過的 excludeBatch
                 rules: rules,
                 staffRequirements: reqs
             });
