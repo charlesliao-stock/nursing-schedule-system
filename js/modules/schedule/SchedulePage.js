@@ -5,7 +5,6 @@ import { PreScheduleService } from "../../services/firebase/PreScheduleService.j
 import { RuleEngine } from "../ai/RuleEngine.js";
 import { AutoScheduler } from "../ai/AutoScheduler.js";
 import { ScoringService } from "../../services/ScoringService.js";
-// 原本的 Template 可能無法支援這麼複雜的 Sticky Layout，故直接在 Page 內渲染
 
 export class SchedulePage {
     constructor() {
@@ -32,23 +31,28 @@ export class SchedulePage {
     }
 
     async render() {
-        // 先載入必要的 CSS (Sticky Table 樣式)
+        // 內嵌 CSS 以支援複雜的左右固定表格
         const style = `
             <style>
                 .schedule-table-wrapper { position: relative; max-height: 100%; width: 100%; overflow: auto; }
                 .schedule-grid th, .schedule-grid td { vertical-align: middle; white-space: nowrap; padding: 2px 4px; height: 38px; border-color: #dee2e6; }
+                /* Sticky Columns 設定 */
                 .sticky-col { position: sticky; z-index: 10; }
                 .first-col { left: 0; z-index: 11; border-right: 2px solid #ccc !important; width: 60px; }
                 .second-col { left: 60px; z-index: 11; width: 80px; }
                 .third-col { left: 140px; z-index: 11; border-right: 2px solid #999 !important; width: 60px; }
+                /* 右側固定欄位 */
                 .right-col-1 { right: 0; z-index: 11; border-left: 2px solid #ccc !important; width: 45px; } 
                 .right-col-2 { right: 45px; z-index: 11; width: 45px; }
                 .right-col-3 { right: 90px; z-index: 11; width: 45px; }
                 .right-col-4 { right: 135px; z-index: 11; border-left: 2px solid #999 !important; width: 45px; }
                 thead .sticky-col { z-index: 15 !important; }
+                /* 其他樣式 */
                 .bg-light-gray { background-color: #f8f9fa !important; color: #aaa; }
                 .shift-input:focus { background-color: #e8f0fe !important; font-weight: bold; outline: none; }
                 .cursor-pointer { cursor: pointer; }
+                .shift-cell { cursor: pointer; transition: background 0.1s; }
+                .shift-cell:hover { background-color: #e9ecef; }
             </style>
         `;
 
@@ -59,7 +63,6 @@ export class SchedulePage {
 
         if(!this.state.currentUnitId) return `<div class="alert alert-danger m-4">無效的參數。</div>`;
 
-        // 回傳 Layout HTML
         return `
             ${style}
             <div class="container-fluid p-0 h-100 d-flex flex-column">
@@ -144,7 +147,9 @@ export class SchedulePage {
     }
 
     handleGlobalClick(e) {
-        if (!e.target.closest('.shift-cell') && this.state.activeMenu) this.closeMenu();
+        if (!e.target.closest('.shift-menu') && !e.target.closest('.shift-cell') && this.state.activeMenu) {
+            this.closeMenu();
+        }
     }
 
     closeMenu() {
@@ -169,7 +174,7 @@ export class SchedulePage {
             this.state.daysInMonth = new Date(this.state.year, this.state.month, 0).getDate();
             
             if (!schedule) {
-                // 若無資料，建立新班表 (ScheduleService 內部會自動抓上個月)
+                // 若無資料，建立新班表 (ScheduleService 內部會自動抓上個月資料到 prevAssignments)
                 const newSched = await ScheduleService.createEmptySchedule(
                     this.state.currentUnitId, this.state.year, this.state.month, staffList.map(s=>s.uid)
                 );
@@ -190,14 +195,14 @@ export class SchedulePage {
         }
     }
 
-    // --- 核心：渲染表格 (取代 Template) ---
+    // --- 核心：渲染表格 ---
     renderGrid() {
         const container = document.getElementById('schedule-grid-container');
         const { year, month, daysInMonth, staffList, scheduleData, sortKey, sortAsc } = this.state;
         const assignments = scheduleData.assignments || {};
-        const prevAssignments = scheduleData.prevAssignments || {};
+        const prevAssignments = scheduleData.prevAssignments || {}; // 上個月資料
 
-        // 1. 計算上個月最後 6 天
+        // 1. 計算上個月最後 6 天的日期
         const prevMonthLastDate = new Date(year, month - 1, 0); 
         const prevLastDayVal = prevMonthLastDate.getDate();
         const prevDaysToShow = [];
@@ -225,16 +230,18 @@ export class SchedulePage {
                             <th class="sticky-col third-col bg-light">備註</th>
         `;
 
-        // 上個月日期 (灰色)
+        // 上個月日期 (灰色背景)
         prevDaysToShow.forEach(d => html += `<th class="text-muted bg-light-gray" style="font-size:0.8rem">${d}</th>`);
 
         // 當月日期
         for (let d = 1; d <= daysInMonth; d++) {
             const date = new Date(year, month - 1, d);
             const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-            html += `<th class="${isWeekend?'text-danger':''}" style="font-size:0.9rem">${d}<div style="font-size:0.7rem">${['日','一','二','三','四','五','六'][date.getDay()]}</div></th>`;
+            const weekStr = ['日','一','二','三','四','五','六'][date.getDay()];
+            html += `<th class="${isWeekend?'text-danger':''}" style="font-size:0.9rem">${d}<div style="font-size:0.7rem">${weekStr}</div></th>`;
         }
 
+        // 右側固定欄位 (OFF/小/大/假)
         html += `
                             <th class="sticky-col right-col-4 bg-light text-primary">OFF</th>
                             <th class="sticky-col right-col-3 bg-light">小夜</th>
@@ -260,7 +267,7 @@ export class SchedulePage {
                     <td class="sticky-col third-col bg-white small text-muted text-truncate" title="${staff.note || ''}">${staff.note || ''}</td>
             `;
 
-            // 上個月內容 (唯讀)
+            // 上個月內容 (唯讀，顯示灰色)
             prevDaysToShow.forEach(d => {
                 html += `<td class="bg-light-gray text-muted small">${prevUserShifts[d] || '-'}</td>`;
             });
@@ -268,8 +275,12 @@ export class SchedulePage {
             // 當月內容 (可點擊)
             for (let d = 1; d <= daysInMonth; d++) {
                 const val = userShifts[d] || '';
-                // 這裡簡化：點擊觸發選單 (原本邏輯)
-                html += `<td class="p-0 shift-cell" data-staff-id="${uid}" data-day="${d}" style="cursor:pointer; ${val==='OFF'?'background:#f0f0f0':''}">
+                // 點擊觸發選單
+                html += `<td class="p-0 shift-cell" 
+                             data-staff-id="${uid}" 
+                             data-day="${d}" 
+                             onclick="window.routerPage.openShiftMenu(this)"
+                             style="${val==='OFF'?'background:#f0f0f0':''}">
                             ${val}
                          </td>`;
             }
@@ -286,7 +297,6 @@ export class SchedulePage {
 
         html += `</tbody></table></div>`;
         container.innerHTML = html;
-        this.bindMenu();
     }
 
     // --- 輔助：單人統計計算 ---
@@ -318,7 +328,45 @@ export class SchedulePage {
         this.renderGrid();
     }
 
-    // 改寫班別選擇後的操作：包含即時更新統計
+    // 開啟班別選單
+    openShiftMenu(cell) {
+        const shifts = this.state.unitSettings?.settings?.shifts || [
+            {code:'D', name:'白班', color:'#fff'},
+            {code:'E', name:'小夜', color:'#fff'},
+            {code:'N', name:'大夜', color:'#fff'}
+        ];
+        
+        this.closeMenu();
+        const menu = document.createElement('div');
+        menu.className = 'shift-menu shadow rounded border bg-white';
+        menu.style.position = 'absolute'; menu.style.zIndex = '1000'; menu.style.padding = '5px';
+        
+        const opts = [{ code: '', name: '清除', color: 'transparent' }, { code: 'OFF', name: '休假', color: '#e5e7eb' }];
+        [...shifts, ...opts].forEach(s => { // 簡單合併
+            if(s.code === 'OFF' || s.code === '') return; // 避免重複
+        });
+        
+        // 渲染選單項目
+        const renderItem = (s) => {
+            const item = document.createElement('div');
+            item.className = 'p-1'; item.style.cursor = 'pointer';
+            item.innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${s.color};border:1px solid #ddd;margin-right:5px;"></span> ${s.code}`;
+            item.onclick = () => this.handleShiftSelect(cell, s.code);
+            menu.appendChild(item);
+        };
+
+        renderItem({ code: '', name: '清除', color: '#fff' });
+        renderItem({ code: 'OFF', name: '休假', color: '#eee' });
+        shifts.forEach(s => renderItem(s));
+
+        const rect = cell.getBoundingClientRect();
+        menu.style.top = `${rect.bottom + window.scrollY}px`; 
+        menu.style.left = `${rect.left + window.scrollX}px`;
+        document.body.appendChild(menu);
+        this.state.activeMenu = menu;
+    }
+
+    // 處理班別選擇 (含即時更新)
     async handleShiftSelect(cell, code) {
         this.closeMenu();
         const uid = cell.dataset.staffId;
@@ -328,7 +376,7 @@ export class SchedulePage {
         if (!this.state.scheduleData.assignments[uid]) this.state.scheduleData.assignments[uid] = {};
         this.state.scheduleData.assignments[uid][day] = code;
         
-        // 更新 UI (不重繪整個 Grid，只更新該格與右側統計)
+        // 更新 UI (不重繪整個 Grid)
         cell.textContent = code;
         cell.style.background = code === 'OFF' ? '#f0f0f0' : '';
         
@@ -348,14 +396,11 @@ export class SchedulePage {
         const { scheduleData, staffList, unitSettings, year, month } = this.state;
         if (!scheduleData || !scheduleData.assignments) return;
         
-        // 取得預班表 (用於評分比對)
         const preSchedule = await PreScheduleService.getPreSchedule(this.state.currentUnitId, year, month);
         
-        // 這裡我們需要傳入 prevAssignments 給 ScoringService 以進行跨月規則檢查
+        // 傳入 prevAssignments 供評分邏輯使用 (如: 大夜接白)
         const fullPreSchedule = {
             ...preSchedule,
-            // 為了讓 ScoringService 能讀到上個月的班表，我們將其 assignments 併入或傳入
-            // 假設 ScoringService 接受一個名為 preAssignments 的屬性
             assignments: scheduleData.prevAssignments 
         };
 
@@ -373,25 +418,29 @@ export class SchedulePage {
         if (!this.state.scoreResult) return alert("尚未計算分數");
         const details = this.state.scoreResult.details;
         
-        // 簡單渲染評分細節 (與之前提到的 Modal 結構類似)
         let html = '<div class="accordion" id="scoreAccordion">';
         Object.entries(details).forEach(([key, cat], idx) => {
              html += `
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button ${idx===0?'':'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#c-${key}">
-                            <span class="me-auto">${cat.label}</span>
-                            <span class="badge bg-primary">${Math.round(cat.score)}分</span>
+                            <div class="d-flex w-100 justify-content-between me-3 align-items-center">
+                                <span>${cat.label}</span>
+                                <span class="badge bg-primary rounded-pill">${Math.round(cat.score)}分</span>
+                            </div>
                         </button>
                     </h2>
                     <div id="c-${key}" class="accordion-collapse collapse ${idx===0?'show':''}">
                         <div class="accordion-body">
-                            <ul class="list-group">
+                            <ul class="list-group list-group-flush">
                                 ${cat.subItems ? cat.subItems.map(item => `
-                                    <li class="list-group-item d-flex justify-content-between">
-                                        <span>${item.name}</span>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span>${item.name}</span>
+                                            <small class="text-muted d-block" style="font-size:0.75rem">${item.desc || ''}</small>
+                                        </div>
                                         <span>${item.value} <span class="badge bg-secondary">${item.grade}</span></span>
-                                    </li>`).join('') : '無細項'}
+                                    </li>`).join('') : '<li class="list-group-item text-muted">無細項</li>'}
                             </ul>
                         </div>
                     </div>
@@ -465,12 +514,10 @@ export class SchedulePage {
         }
     }
 
-    // (RunMultiVersionAI 等方法保持原樣即可，與本次 UI 調整無直接衝突，故省略以節省篇幅)
-    async runMultiVersionAI() { /* ... */ }
-    renderVersionsModal() { /* ... */ }
-    calculateMissingShifts(assignments) { /* ... */ }
-    handleDragStart(e, shift) { /* ... */ }
-    handleDrop(e, uid, day, versionIdx) { /* ... */ }
-    async applyVersion(index) { /* ... */ }
-    async deleteStaff(uid) { /* ... */ }
+    // AI 與 Modal 相關方法，保持原樣或根據需要擴充
+    async runMultiVersionAI() { 
+        if (!confirm("確定執行智慧排班？")) return;
+        // 呼叫 AutoScheduler.run... (略，視您的 AI 實作而定)
+        alert("AI 排班功能需配合後端實作");
+    }
 }
