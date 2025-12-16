@@ -8,19 +8,14 @@ export class SwapReviewPage {
     }
 
     async render() {
-        // 先顯示基本框架
         this.currentUser = authService.getProfile();
-        // 判斷權限以決定是否顯示管理者頁籤
-        const role = this.currentUser?.role;
-        const isManager = (role === 'unit_manager' || role === 'unit_scheduler' || role === 'system_admin');
-        
-        return SwapReviewTemplate.renderLayout(isManager);
+        return SwapReviewTemplate.renderLayout(false); // 預設 Layout
     }
 
     async afterRender() {
         window.routerPage = this;
 
-        // 確保使用者已登入
+        // 1. 等待登入資訊
         let retries = 0;
         while (!authService.getProfile() && retries < 10) { 
             await new Promise(r => setTimeout(r, 200)); 
@@ -29,30 +24,44 @@ export class SwapReviewPage {
         this.currentUser = authService.getProfile();
 
         if (!this.currentUser) {
-            document.querySelector('.container-fluid').innerHTML = '<div class="alert alert-danger m-4">請先登入</div>';
+            document.querySelector('.container-fluid').innerHTML = '<div class="alert alert-danger m-4">請先登入系統</div>';
             return;
         }
 
-        // 載入資料
+        console.log("目前登入者:", this.currentUser.name, "UID:", this.currentUser.uid);
+
+        // 2. 判斷是否為管理者
+        const role = this.currentUser.role;
+        const isManager = (role === 'unit_manager' || role === 'unit_scheduler' || role === 'system_admin');
+        
+        // 更新 Layout 顯示管理者區塊
+        if(isManager) {
+            document.querySelector('.container-fluid').innerHTML = SwapReviewTemplate.renderLayout(true);
+        }
+
+        // 3. 載入資料
         await this.loadTargetRequests();
 
-        // 若是管理者，載入管理者待審清單
-        const role = this.currentUser.role;
-        if (role === 'unit_manager' || role === 'unit_scheduler' || role === 'system_admin') {
+        if (isManager) {
             await this.loadManagerRequests();
         }
     }
 
-    // --- 載入邏輯 ---
-
     async loadTargetRequests() {
+        const tbody = document.getElementById('target-review-tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 載入中...</td></tr>';
+
         try {
-            // 抓取所有與我相關的 (我是 Target)
-            const allRequests = await SwapService.getUserRequests(this.currentUser.uid);
-            // 過濾：狀態必須是 pending_target
-            const list = allRequests.filter(r => r.status === 'pending_target');
+            // 抓取所有我是 Target 的
+            const allMyRequests = await SwapService.getUserRequests(this.currentUser.uid);
             
-            // 更新計數
+            console.log("從資料庫抓到的原始資料 (MyRequests):", allMyRequests);
+
+            // 過濾：狀態必須是 pending_target
+            const list = allMyRequests.filter(r => r.status === 'pending_target');
+            
+            console.log("過濾後待審核清單:", list);
+
             const badge = document.getElementById('badge-target-count');
             if(badge) {
                 badge.textContent = list.length;
@@ -60,10 +69,11 @@ export class SwapReviewPage {
             }
             
             // 渲染
-            document.getElementById('target-review-tbody').innerHTML = SwapReviewTemplate.renderTargetRows(list);
-        } catch(e) {
+            tbody.innerHTML = SwapReviewTemplate.renderTargetRows(list);
+
+        } catch(e) { 
             console.error(e);
-            document.getElementById('target-review-tbody').innerHTML = '<tr><td colspan="6" class="text-danger text-center">載入失敗</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-danger text-center">載入失敗: ' + e.message + '</td></tr>';
         }
     }
 
@@ -76,48 +86,40 @@ export class SwapReviewPage {
                 badge.textContent = list.length;
                 badge.style.display = list.length ? 'inline-block' : 'none';
             }
-
             document.getElementById('manager-review-tbody').innerHTML = SwapReviewTemplate.renderManagerRows(list);
         } catch(e) { console.error(e); }
     }
 
-    // --- 操作邏輯 ---
+    // --- 操作 ---
 
     async handleTargetReview(id, action) {
-        const actionText = action === 'agree' ? '同意' : '拒絕';
-        if(!confirm(`確定要 ${actionText} 嗎？`)) return;
-
+        if(!confirm(action === 'agree' ? '同意換班？' : '拒絕此申請？')) return;
         try {
             await SwapService.reviewByTarget(id, action);
-            // 成功後重新整理該區塊
-            this.loadTargetRequests();
+            this.loadTargetRequests(); 
         } catch (e) { alert("操作失敗: " + e.message); }
     }
 
     async handleManagerReview(id, action) {
-        const actionText = action === 'approve' ? '核准' : '駁回';
-        const msg = action === 'approve' ? '確定核准？\n系統將自動修改當月班表，且無法復原。' : '確定駁回？';
-        
-        if(!confirm(msg)) return;
+        if(!confirm(action === 'approve' ? '確定核准並修改班表？' : '確定駁回？')) return;
 
         try {
-            // 為了確保資料完整，我們重新抓取該筆 Request (內含 year, month 等資訊)
+            // 重抓一次確保資料最新
             const list = await SwapService.getManagerPendingRequests(this.currentUser.unitId);
             const req = list.find(r => r.id === id);
             
             if (!req) {
-                alert("找不到該申請單，可能已被其他管理員處理。");
+                alert("找不到該申請單，可能已被處理。");
                 this.loadManagerRequests();
                 return;
             }
 
             await SwapService.reviewByManager(id, action, this.currentUser.uid, req);
-            
-            alert(`已${actionText}！`);
+            alert("已完成");
             this.loadManagerRequests();
-        } catch (e) {
+        } catch (e) { 
             console.error(e);
-            alert("操作失敗: " + e.message);
+            alert("操作失敗: " + e.message); 
         }
     }
 }
