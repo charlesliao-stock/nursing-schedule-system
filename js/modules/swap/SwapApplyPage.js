@@ -7,10 +7,9 @@ import { SwapApplyTemplate } from "./templates/SwapApplyTemplate.js";
 
 export class SwapApplyPage {
     constructor() {
-        this.realUser = null;      // 真正登入的管理者
-        this.currentUser = null;   // 目前模擬的身分
-        this.targetUnitId = null;  // 目前操作的單位 ID
-        
+        this.realUser = null;      
+        this.currentUser = null;   
+        this.targetUnitId = null;  
         this.pendingSwaps = [];    
         this.tempSource = null;    
         this.isImpersonating = false;
@@ -30,22 +29,26 @@ export class SwapApplyPage {
             return;
         }
 
-        // 預設身分與單位
+        // 預設身分
         this.currentUser = this.realUser;
         this.targetUnitId = this.realUser.unitId;
         window.routerPage = this;
 
-        // 判斷權限：system_admin, unit_manager, unit_scheduler
+        // 2. 判斷是否為管理者
         const role = this.realUser.role;
         const isAdmin = ['system_admin', 'unit_manager', 'unit_scheduler'].includes(role);
         
+        console.log("Current Role:", role, "Is Admin:", isAdmin); // 除錯用
+
+        // 顯示管理者區塊
         if (isAdmin) {
             await this.initAdminSimulator();
         }
 
-        // 載入頁面資料
+        // 3. 載入資料
         this.initPageData();
 
+        // 4. 綁定事件
         document.getElementById('btn-load-grid').addEventListener('click', () => this.loadGrid());
         document.getElementById('btn-submit-swap').addEventListener('click', () => this.submitSwap());
         
@@ -59,11 +62,19 @@ export class SwapApplyPage {
     // --- 管理者模擬功能 ---
     async initAdminSimulator() {
         const adminSection = document.getElementById('admin-impersonate-section');
+        
+        // 強制顯示區塊
+        if(adminSection) {
+            adminSection.style.display = 'block';
+            console.log("Admin section shown");
+        } else {
+            console.error("Admin section not found in DOM");
+            return;
+        }
+
         const unitSelect = document.getElementById('admin-unit-select');
         const userSelect = document.getElementById('admin-user-select');
         const btnImpersonate = document.getElementById('btn-impersonate');
-        
-        if(adminSection) adminSection.style.display = 'block';
 
         // A. 載入單位
         try {
@@ -72,7 +83,7 @@ export class SwapApplyPage {
                 units.map(u => `<option value="${u.unitId}">${u.unitName}</option>`).join('');
         } catch(e) { console.error("載入單位失敗", e); }
 
-        // B. 載入單位人員
+        // B. 單位切換
         unitSelect.addEventListener('change', async () => {
             const uid = unitSelect.value;
             userSelect.innerHTML = '<option>載入中...</option>';
@@ -92,11 +103,12 @@ export class SwapApplyPage {
             } catch(e) { console.error(e); }
         });
 
+        // C. 啟用按鈕
         userSelect.addEventListener('change', () => {
             btnImpersonate.disabled = !userSelect.value;
         });
 
-        // C. 切換身分
+        // D. 執行切換
         btnImpersonate.addEventListener('click', () => {
             const targetUid = userSelect.value;
             const targetUnitId = unitSelect.value;
@@ -107,18 +119,20 @@ export class SwapApplyPage {
             this.isImpersonating = true;
             this.targetUnitId = targetUnitId;
             
+            // 模擬身分物件
             this.currentUser = {
                 uid: targetUid,
-                name: targetName.split(' ')[0],
+                name: targetName.split(' ')[0], // 移除職編
                 unitId: targetUnitId,
                 role: 'nurse'
             };
 
             this.updateImpersonationUI();
-            this.initPageData(); // 重新載入所有資料
+            this.initPageData();
+            alert(`已切換為：${this.currentUser.name}`);
         });
 
-        // D. 恢復身分
+        // E. 綁定退出 (動態元素)
         document.addEventListener('click', (e) => {
             if(e.target && e.target.id === 'btn-exit-impersonate') {
                 this.exitImpersonation();
@@ -140,11 +154,10 @@ export class SwapApplyPage {
         const nameSpan = document.getElementById('current-impersonating-name');
         
         if (this.isImpersonating) {
-            statusSpan.style.display = 'inline-flex'; // 使用 inline-flex 讓按鈕排版較好
+            statusSpan.style.display = 'inline-flex';
             nameSpan.textContent = this.currentUser.name;
         } else {
             statusSpan.style.display = 'none';
-            // 重置選單
             document.getElementById('admin-unit-select').value = '';
             document.getElementById('admin-user-select').innerHTML = '<option value="">請先選擇單位</option>';
             document.getElementById('admin-user-select').disabled = true;
@@ -152,30 +165,23 @@ export class SwapApplyPage {
         }
     }
 
-    // --- 資料重置與載入 ---
     initPageData() {
         document.getElementById('swap-workspace').style.display = 'none';
         this.pendingSwaps = [];
         this.tempSource = null;
         this.updateSwapListUI();
-
-        // 根據目前的 targetUnitId 載入班表選單
         this.loadScheduleList();
-        
-        // 根據目前的 currentUser 載入歷史紀錄
         this.loadMyHistory();
     }
 
-    // --- 載入歷史紀錄 ---
+    // ... (其餘函式 loadMyHistory, loadScheduleList, loadGrid, handleCellClick, submitSwap 維持原樣) ...
     async loadMyHistory() {
         const tbody = document.getElementById('history-tbody');
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 載入紀錄中...</td></tr>';
-        
         const list = await SwapService.getMyAppliedRequests(this.currentUser.uid);
         tbody.innerHTML = SwapApplyTemplate.renderHistoryRows(list);
     }
 
-    // --- 載入班表選單 ---
     async loadScheduleList() {
         const select = document.getElementById('schedule-select');
         select.innerHTML = '<option>載入中...</option>';
@@ -200,7 +206,6 @@ export class SwapApplyPage {
         } catch(e) { console.error(e); select.innerHTML = '<option>載入失敗</option>'; }
     }
 
-    // --- 載入班表矩陣 ---
     async loadGrid() {
         const val = document.getElementById('schedule-select').value;
         if(!val) return alert("請先選擇班表");
@@ -232,7 +237,6 @@ export class SwapApplyPage {
         }
     }
 
-    // --- 點擊互動邏輯 ---
     handleCellClick(cell, clickable) {
         if (!clickable) return;
         const uid = cell.dataset.uid;
@@ -279,7 +283,6 @@ export class SwapApplyPage {
         container.innerHTML = SwapApplyTemplate.renderSwapListItems(this.pendingSwaps);
     }
 
-    // --- 送出申請 ---
     async submitSwap() {
         const reasonType = document.getElementById('swap-reason-select').value;
         const reasonText = document.getElementById('swap-reason-text').value;
