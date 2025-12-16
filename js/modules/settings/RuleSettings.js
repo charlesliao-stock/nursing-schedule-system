@@ -1,3 +1,15 @@
+這是一個非常正確的 UI 優化思路。將詳細的設定（如「包班不計」）收納進 Modal（彈窗）中，能讓主畫面保持清爽，同時也能確保資料結構的完整性。
+
+針對您的兩個需求：
+
+1.  **修復儲存問題**：原本的程式碼在儲存時會去「抓取 HTML 上的開關狀態」，但因為 DOM 結構變動或 ID 對不上，導致資料沒被更新。修正後的邏輯改為**以記憶體中的資料 (`this.currentConfig`) 為準**，UI 只是顯示，這樣儲存就絕對不會錯。
+2.  **移動選項位置**：將「包夜班不計」從主列表移除，改為在點擊「標準」按鈕後的 Modal 視窗中顯示。
+
+以下是修正後的 **`RuleSettings.js`** 完整程式碼：
+
+### RuleSettings.js (修正版)
+
+```javascript
 import { UnitService } from "../../services/firebase/UnitService.js";
 import { authService } from "../../services/firebase/AuthService.js";
 import { ScoringService } from "../../services/ScoringService.js";
@@ -442,3 +454,4 @@ export class RuleSettings {
         finally { btn.disabled = false; }
     }
 }
+```
