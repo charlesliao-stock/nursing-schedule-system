@@ -50,6 +50,9 @@ export const DashboardTemplate = {
                     <h2 class="h3 text-gray-800">單位管理儀表板</h2>
                     <span class="badge bg-primary fs-6" id="dash-unit-name"><i class="fas fa-spinner fa-spin"></i></span>
                 </div>
+                
+                <div id="manager-notification-area" class="mb-4"></div>
+
                 <div class="row">
                     <div class="col-xl-3 col-md-6 mb-4" onclick="location.hash='/unit/staff/list'" style="cursor:pointer;">
                         <div class="card border-left-info shadow h-100 py-2">
@@ -86,7 +89,7 @@ export const DashboardTemplate = {
         `;
     },
 
-    // 3. 一般使用者視圖
+    // 3. 一般使用者視圖 (含通知)
     renderUser(unitId) {
         return `
             <div class="container-fluid">
@@ -94,6 +97,8 @@ export const DashboardTemplate = {
                     <h2 class="h3 text-gray-800">個人儀表板</h2>
                     <span class="badge bg-info">${unitId || '無單位'}</span>
                 </div>
+
+                <div id="dashboard-notification-area" class="row mb-4"></div>
 
                 <div class="row">
                     <div class="col-xl-3 col-md-6 mb-4">
