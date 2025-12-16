@@ -15,7 +15,7 @@ export class SwapService {
             const payload = {
                 ...data,
                 id: newDocRef.id,
-                targetUserId: data.targetUserId, // 確保此欄位有值
+                targetUserId: data.targetUserId,
                 status: 'pending_target', 
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
@@ -55,6 +55,11 @@ export class SwapService {
         }
     }
 
+    // 為了相容性，保留 getUserRequests
+    static async getUserRequests(uid) {
+        return this.getIncomingRequests(uid);
+    }
+
     // 4. 取得管理者待審項目
     static async getManagerPendingRequests(unitId) {
         try {
@@ -69,7 +74,7 @@ export class SwapService {
         } catch (e) { return []; }
     }
 
-    // 5. [新功能] 取得待辦計數 (用於儀表板)
+    // 5. [關鍵功能] 取得待辦計數 (用於儀表板)
     static async getPendingCounts(uid, unitId, isManager) {
         const result = { targetPending: 0, managerPending: 0 };
         try {
