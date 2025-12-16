@@ -1,16 +1,26 @@
 import { ScheduleService } from "../../services/firebase/ScheduleService.js";
-import { SwapService } from "../../services/firebase/SwapService.js"; // 新增引用
+import { SwapService } from "../../services/firebase/SwapService.js";
+import { authService } from "../../services/firebase/AuthService.js"; 
 import { DashboardTemplate } from "./templates/DashboardTemplate.js"; 
 
 export class UserDashboard {
-    constructor(user) { this.user = user; }
+    constructor(user) { 
+        this.user = user;
+        this.isImpersonating = !!user.isImpersonating;
+    }
 
     async render() {
-        return DashboardTemplate.renderUser(this.user.unitId);
+        return DashboardTemplate.renderUser(this.user.unitId, this.isImpersonating);
     }
 
     async afterRender() {
-        // 1. 載入下次上班 (維持原樣)
+        // 綁定退出按鈕
+        const exitBtn = document.getElementById('btn-exit-impersonate');
+        if(exitBtn) {
+            exitBtn.addEventListener('click', () => authService.stopImpersonation());
+        }
+
+        // 載入下次上班
         const date = new Date();
         const schedule = await ScheduleService.getSchedule(this.user.unitId, date.getFullYear(), date.getMonth() + 1);
         
@@ -29,13 +39,12 @@ export class UserDashboard {
             document.getElementById('next-shift').textContent = '未發布';
         }
 
-        // 2. [新增] 檢查待審核項目
+        // 檢查通知
         this.checkPendingSwaps();
     }
 
     async checkPendingSwaps() {
         const counts = await SwapService.getPendingCounts(this.user.uid, this.user.unitId, false);
-        
         if (counts.targetPending > 0) {
             const container = document.getElementById('dashboard-notification-area');
             if (container) {
