@@ -8,7 +8,7 @@ export class SwapReviewPage {
     }
 
     async render() {
-        // 先渲染框架，預設不顯示管理者區塊
+        // 先渲染框架
         this.currentUser = authService.getProfile();
         const role = this.currentUser?.role;
         const isManager = ['unit_manager', 'unit_scheduler', 'system_admin'].includes(role);
@@ -34,21 +34,26 @@ export class SwapReviewPage {
 
         console.log("【SwapReview】目前使用者:", this.currentUser.uid, this.currentUser.name);
 
-        // 2. 重新判斷權限並更新畫面 (確保 renderLayout 狀態正確)
-        const role = this.currentUser.role;
-        const isManager = ['unit_manager', 'unit_scheduler', 'system_admin'].includes(role);
-        if(isManager) {
-            // 若是管理者，確保管理者區塊顯示
-            const mgrSection = document.getElementById('manager-section');
-            if(mgrSection) mgrSection.style.display = 'block';
+        // 2. 綁定重新整理按鈕 (新增功能)
+        const refreshBtn = document.getElementById('btn-refresh-reviews');
+        if(refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadTargetReviews();
+                if(['unit_manager', 'unit_scheduler', 'system_admin'].includes(this.currentUser.role)) {
+                    this.loadManagerReviews();
+                }
+                alert("已重新載入資料");
+            });
         }
 
         // 3. 載入資料
-        // A. 載入個人待審 (被換班者)
         await this.loadTargetReviews();
 
-        // B. 載入管理者待審
-        if (isManager) {
+        // 4. 載入管理者資料
+        const role = this.currentUser.role;
+        if (['unit_manager', 'unit_scheduler', 'system_admin'].includes(role)) {
+            const mgrSection = document.getElementById('manager-section');
+            if(mgrSection) mgrSection.style.display = 'block';
             await this.loadManagerReviews();
         }
     }
@@ -56,35 +61,27 @@ export class SwapReviewPage {
     // --- A. 個人審核 (我是被換班者) ---
     async loadTargetReviews() {
         const tbody = document.getElementById('target-review-tbody');
+        if(!tbody) return;
+        
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 載入中...</td></tr>';
 
         try {
-            console.log("【SwapReview】正在載入個人待審資料...");
+            console.log("【SwapReview】正在載入個人待審資料 (Target)...");
             
-            // 使用新版 API: getUserRequests (包含我是 Target 的資料)
+            // 使用 getUserRequests 抓取所有相關資料
             const allRequests = await SwapService.getUserRequests(this.currentUser.uid);
             
-            // 過濾條件：我是 targetUserId 且 狀態是 pending_target
-            const list = allRequests.filter(r => 
-                (r.targetUserId === this.currentUser.uid || r.targetId === this.currentUser.uid) && // 相容舊欄位
-                r.status === 'pending_target'
-            );
+            // 過濾：我是 Target 且 狀態是 pending_target
+            // 注意：這裡同時檢查 targetUserId 與 targetId 以防舊資料問題
+            const list = allRequests.filter(r => {
+                const isTarget = (r.targetUserId === this.currentUser.uid) || (r.targetId === this.currentUser.uid);
+                return isTarget && r.status === 'pending_target';
+            });
             
             console.log("【SwapReview】個人待審筆數:", list.length);
 
             // 更新紅點通知
-            const badge = document.getElementById('badge-target-count');
-            if (badge) {
-                if (list.length > 0) {
-                    badge.textContent = list.length;
-                    badge.style.display = 'inline-block';
-                    // 加入動畫讓使用者注意到
-                    badge.classList.add('animate__animated', 'animate__pulse', 'animate__infinite');
-                } else {
-                    badge.style.display = 'none';
-                    badge.classList.remove('animate__animated');
-                }
-            }
+            this.updateBadge('badge-target-count', list.length);
 
             // 渲染列表
             tbody.innerHTML = SwapReviewTemplate.renderTargetRows(list);
@@ -98,21 +95,13 @@ export class SwapReviewPage {
     // --- B. 管理者審核 ---
     async loadManagerReviews() {
         const tbody = document.getElementById('manager-review-tbody');
+        if(!tbody) return;
+
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 載入中...</td></tr>';
 
         try {
             const list = await SwapService.getManagerPendingRequests(this.currentUser.unitId);
-            
-            const badge = document.getElementById('badge-manager-count');
-            if (badge) {
-                if (list.length > 0) {
-                    badge.textContent = list.length;
-                    badge.style.display = 'inline-block';
-                } else {
-                    badge.style.display = 'none';
-                }
-            }
-
+            this.updateBadge('badge-manager-count', list.length);
             tbody.innerHTML = SwapReviewTemplate.renderManagerRows(list);
         } catch (e) { 
             console.error(e); 
@@ -120,8 +109,21 @@ export class SwapReviewPage {
         }
     }
 
-    // --- C. 操作動作 ---
+    updateBadge(id, count) {
+        const badge = document.getElementById(id);
+        if (badge) {
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+                badge.classList.add('animate__animated', 'animate__pulse', 'animate__infinite');
+            } else {
+                badge.style.display = 'none';
+                badge.classList.remove('animate__animated');
+            }
+        }
+    }
 
+    // --- C. 操作動作 ---
     async handleTargetReview(id, action) {
         const actionText = action === 'agree' ? '同意' : '拒絕';
         if(!confirm(`確定要 ${actionText} 此換班申請嗎？`)) return;
@@ -130,9 +132,7 @@ export class SwapReviewPage {
             await SwapService.reviewByTarget(id, action);
             alert(`已${actionText}`);
             this.loadTargetReviews(); // 重刷列表
-        } catch (e) {
-            alert("操作失敗: " + e.message);
-        }
+        } catch (e) { alert("操作失敗: " + e.message); }
     }
 
     async handleManagerReview(id, action) {
@@ -140,12 +140,11 @@ export class SwapReviewPage {
         if(!confirm(msg)) return;
 
         try {
-            // 重抓一次確保資料最新
             const list = await SwapService.getManagerPendingRequests(this.currentUser.unitId);
             const req = list.find(r => r.id === id);
             
             if (!req) {
-                alert("找不到該申請單，可能已被處理。");
+                alert("資料過期，請重新整理");
                 this.loadManagerReviews();
                 return;
             }
@@ -153,8 +152,6 @@ export class SwapReviewPage {
             await SwapService.reviewByManager(id, action, this.currentUser.uid, req);
             alert("處理完成");
             this.loadManagerReviews();
-        } catch (e) { 
-            alert("操作失敗: " + e.message); 
-        }
+        } catch (e) { alert("操作失敗: " + e.message); }
     }
 }
