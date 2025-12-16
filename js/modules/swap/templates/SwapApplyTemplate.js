@@ -1,28 +1,84 @@
 export const SwapApplyTemplate = {
     // 1. 主畫面佈局
-    renderLayout(year, month) {
+    renderLayout() {
+        // 理由選項
+        const reasons = ['單位人力調整', '公假', '病假', '喪假', '支援', '個人因素', '其他'];
+        const reasonOptions = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
+
         return `
             <div class="container-fluid mt-4">
-                <h2 class="mb-4"><i class="fas fa-exchange-alt"></i> 申請換班</h2>
-                <div class="alert alert-info"><i class="fas fa-info-circle"></i> 請在下方班表中，<strong>點選您想要換班的日期</strong>。</div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3><i class="fas fa-exchange-alt text-primary me-2"></i>申請換班 (多筆)</h3>
+                </div>
 
-                <div class="card shadow mb-4">
-                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                        <h6 class="m-0 font-weight-bold text-primary">本月班表 (${year}-${month})</h6>
-                        <input type="month" id="swap-month" class="form-control form-control-sm w-auto" value="${year}-${String(month).padStart(2,'0')}">
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive" id="schedule-container">
-                            <div class="p-5 text-center">載入中...</div>
-                        </div>
+                <div id="step-select-schedule" class="card shadow mb-3">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <label class="fw-bold">選擇已發布班表：</label>
+                        <select id="schedule-select" class="form-select w-auto">
+                            <option value="">載入中...</option>
+                        </select>
+                        <button id="btn-load-grid" class="btn btn-primary">
+                            <i class="fas fa-table me-1"></i> 載入班表
+                        </button>
                     </div>
                 </div>
 
-                <div class="card shadow">
-                    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-success">我的申請紀錄</h6></div>
+                <div id="swap-workspace" style="display:none;">
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <div class="card shadow mb-3">
+                                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                                    <div class="small text-muted">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        操作：1.點選<span class="badge bg-primary">您的班</span> 2.點選該日<span class="badge bg-success">對方的班</span> (限同日互換)
+                                    </div>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div id="schedule-grid-container" class="table-responsive" style="max-height: 70vh;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-4">
+                            <div class="card shadow border-left-primary h-100">
+                                <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between">
+                                    <span>換班申請單</span>
+                                    <span class="badge bg-white text-primary" id="swap-count-badge">0 筆</span>
+                                </div>
+                                <div class="card-body d-flex flex-column">
+                                    
+                                    <div class="flex-grow-1 mb-3 overflow-auto" style="max-height: 300px;">
+                                        <ul class="list-group" id="swap-list-container">
+                                            <li class="list-group-item text-center text-muted py-4">
+                                                尚未選擇任何換班<br>請在左側點選日期加入
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    <hr>
+
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">換班理由 (必填)</label>
+                                        <select id="swap-reason-select" class="form-select form-select-sm mb-2">
+                                            ${reasonOptions}
+                                        </select>
+                                        <input type="text" id="swap-reason-text" class="form-control form-control-sm" placeholder="請輸入其他理由..." style="display:none;">
+                                    </div>
+
+                                    <button id="btn-submit-swap" class="btn btn-success w-100" disabled>
+                                        <i class="fas fa-paper-plane me-1"></i> 提交申請
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card shadow mt-4">
+                    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-secondary">我的申請紀錄</h6></div>
                     <div class="card-body p-0">
                         <table class="table table-hover mb-0">
-                            <thead class="table-light"><tr><th>日期</th><th>對象</th><th>內容</th><th>狀態</th></tr></thead>
+                            <thead class="table-light"><tr><th>日期</th><th>對象</th><th>內容</th><th>理由</th><th>狀態</th></tr></thead>
                             <tbody id="history-tbody"></tbody>
                         </table>
                     </div>
@@ -31,41 +87,80 @@ export const SwapApplyTemplate = {
         `;
     },
 
-    // 2. 班表渲染 (含點擊邏輯)
-    renderScheduleTable(schedule, staffList, currentUserId, year, month) {
-        if (!schedule) return '<div class="p-5 text-center text-muted">本月尚無班表</div>';
+    // 2. 班表矩陣渲染
+    renderMatrix(schedule, staffList, currentUser, year, month) {
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const assignments = schedule.assignments || {};
+        const todayStr = new Date().toISOString().split('T')[0];
 
-        const days = new Date(year, month, 0).getDate();
-        let html = '<table class="table table-bordered text-center mb-0"><thead><tr><th>人員</th>';
-        for(let d=1; d<=days; d++) html += `<th>${d}</th>`;
-        html += '</tr></thead><tbody>';
+        let html = `<table class="table table-bordered table-sm text-center align-middle mb-0" style="font-size: 0.9rem;">`;
+        html += `<thead class="table-light sticky-top"><tr><th style="min-width:80px">人員</th>`;
+        for(let d=1; d<=daysInMonth; d++) html += `<th style="min-width:35px;">${d}</th>`;
+        html += `</tr></thead><tbody>`;
 
         staffList.forEach(s => {
-            html += `<tr><td class="fw-bold">${s.name}</td>`;
-            for(let d=1; d<=days; d++) {
-                const shift = schedule.assignments?.[s.uid]?.[d] || '';
-                const isMe = s.uid === currentUserId;
-                const style = isMe ? 'cursor:pointer; background-color:#e0f2fe;' : '';
-                const click = isMe ? `onclick="window.routerPage.openSwapModal(${d}, '${shift}')"` : '';
+            const isMe = s.uid === currentUser.uid;
+            html += `<tr class="${isMe ? 'table-info' : ''}">`;
+            html += `<td class="fw-bold text-start ps-2">${s.name}${isMe ? '<span class="badge bg-primary ms-1">我</span>' : ''}</td>`;
+            
+            const userShifts = assignments[s.uid] || {};
+            for(let d=1; d<=daysInMonth; d++) {
+                const shift = userShifts[d] || '';
+                const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 
-                // M_OFF 顯示為 OFF
-                const displayShift = shift === 'M_OFF' ? 'OFF' : shift;
-                
-                html += `<td style="${style}" ${click}>${displayShift}</td>`;
+                // 過去日期或空班不可點
+                const isPast = dateStr < todayStr;
+                const isEmpty = !shift; 
+                const clickable = !isPast && !isEmpty;
+                const cursor = clickable ? 'pointer' : 'not-allowed';
+                const opacity = clickable ? '1' : '0.5';
+
+                html += `<td style="cursor:${cursor}; opacity:${opacity}" 
+                            class="swap-cell" id="cell-${d}-${s.uid}"
+                            data-uid="${s.uid}" data-day="${d}" data-shift="${shift}" data-name="${s.name}" data-date="${dateStr}"
+                            onclick="window.routerPage.handleCellClick(this, ${clickable})">
+                            ${shift}
+                        </td>`;
             }
-            html += '</tr>';
+            html += `</tr>`;
         });
-        html += '</tbody></table>';
+        html += `</tbody></table>`;
         return html;
     },
 
-    // 3. 歷史紀錄行
+    // 3. 渲染換班清單 (購物車項目)
+    renderSwapListItems(items) {
+        if (items.length === 0) {
+            return `<li class="list-group-item text-center text-muted py-4">尚未選擇任何換班<br>請在左側點選日期加入</li>`;
+        }
+        return items.map(item => `
+            <li class="list-group-item position-relative">
+                <button class="btn btn-sm btn-outline-danger border-0 position-absolute top-0 end-0 m-1" 
+                        onclick="window.routerPage.removeSwapFromList(${item.day})">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="fw-bold mb-1">${item.dateStr}</div>
+                <div class="d-flex justify-content-between align-items-center small">
+                    <div class="text-center">
+                        <div class="text-primary">我</div>
+                        <span class="badge bg-primary">${item.shift}</span>
+                    </div>
+                    <i class="fas fa-exchange-alt text-muted"></i>
+                    <div class="text-center">
+                        <div class="text-success">${item.target.name}</div>
+                        <span class="badge bg-success">${item.target.shift}</span>
+                    </div>
+                </div>
+            </li>
+        `).join('');
+    },
+
+    // 4. 渲染歷史紀錄
     renderHistoryRows(requests) {
-        if (requests.length === 0) return '<tr><td colspan="4" class="text-center text-muted p-3">無申請紀錄</td></tr>';
+        if (requests.length === 0) return '<tr><td colspan="5" class="text-center text-muted p-3">無申請紀錄</td></tr>';
         
         const getStatusBadge = (status) => {
             const map = {
-                'pending': '<span class="badge bg-secondary">待審核</span>',
                 'pending_target': '<span class="badge bg-warning text-dark">待同事同意</span>',
                 'pending_manager': '<span class="badge bg-info text-dark">待主管核准</span>',
                 'approved': '<span class="badge bg-success">已通過</span>',
@@ -76,33 +171,11 @@ export const SwapApplyTemplate = {
 
         return requests.map(req => `
             <tr>
-                <td>${req.date}</td>
-                <td>${req.targetName}</td>
-                <td>${req.requestorShift} &rarr; ${req.targetShift}</td>
+                <td>${req.requesterDate}</td>
+                <td>${req.targetUserName}</td>
+                <td><span class="badge bg-primary">${req.requesterShift}</span> &rarr; <span class="badge bg-success">${req.targetShift}</span></td>
+                <td>${req.reason || '-'}</td>
                 <td>${getStatusBadge(req.status)}</td>
             </tr>`).join('');
-    },
-
-    // 4. Modal HTML
-    renderModal() {
-        return `
-            <div class="modal fade" id="swap-modal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header"><h5 class="modal-title">提出換班申請</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-                        <div class="modal-body">
-                            <form id="swap-form">
-                                <div class="mb-3"><label>日期</label><input type="text" id="modal-date" class="form-control" disabled></div>
-                                <div class="mb-3"><label>我的班別</label><input type="text" id="modal-my-shift" class="form-control" disabled></div>
-                                <div class="mb-3"><label>換班對象</label><select id="modal-target" class="form-select"></select></div>
-                                <div class="mb-3"><label>對方的班別</label><input type="text" id="modal-target-shift" class="form-control" disabled></div>
-                                <div class="mb-3"><label>原因</label><textarea id="modal-reason" class="form-control" rows="2"></textarea></div>
-                            </form>
-                        </div>
-                        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" id="btn-submit-swap" class="btn btn-primary">送出申請</button></div>
-                    </div>
-                </div>
-            </div>
-        `;
     }
 };
