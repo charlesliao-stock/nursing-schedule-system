@@ -1,7 +1,7 @@
 import { SwapService } from "../../services/firebase/SwapService.js";
 import { authService } from "../../services/firebase/AuthService.js";
-import { UnitService } from "../../services/firebase/UnitService.js"; // 新增引用
-import { userService } from "../../services/firebase/UserService.js"; // 新增引用
+import { UnitService } from "../../services/firebase/UnitService.js";
+import { userService } from "../../services/firebase/UserService.js";
 import { SwapReviewTemplate } from "./templates/SwapReviewTemplate.js"; 
 
 export class SwapReviewPage {
