@@ -13,7 +13,6 @@ export class MainLayout {
         this.currentRole = this.user.role;
         this.autoHideTimer = null;
     }
-
     render() {
         const menus = this.getMenus(this.currentRole);
         const menuHtml = MainLayoutTemplate.renderMenuHtml(menus);
